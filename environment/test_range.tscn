@@ -1,0 +1,48 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://environment/test_range.gd" id="1"]
+[ext_resource type="PackedScene" path="res://player/mech.tscn" id="2"]
+[ext_resource type="Script" path="res://enemies/training_dummy.gd" id="3"]
+[ext_resource type="Script" path="res://environment/props/repair_station.gd" id="4"]
+[ext_resource type="PackedScene" path="res://ui/hud.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://ui/touch_controls.tscn" id="6"]
+[ext_resource type="Script" path="res://environment/parallax_skyline.gd" id="7"]
+
+[node name="TestRange" type="Node2D"]
+y_sort_enabled = true
+script = ExtResource("1")
+
+[node name="Skyline" type="Node2D" parent="."]
+script = ExtResource("7")
+
+[node name="Dummies" type="Node2D" parent="."]
+
+[node name="Dummy1" type="Area2D" parent="Dummies"]
+position = Vector2(420, -160)
+script = ExtResource("3")
+
+[node name="Dummy2" type="Area2D" parent="Dummies"]
+position = Vector2(560, 120)
+script = ExtResource("3")
+
+[node name="Dummy3" type="Area2D" parent="Dummies"]
+position = Vector2(-520, -260)
+script = ExtResource("3")
+
+[node name="Dummy4" type="Area2D" parent="Dummies"]
+position = Vector2(-300, 380)
+script = ExtResource("3")
+
+[node name="Dummy5" type="Area2D" parent="Dummies"]
+position = Vector2(900, -420)
+script = ExtResource("3")
+
+[node name="RepairStation" type="Node2D" parent="."]
+position = Vector2(-200, -40)
+script = ExtResource("4")
+
+[node name="Mech" parent="." instance=ExtResource("2")]
+
+[node name="HUD" parent="." instance=ExtResource("5")]
+
+[node name="TouchControls" parent="." instance=ExtResource("6")]

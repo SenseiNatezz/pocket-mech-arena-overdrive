@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://enemies/chaser.gd" id="1"]
+
+[node name="Chaser" type="CharacterBody2D"]
+script = ExtResource("1")
+max_hp = 55.0
+move_speed = 235.0
+contact_damage = 12.0
+hit_radius = 22.0

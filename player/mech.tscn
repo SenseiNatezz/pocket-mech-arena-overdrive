@@ -1,0 +1,131 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://player/mech.gd" id="1"]
+[ext_resource type="SpriteFrames" path="res://assets/sprites/gundam_frames.tres" id="2"]
+[ext_resource type="Shader" path="res://shaders/hit_flash.gdshader" id="3"]
+[ext_resource type="Texture2D" path="res://assets/fx/glow.tres" id="4"]
+[ext_resource type="Script" path="res://player/boost_ring.gd" id="5"]
+[ext_resource type="Script" path="res://player/mech_camera.gd" id="6"]
+
+[sub_resource type="ShaderMaterial" id="flash_mat"]
+shader = ExtResource("3")
+shader_parameter/flash = 0.0
+shader_parameter/flash_color = Color(1, 1, 1, 1)
+
+[sub_resource type="CanvasItemMaterial" id="add"]
+blend_mode = 1
+
+[sub_resource type="Gradient" id="thrust_grad"]
+offsets = PackedFloat32Array(0, 0.35, 1)
+colors = PackedColorArray(0.85, 0.95, 1, 1, 0.25, 0.55, 1, 0.8, 0.05, 0.2, 1, 0)
+
+[sub_resource type="GradientTexture1D" id="thrust_ramp"]
+gradient = SubResource("thrust_grad")
+
+[sub_resource type="ParticleProcessMaterial" id="thrust_mat"]
+particle_flag_disable_z = true
+direction = Vector3(0, 1, 0)
+spread = 10.0
+initial_velocity_min = 140.0
+initial_velocity_max = 200.0
+gravity = Vector3(0, 0, 0)
+scale_min = 0.25
+scale_max = 0.38
+color_ramp = SubResource("thrust_ramp")
+
+[sub_resource type="CircleShape2D" id="body_shape"]
+radius = 22.0
+
+[sub_resource type="LabelSettings" id="prompt"]
+font_size = 18
+font_color = Color(1, 1, 1, 1)
+outline_size = 6
+outline_color = Color(0, 0, 0, 0.9)
+
+[node name="Mech" type="CharacterBody2D"]
+z_index = 2
+collision_layer = 2
+collision_mask = 33
+motion_mode = 1
+script = ExtResource("1")
+
+[node name="Shadow" type="Sprite2D" parent="."]
+modulate = Color(0, 0, 0, 0.5)
+position = Vector2(6, 14)
+scale = Vector2(1.5, 1.2)
+texture = ExtResource("4")
+
+[node name="BoostRing" type="Node2D" parent="."]
+z_index = -1
+script = ExtResource("5")
+
+[node name="OverdriveAura" type="Sprite2D" parent="."]
+visible = false
+modulate = Color(1, 0.75, 0.25, 0.55)
+material = SubResource("add")
+scale = Vector2(2.3, 2.3)
+texture = ExtResource("4")
+
+[node name="Body" type="Node2D" parent="."]
+
+[node name="ThrusterL" type="GPUParticles2D" parent="Body"]
+material = SubResource("add")
+position = Vector2(-20, 19)
+amount = 24
+lifetime = 0.2
+texture = ExtResource("4")
+visibility_rect = Rect2(-200, -200, 400, 400)
+process_material = SubResource("thrust_mat")
+
+[node name="ThrusterR" type="GPUParticles2D" parent="Body"]
+material = SubResource("add")
+position = Vector2(19, 19)
+amount = 24
+lifetime = 0.2
+texture = ExtResource("4")
+visibility_rect = Rect2(-200, -200, 400, 400)
+process_material = SubResource("thrust_mat")
+
+[node name="Sprite" type="AnimatedSprite2D" parent="Body"]
+material = SubResource("flash_mat")
+scale = Vector2(0.44, 0.44)
+sprite_frames = ExtResource("2")
+animation = &"idle"
+autoplay = "idle"
+
+[node name="Muzzle" type="Marker2D" parent="Body"]
+position = Vector2(34, -48)
+
+[node name="MuzzleFlash" type="Sprite2D" parent="Body"]
+visible = false
+modulate = Color(0.55, 0.88, 1, 1)
+material = SubResource("add")
+position = Vector2(34, -52)
+scale = Vector2(0.7, 0.7)
+texture = ExtResource("4")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("body_shape")
+
+[node name="Hurtbox" type="Area2D" parent="."]
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
+shape = SubResource("body_shape")
+
+[node name="Prompt" type="Label" parent="."]
+visible = false
+offset_left = -120.0
+offset_top = -92.0
+offset_right = 120.0
+offset_bottom = -66.0
+text = "[R] Use"
+label_settings = SubResource("prompt")
+horizontal_alignment = 1
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position_smoothing_enabled = true
+position_smoothing_speed = 7.0
+script = ExtResource("6")

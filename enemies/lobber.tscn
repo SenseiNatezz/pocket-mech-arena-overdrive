@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://enemies/lobber.gd" id="1"]
+
+[node name="Lobber" type="CharacterBody2D"]
+script = ExtResource("1")
+max_hp = 110.0
+move_speed = 95.0
+contact_damage = 8.0
+hit_radius = 28.0

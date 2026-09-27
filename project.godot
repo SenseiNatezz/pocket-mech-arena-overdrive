@@ -1,0 +1,132 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Pocket Mech Arena - Uragun Version"
+config/description="Top-down twin-stick mech shooter (landscape)."
+run/main_scene="res://ui/main_menu.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+Controls="*res://autoload/controls.gd"
+Combat="*res://autoload/combat.gd"
+Sfx="*res://autoload/sfx.gd"
+Game="*res://autoload/game.gd"
+Debug="*res://tools/debug_runner.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=0
+
+[input]
+
+move_left={
+"deadzone": 0.25,
+"events": [Object(InputEventKey,"physical_keycode":65), Object(InputEventKey,"physical_keycode":4194319), Object(InputEventJoypadMotion,"device":-1,"axis":0,"axis_value":-1.0)]
+}
+move_right={
+"deadzone": 0.25,
+"events": [Object(InputEventKey,"physical_keycode":68), Object(InputEventKey,"physical_keycode":4194321), Object(InputEventJoypadMotion,"device":-1,"axis":0,"axis_value":1.0)]
+}
+move_up={
+"deadzone": 0.25,
+"events": [Object(InputEventKey,"physical_keycode":87), Object(InputEventKey,"physical_keycode":4194320), Object(InputEventJoypadMotion,"device":-1,"axis":1,"axis_value":-1.0)]
+}
+move_down={
+"deadzone": 0.25,
+"events": [Object(InputEventKey,"physical_keycode":83), Object(InputEventKey,"physical_keycode":4194322), Object(InputEventJoypadMotion,"device":-1,"axis":1,"axis_value":1.0)]
+}
+aim_left={
+"deadzone": 0.3,
+"events": [Object(InputEventJoypadMotion,"device":-1,"axis":2,"axis_value":-1.0)]
+}
+aim_right={
+"deadzone": 0.3,
+"events": [Object(InputEventJoypadMotion,"device":-1,"axis":2,"axis_value":1.0)]
+}
+aim_up={
+"deadzone": 0.3,
+"events": [Object(InputEventJoypadMotion,"device":-1,"axis":3,"axis_value":-1.0)]
+}
+aim_down={
+"deadzone": 0.3,
+"events": [Object(InputEventJoypadMotion,"device":-1,"axis":3,"axis_value":1.0)]
+}
+fire_primary={
+"deadzone": 0.3,
+"events": [Object(InputEventMouseButton,"device":-1,"button_index":1,"pressed":true), Object(InputEventJoypadMotion,"device":-1,"axis":5,"axis_value":1.0)]
+}
+fire_secondary={
+"deadzone": 0.3,
+"events": [Object(InputEventMouseButton,"device":-1,"button_index":2,"pressed":true), Object(InputEventJoypadMotion,"device":-1,"axis":4,"axis_value":1.0)]
+}
+boost={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":32), Object(InputEventJoypadButton,"device":-1,"button_index":9,"pressed":true)]
+}
+heat_attack_1={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":69), Object(InputEventJoypadButton,"device":-1,"button_index":3,"pressed":true)]
+}
+heat_attack_2={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":81), Object(InputEventJoypadButton,"device":-1,"button_index":10,"pressed":true)]
+}
+self_repair={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":70), Object(InputEventJoypadButton,"device":-1,"button_index":1,"pressed":true)]
+}
+overdrive={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194325), Object(InputEventJoypadButton,"device":-1,"button_index":8,"pressed":true)]
+}
+use={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":82), Object(InputEventJoypadButton,"device":-1,"button_index":0,"pressed":true)]
+}
+pause={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194305), Object(InputEventJoypadButton,"device":-1,"button_index":6,"pressed":true)]
+}
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=false
+pointing/emulate_mouse_from_touch=true
+
+[layer_names]
+
+2d_physics/layer_1="walls"
+2d_physics/layer_2="player"
+2d_physics/layer_3="enemies"
+2d_physics/layer_4="player_shots"
+2d_physics/layer_5="enemy_shots"
+2d_physics/layer_6="cover"
+2d_physics/layer_7="pits"
+2d_physics/layer_8="interactables"
+2d_physics/layer_9="enemy_bodies"
+
+[physics]
+
+common/physics_ticks_per_second=60
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=1
+environment/defaults/default_clear_color=Color(0.05, 0.05, 0.07, 1)
