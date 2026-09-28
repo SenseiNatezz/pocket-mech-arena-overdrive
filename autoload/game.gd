@@ -137,10 +137,13 @@ var endless_wave := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_window().title = "Pocket Mech Arena"
 	# Debug: automated tests use a throwaway save so they never touch the player's progress.
 	if OS.get_cmdline_user_args().has("--temp-save"):
 		save_path = "user://test_settings.cfg"
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path))
+	else:
+		_migrate_save()
 	_load()
 	_apply_volume()
 	for a in OS.get_cmdline_user_args():
@@ -466,6 +469,22 @@ func save() -> void:
 	cfg.set_value("mech", "look", look)
 	cfg.set_value("mech", "weapon", String(range_restore if range_restore != &"" else weapon))
 	cfg.save(save_path)
+
+
+## Saves live in a folder named after project.godot's config/name, which was renamed to drop an old
+## codename. On the first launch after that, copy the save over from the previous folder (a sibling
+## "Pocket Mech Arena..." folder holding one) so nobody loses progress - desktop and web alike.
+func _migrate_save() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		return
+	var here := OS.get_user_data_dir()
+	var base := here.get_base_dir()
+	for d in DirAccess.get_directories_at(base):
+		var old := base.path_join(d).path_join(SAVE_PATH.get_file())
+		if d.begins_with("Pocket Mech Arena") and base.path_join(d) != here and FileAccess.file_exists(old):
+			DirAccess.make_dir_recursive_absolute(here)
+			DirAccess.copy_absolute(old, ProjectSettings.globalize_path(SAVE_PATH))
+			return
 
 
 func _load() -> void:

@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="Pocket Mech Arena - Uragun Version"
+config/name="Pocket Mech Arena"
 config/description="Top-down twin-stick mech shooter (landscape)."
 run/main_scene="res://ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 Controls="*res://autoload/controls.gd"
+Layout="*res://autoload/layout.gd"
 Combat="*res://autoload/combat.gd"
 Sfx="*res://autoload/sfx.gd"
 Game="*res://autoload/game.gd"
@@ -32,7 +33,7 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/handheld/orientation=0
+window/handheld/orientation=6
 
 [input]
 

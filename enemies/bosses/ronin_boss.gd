@@ -2,9 +2,11 @@ class_name RoninBoss
 extends WardenBoss
 ## "Ronin" (Higgsfield sprite): samurai mech boss wielding a double-bladed energy naginata.
 ##   Phase 1  energy crescent waves + dash-slash through the player (red line telegraph)
-##   Phase 2  + whirlwind (spins after you with the naginata, sheds bullets), dashes chain 2x and
+##   Phase 2  + blade flurry (advances on you slashing left-right in FRONT of it), dashes chain 2x and
 ##            leave crescents behind, wider crescent fans
-##   Phase 3  + crescent storm (rings of waves), summons Blade Strikers, 3-dash chains
+##   Phase 3  + crescent storm (rings of waves), summons Blade Strikers, 3-dash chains, the flurry
+##            also fires a frontal fan of shots. It always turns to face the player (snaps at the start of
+##            every attack); melee hits only land in front of it.
 ## Phases (66% / 33% HP), roar, death sequence, `defeated` and the HUD hookup come from WardenBoss.
 
 const RONIN_TEX := preload("res://assets/hq/enemies2/ronin.png")
@@ -21,8 +23,9 @@ var _trail: Array[Vector2] = []
 
 func _think(delta: float) -> void:
 	var speed_mult := 1.0 + (phase - 1) * 0.25
-	if _state != &"dash" and _state != &"spin":
-		_turret = _turret.slerp(dir_to_target(), 1.0 - exp(-6.0 * delta))
+	# Always turns to face the player (fast while attacking), except mid-dash (committed to its line).
+	if _state != &"dash":
+		_turret = _turret.slerp(dir_to_target(), 1.0 - exp(-(14.0 if _state != &"idle" else 9.0) * delta))
 	facing = _turret
 	if _roar > 0.0:
 		_roar -= delta
@@ -71,7 +74,8 @@ func _think(delta: float) -> void:
 			_trail.push_front(global_position)
 			if _trail.size() > 7:
 				_trail.pop_back()
-			if not _hit_done and dist_to_target() < hit_radius + 60.0:
+			# The blade only connects with what's in front of the charge (no hits after passing you).
+			if not _hit_done and dist_to_target() < hit_radius + 60.0 and dir_to_target().dot(_charge_dir) > -0.1:
 				_hit_done = true
 				_slash_fx = 1.0
 				target.take_damage(26.0 * damage_mult, global_position, self)
@@ -82,7 +86,7 @@ func _think(delta: float) -> void:
 				Combat.shake(0.45)
 				Sfx.play(&"slam", -3.0)
 			if _state_t <= 0.0 or hit_wall:
-				_slash_fx = 1.0
+				# (no slash flash here: the dash has passed the player, it would point away from them)
 				if phase >= 2:
 					for side in [-1.0, 1.0]:
 						var dir: Vector2 = _charge_dir.orthogonal() * side
@@ -94,21 +98,23 @@ func _think(delta: float) -> void:
 				else:
 					_end_attack()
 		&"spin":
-			_spin += delta * 15.0
+			# Blade flurry: advances on the player facing them, slashing left-right with the naginata.
+			# Each slash only hits in front of the Ronin (a ~140 degree arc).
 			steer_to(target.global_position, move_speed * 1.4 * speed_mult)
 			_step_t -= delta
 			if _step_t <= 0.0:
 				_step_t = 0.3
-				if dist_to_target() < hit_radius + 90.0:
+				_spin = -_spin if _spin != 0.0 else 1.0
+				_slash_fx = 1.0
+				if dist_to_target() < hit_radius + 100.0 and dir_to_target().dot(_turret) > 0.35:
 					target.take_damage(12.0 * damage_mult, global_position, self)
 					Combat.spark(target.global_position, accent, 1.0)
-				Combat.damage_destructibles(global_position, hit_radius + 90.0, 20.0)
-				Sfx.play(&"saber", -12.0, 0.2)
+				Combat.damage_destructibles(global_position + _turret * 60.0, hit_radius + 70.0, 20.0, _turret, 1.2)
+				Sfx.play(&"saber", -10.0, 0.2)
 				if phase >= 3:
-					for i in 8:
-						shoot(Vector2.from_angle(_spin + i * TAU / 8.0), 280.0, 8.0, accent.lightened(0.3), 1.1)
+					for i in 5:
+						shoot(_turret.rotated((i - 2) * 0.28), 300.0, 8.0, accent.lightened(0.3), 1.1)
 			if _state_t <= 0.0:
-				_turret = dir_to_target()
 				_end_attack()
 		&"storm":
 			desired_velocity = Vector2.ZERO
@@ -146,6 +152,8 @@ func _pick_attack() -> void:
 	options.erase(_last_attack)
 	_state = options.pick_random()
 	_last_attack = _state
+	# Every attack starts squared up to the player.
+	_turret = dir_to_target()
 	match _state:
 		&"waves":
 			_step = 3
@@ -171,8 +179,6 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	var shake := Vector2(randf_range(-4, 4), randf_range(-4, 4)) if _roar > 0.0 or _dying > 0.0 else Vector2.ZERO
 	var rot := _turret.angle() + PI / 2
-	if _state == &"spin":
-		rot = _spin
 	var step := absf(sin(_t * 7.0)) * 0.02 if velocity.length() > 20.0 and _state == &"idle" else 0.0
 	var s := Vector2.ONE * (RONIN_SCALE + step)
 	var half := RONIN_TEX.get_size() / 2
@@ -187,17 +193,12 @@ func _draw() -> void:
 		body = body.lerp(Color(1.6, 1.1, 0.8), 0.4 + 0.4 * sin(_t * 30.0))
 	draw_texture(RONIN_TEX, -half, body)
 	draw_set_transform(shake)
-	# Whirlwind: a blurred ring of blade light around the spinning naginata.
-	if _state == &"spin":
-		var r := RONIN_TEX.get_size().x * RONIN_SCALE * 0.5
-		draw_arc(Vector2.ZERO, r, 0.0, TAU, 48, Color(accent, 0.18), 30.0, true)
-		for k in 2:
-			var a := _spin + k * PI
-			draw_arc(Vector2.ZERO, r, a - 1.2, a, 16, Color(accent.lightened(0.4), 0.7), 6.0, true)
+	# Slash arcs, always in FRONT of the Ronin. During the blade flurry they sweep left / right in turn.
 	if _slash_fx > 0.0:
 		var a := _turret.angle()
-		draw_arc(Vector2.ZERO, 120.0, a - 1.5, a + 1.5, 24, Color(accent, 0.45 * _slash_fx), 22.0 * _slash_fx, true)
-		draw_arc(Vector2.ZERO, 126.0, a - 1.3, a + 1.3, 24, Color(1, 0.95, 0.85, 0.9 * _slash_fx), 4.0, true)
+		var sweep := 0.0 if _state != &"spin" else _spin * (1.0 - _slash_fx) * 0.9
+		draw_arc(Vector2.ZERO, 120.0, a - 1.2 + sweep, a + 1.2 + sweep, 24, Color(accent, 0.45 * _slash_fx), 22.0 * _slash_fx, true)
+		draw_arc(Vector2.ZERO, 126.0, a - 1.0 + sweep, a + 1.0 + sweep, 24, Color(1, 0.95, 0.85, 0.9 * _slash_fx), 4.0, true)
 	draw_set_transform(Vector2.ZERO)
 	if _state == &"dash_windup":
 		var reach := _charge_dir * DASH_SPEED * DASH_TIME

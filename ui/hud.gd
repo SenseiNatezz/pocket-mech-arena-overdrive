@@ -52,6 +52,8 @@ func _ready() -> void:
 	_objective.position = Vector2(-300, 14)
 	_objective.size = Vector2(600, 30)
 	root.add_child(_objective)
+	Layout.changed.connect(_on_layout)
+	_on_layout(Layout.portrait)
 
 	_banner = _label(46, Color.WHITE)
 	_banner.set_anchors_preset(Control.PRESET_CENTER)
@@ -267,11 +269,14 @@ func _on_weapon_unlocked(names: Array[String]) -> void:
 	Sfx.play(&"levelup", -6.0, 0.0)
 	if _toast_tw:
 		_toast_tw.kill()
-	_unlock_toast.position.x = -410.0
+	# (`position` is in parent coordinates, so slide in to 450 px left of the right edge; in portrait
+	# it sits below the status card + boss bar)
+	var x := (_unlock_toast.get_parent() as Control).size.x - 450.0
+	_unlock_toast.position = Vector2(x + 40.0, 170.0 if Layout.portrait else 70.0)
 	_toast_tw = create_tween()
 	_toast_tw.set_parallel()
 	_toast_tw.tween_property(_unlock_toast, "modulate:a", 1.0, 0.2)
-	_toast_tw.tween_property(_unlock_toast, "position:x", -450.0, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_toast_tw.tween_property(_unlock_toast, "position:x", x, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_toast_tw.chain().tween_property(_unlock_toast, "modulate:a", 0.0, 0.6).set_delay(4.0)
 
 
@@ -409,11 +414,13 @@ func _draw_bars() -> void:
 				c.draw_rect(Rect2(Vector2.ZERO, vp).grow(-i * 8), Color(1, 0.05, 0.05, a * (1.0 - i / 6.0) * 0.5), false, 8.0)
 		_draw_status(c, font)
 	# Boss bar.
-	if is_instance_valid(boss) and not boss.dead:
-		var w := minf(vp.x * 0.5, 640.0)
-		var bar := Rect2(vp.x / 2 - w / 2, 160.0 if Controls.device == Controls.Device.TOUCH else 132.0, w, 16)
+	var boss_alive: bool = is_instance_valid(boss) and not boss.dead
+	# The objective line would just repeat "Destroy the <boss>" under the boss bar.
+	_objective.visible = not boss_alive
+	if boss_alive:
+		var bar := boss_bar_rect()
 		var col: Color = boss.get("accent")
-		_text(font, Vector2(bar.position.x, bar.position.y - 8), "%s  -  PHASE %d" % [boss.get("boss_name"), boss.get("phase")], 16, col.lightened(0.3))
+		_text(font, Vector2(bar.position.x, bar.position.y - 7), "%s  -  PHASE %d" % [boss.get("boss_name"), boss.get("phase")], 15, col.lightened(0.3))
 		c.draw_rect(bar.grow(3), Color(0, 0, 0, 0.7))
 		c.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(boss.hp / boss.max_hp, 0.0, 1.0), bar.size.y)), col)
 		for k in [0.66, 0.33]:
@@ -424,7 +431,7 @@ func _draw_bars() -> void:
 	if Game.is_endless():
 		place = "ENDLESS  WAVE %d  (BEST %d)" % [maxi(Game.endless_wave + 1, 1), Game.endless_best]
 	var info := "%s   %s   KILLS %d" % [place, _fmt_time(Game.run_time), Game.kills]
-	var iy := 134.0 if Controls.device == Controls.Device.TOUCH else 28.0
+	var iy := 134.0 if Controls.device == Controls.Device.TOUCH and not Layout.portrait else 28.0
 	c.draw_string_outline(font, Vector2(vp.x - 420, iy), info, HORIZONTAL_ALIGNMENT_RIGHT, 400, 14, 5, Color(0, 0, 0, 0.8))
 	c.draw_string(font, Vector2(vp.x - 420, iy), info, HORIZONTAL_ALIGNMENT_RIGHT, 400, 14, Color(0.8, 0.9, 1.0))
 	# Difficulty tag under it (not in the ranges, where enemies don't scale).
@@ -578,3 +585,21 @@ func _dial(p: Vector2, frac: float, col: Color, caption: String, font: Font) -> 
 	if ready:
 		_bars.draw_circle(p, 3.0, col)
 	_bars.draw_string(font, p + Vector2(-20, 17), caption, HORIZONTAL_ALIGNMENT_CENTER, 40, 8, Color(col, 0.75))
+
+
+## Portrait: the objective line drops below the status card (the top row is full there).
+func _on_layout(portrait: bool) -> void:
+	_objective.position.y = 122.0 if portrait else 14.0
+
+
+## Boss health bar: centred right under the top edge, between the status card (left) and the run info
+## (right; on touch screens the ability buttons). The name + phase sit just above it.
+## Portrait: full width, just under the status card + run info.
+func boss_bar_rect() -> Rect2:
+	var vp := _bars.size
+	if Layout.portrait:
+		return Rect2(20.0, 140.0, vp.x - 40.0, 14.0)
+	var right_reserve := 460.0 if Controls.device == Controls.Device.TOUCH else 360.0
+	var half := minf(vp.x / 2.0 - 405.0, vp.x / 2.0 - right_reserve)
+	var w := clampf(half * 2.0, 300.0, 640.0)
+	return Rect2(vp.x / 2.0 - w / 2.0, 30.0, w, 14.0)

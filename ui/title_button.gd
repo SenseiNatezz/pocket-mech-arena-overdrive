@@ -62,6 +62,9 @@ func _draw() -> void:
 	# Text.
 	var font := get_theme_default_font()
 	var fs := 24 if h >= 52 else 20
+	# Long labels on narrow buttons shrink to fit (text area = width minus the chevron margins).
+	while fs > 14 and font.get_string_size(label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w - 96:
+		fs -= 1
 	var ty := h / 2 + fs * 0.36
 	var tc := Color(0.78, 0.86, 0.95).lerp(Color.WHITE, _hl)
 	if disabled:

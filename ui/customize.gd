@@ -27,6 +27,12 @@ const PANEL_EDGE := Color(0.3, 0.5, 0.75, 0.45)
 const MECH_POS := Vector2(960, 300)
 const FEET_Y := 500.0
 const MECH_SCALE := 0.79
+## Portrait (Layout.portrait): the same pieces restacked in a 720-wide column - title, then the showcase
+## + CURRENT SETUP (moved left and down), then the paint panel (moved under them). The keyboard/mouse
+## hint bar is hidden there.
+const PORTRAIT_SIZE := Vector2(720, 1290)
+const PORTRAIT_SHIFT_STAGE := Vector2(-600, 60)
+const PORTRAIT_SHIFT_PANEL := Vector2(80, 622)
 
 class Swatch:
 	extends Button
@@ -89,6 +95,9 @@ var _offset := Vector2.ZERO
 var _dragging := 0
 var _t := 0.0
 var _flash := 0.0
+## Landscape position of every top-level control (restored when the phone turns back).
+var _land_pos := {}
+var _stage_shift := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -208,6 +217,11 @@ func _ready() -> void:
 		_label(hints[i][1], 15, Color(0.8, 0.88, 0.96), Vector2(x + 74, 681))
 
 	_status = _label("", 14, Color(0.5, 1.0, 0.7), Vector2(720, 520))
+	for c in get_children():
+		if c is Control:
+			_land_pos[c] = (c as Control).position
+	Layout.changed.connect(_apply_layout)
+	_apply_layout(Layout.portrait)
 	_refresh()
 	_swatches["armor"][_look["armor"]].grab_focus()
 	for a in OS.get_cmdline_user_args():
@@ -217,6 +231,21 @@ func _ready() -> void:
 			_refresh()
 	modulate.a = 0.0
 	create_tween().tween_property(self, "modulate:a", 1.0, 0.35)
+
+
+func _apply_layout(portrait: bool) -> void:
+	size = PORTRAIT_SIZE if portrait else Vector2(1280, 720)
+	_stage_shift = PORTRAIT_SHIFT_STAGE if portrait else Vector2.ZERO
+	_stage.position = _stage_shift
+	for c: Control in _land_pos:
+		var p: Vector2 = _land_pos[c]
+		c.visible = not (portrait and p.y >= 670.0)  # hint bar
+		if not portrait or p.y < 110.0:  # title stays put
+			c.position = p
+		elif p.x < 540.0:
+			c.position = p + PORTRAIT_SHIFT_PANEL
+		else:
+			c.position = p + PORTRAIT_SHIFT_STAGE
 
 
 # --- building helpers ----------------------------------------------------------------------------------
@@ -368,8 +397,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _input(event: InputEvent) -> void:
 	var over_stage := false
 	if event is InputEventMouse:
-		var lp: Vector2 = event.position - position
-		over_stage = lp.x > 560 and lp.y < 545
+		var lp: Vector2 = event.position - position - _stage_shift
+		# (portrait: not over the title, which sits above the showcase there)
+		over_stage = lp.x > 560 and lp.y < 545 and (_stage_shift == Vector2.ZERO or lp.y > 50.0)
 	if event is InputEventMouseButton:
 		if event.pressed and over_stage:
 			if event.button_index == MOUSE_BUTTON_WHEEL_UP:

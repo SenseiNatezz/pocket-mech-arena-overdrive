@@ -1,6 +1,7 @@
 class_name ArmoryPage
 extends Control
-## Main menu ARMORY: every primary weapon in the game as a card (Higgsfield weapon art) in a 6-column grid,
+## Main menu ARMORY: every primary weapon in the game as a card (Higgsfield weapon art) in a 6-column grid
+## (5 columns, detail panel below, when the screen is portrait - see _relayout()),
 ## plus a detail panel with the selected weapon displayed on a rack, its type, description, stat bars
 ## (damage / speed / range) and unlock progress. Weapons unlock by beating waves (Game.waves_beaten);
 ## pressing an unlocked card equips it. Works with mouse, touch and keyboard/gamepad focus.
@@ -13,8 +14,15 @@ signal start_pressed
 const CYAN := Color(0.35, 0.75, 1.0)
 const GOLD := Color(1.0, 0.82, 0.3)
 const COLS := 6
+## Portrait (phones held upright): cards per row.
+const PORTRAIT_COLS := 5
 
 var _cards: Array[Card] = []
+var _title: Label
+var _sub: Label
+var _grid: GridContainer
+var _back: TitleButton
+var _portrait := false
 var _detail: Control
 var _desc: Label
 var _selected := &"blaster"
@@ -31,46 +39,35 @@ func _ready() -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(shade)
 
-	var title := _label("LOADOUT" if start_mode else "ARMORY", 40, Color.WHITE)
-	title.position = Vector2(48, 22)
-	add_child(title)
-	var sub := _label("Pick the weapon you start this mission with, then press START MISSION." if start_mode
+	_title = _label("LOADOUT" if start_mode else "ARMORY", 40, Color.WHITE)
+	add_child(_title)
+	_sub = _label("Pick the weapon you start this mission with, then press START MISSION." if start_mode
 		else "Beat waves in any mode to unlock new weapons. Press a weapon to equip it.", 15, Color(0.7, 0.85, 1.0, 0.85))
-	sub.position = Vector2(52, 74)
-	add_child(sub)
+	_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_sub)
 	_counter = _label("", 20, GOLD)
-	_counter.position = Vector2(300, 38)
-	_counter.size = Vector2(566, 30)
 	_counter.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_counter)
 
-	var grid := GridContainer.new()
-	grid.columns = COLS
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 14)
-	grid.position = Vector2(48, 112)
-	add_child(grid)
+	_grid = GridContainer.new()
+	_grid.add_theme_constant_override("v_separation", 14)
+	add_child(_grid)
 	for w in Game.WEAPONS:
 		var c := Card.new(w)
 		c.pressed.connect(_on_card_pressed.bind(c.id))
 		c.focus_entered.connect(_select.bind(c.id))
-		grid.add_child(c)
+		_grid.add_child(c)
 		_cards.append(c)
 
-	# Detail panel (right).
+	# Detail panel (right in landscape, below the grid in portrait).
 	_detail = Control.new()
-	_detail.position = Vector2(880, 24)
-	_detail.size = Vector2(360, 672)
 	_detail.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_detail.draw.connect(_draw_detail)
 	add_child(_detail)
 	_desc = _label("", 15, Color(0.8, 0.9, 1.0))
 	_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_desc.position = Vector2(20, 290)
-	_desc.size = Vector2(320, 140)
 	_detail.add_child(_desc)
 	_equip_btn = TitleButton.new("Equip", Vector2(320, 48))
-	_equip_btn.position = Vector2(900, 580)
 	_equip_btn.pressed.connect(func() -> void:
 		if start_mode and Game.is_unlocked(_selected):
 			Game.equip(_selected)
@@ -78,11 +75,77 @@ func _ready() -> void:
 		else:
 			_on_card_pressed(_selected))
 	add_child(_equip_btn)
-	var back := TitleButton.new("Back", Vector2(320, 48))
-	back.position = Vector2(900, 638)
-	back.pressed.connect(func() -> void: back_pressed.emit())
-	add_child(back)
+	_back = TitleButton.new("Back", Vector2(320, 48))
+	_back.pressed.connect(func() -> void: back_pressed.emit())
+	add_child(_back)
+	# Phones can rotate: re-lay out for portrait / landscape.
+	get_viewport().size_changed.connect(_relayout, CONNECT_DEFERRED)
+	var layout := get_node_or_null("/root/Layout")
+	if layout:
+		layout.changed.connect(func(_p: bool) -> void: _relayout())
+	_relayout()
 	refresh()
+
+
+## Landscape (1280 wide): 6-column grid, tall detail panel on the right, buttons under it.
+## Portrait (720 wide): 5-column grid, a wide two-column detail panel below it, buttons side by side at
+## the bottom.
+func _relayout() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	_portrait = vp.x < vp.y
+	if _portrait:
+		var w := vp.x - 48.0
+		_title.position = Vector2(24, 18)
+		_counter.add_theme_font_size_override("font_size", 17)
+		_counter.position = Vector2(24, 30)
+		_counter.size = Vector2(w, 30)
+		_sub.add_theme_font_size_override("font_size", 14)
+		_sub.position = Vector2(26, 72)
+		_sub.size = Vector2(w - 4, 36)
+		_grid.columns = PORTRAIT_COLS
+		_grid.add_theme_constant_override("h_separation", 10)
+		_grid.reset_size()
+		var gw := PORTRAIT_COLS * 126.0 + (PORTRAIT_COLS - 1) * 10.0
+		_grid.position = Vector2(roundf((vp.x - gw) / 2), 112)
+		var top := _grid.position.y + _grid.get_combined_minimum_size().y + 18.0
+		var bw := (w - 12.0) / 2
+		_equip_btn.custom_minimum_size = Vector2(bw, 52)
+		_back.custom_minimum_size = Vector2(bw, 52)
+		_equip_btn.reset_size()
+		_back.reset_size()
+		_equip_btn.position = Vector2(24, vp.y - 72)
+		_back.position = Vector2(24 + bw + 12, vp.y - 72)
+		# The panel hugs its content (~280 px) and sits centred in the space between grid and buttons.
+		var room := maxf(vp.y - 86 - top, 256)
+		var dh := minf(room, 284.0)
+		_detail.position = Vector2(24, roundf(top + (room - dh) / 2))
+		_detail.size = Vector2(w, dh)
+		var oy := maxf(0.0, (_detail.size.y - 256) / 2)
+		_desc.add_theme_font_size_override("font_size", 14)
+		_desc.position = Vector2(336, 14 + oy)
+		_desc.size = Vector2(w - 352, 118)
+	else:
+		_title.position = Vector2(48, 22)
+		_counter.add_theme_font_size_override("font_size", 20)
+		_counter.position = Vector2(300, 38)
+		_counter.size = Vector2(566, 30)
+		_sub.add_theme_font_size_override("font_size", 15)
+		_sub.position = Vector2(52, 74)
+		_sub.size = Vector2(800, 24)
+		_grid.columns = COLS
+		_grid.add_theme_constant_override("h_separation", 12)
+		_grid.position = Vector2(48, 112)
+		_detail.position = Vector2(880, 24)
+		_detail.size = Vector2(360, 672)
+		_desc.add_theme_font_size_override("font_size", 15)
+		_desc.position = Vector2(20, 290)
+		_desc.size = Vector2(320, 140)
+		for b in [_equip_btn, _back]:
+			b.custom_minimum_size = Vector2(320, 48)
+			b.reset_size()
+		_equip_btn.position = Vector2(900, 580)
+		_back.position = Vector2(900, 638)
+	_detail.queue_redraw()
 
 
 func _label(txt: String, fs: int, col: Color) -> Label:
@@ -159,6 +222,9 @@ func _draw_detail() -> void:
 	# Panel.
 	d.draw_rect(Rect2(Vector2.ZERO, d.size), Color(0.02, 0.05, 0.12, 0.85))
 	d.draw_rect(Rect2(Vector2.ZERO, d.size), Color(CYAN, 0.6), false, 2.0)
+	if _portrait:
+		_draw_detail_wide(d, w, unlocked, font)
+		return
 	# Weapon on a lit display rack (art turned to lie horizontally).
 	var rack := Rect2(16, 16, d.size.x - 32, 180)
 	d.draw_rect(rack, Color(0.04, 0.1, 0.2, 0.9))
@@ -194,6 +260,43 @@ func _draw_detail() -> void:
 		var f := clampf(Game.waves_beaten / float(need), 0.0, 1.0)
 		d.draw_rect(Rect2(20, 540, 320, 10), Color(0.15, 0.2, 0.3, 0.8))
 		d.draw_rect(Rect2(20, 540, 320 * f, 10), GOLD)
+
+
+## Portrait detail panel (wide and short): rack, name, type and unlock progress on the left; the
+## description label (_desc) and stat bars on the right. Content is centred vertically in tall panels.
+func _draw_detail_wide(d: Control, w: Dictionary, unlocked: bool, font: Font) -> void:
+	var oy := maxf(0.0, (d.size.y - 256) / 2)
+	var rack := Rect2(16, 14 + oy, 300, 150)
+	d.draw_rect(rack, Color(0.04, 0.1, 0.2, 0.9))
+	for i in 5:
+		d.draw_line(Vector2(rack.position.x, rack.end.y - 16 - i * 3), Vector2(rack.end.x, rack.end.y - 16 - i * 3),
+			Color(CYAN, 0.05 + 0.03 * i), 1.0)
+	d.draw_circle(rack.get_center(), 70.0, Color(CYAN, 0.06))
+	var tex: Texture2D = load("res://assets/hq/weapons/%s.png" % w["icon"])
+	var ts := tex.get_size()
+	var k := minf((rack.size.x - 30) / ts.y, (rack.size.y - 24) / ts.x)
+	d.draw_set_transform(rack.get_center(), PI / 2, Vector2(k, k))
+	d.draw_texture(tex, -ts / 2, Color.WHITE if unlocked else Color(0.1, 0.12, 0.16))
+	d.draw_set_transform(Vector2.ZERO)
+	if not unlocked:
+		_draw_lock(d, rack.get_center(), 1.2)
+	d.draw_string(font, Vector2(18, 192 + oy), String(w["name"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, 300, 21,
+		Color.WHITE)
+	var kind := "MELEE" if w.get("melee", false) else "RANGED"
+	d.draw_string(font, Vector2(18, 214 + oy), kind + ("   //   EQUIPPED" if _selected == Game.weapon else ""),
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 13, GOLD if _selected == Game.weapon else CYAN)
+	var need := int(w["waves"])
+	if not unlocked and need > 0:
+		var f := clampf(Game.waves_beaten / float(need), 0.0, 1.0)
+		d.draw_rect(Rect2(18, 228 + oy, 296, 8), Color(0.15, 0.2, 0.3, 0.8))
+		d.draw_rect(Rect2(18, 228 + oy, 296 * f, 8), GOLD)
+	var names := ["DAMAGE", "SPEED", "RANGE"]
+	for i in 3:
+		var y := 148.0 + oy + i * 30.0
+		d.draw_string(font, Vector2(336, y + 12), names[i], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.7, 0.85, 1.0))
+		for s in 5:
+			var on: bool = s < int(w["stats"][i])
+			d.draw_rect(Rect2(420 + s * 44, y, 38, 13), Color(CYAN, 0.9) if on else Color(0.15, 0.2, 0.3, 0.7))
 
 
 static func _draw_lock(ci: CanvasItem, c: Vector2, s := 1.0) -> void:

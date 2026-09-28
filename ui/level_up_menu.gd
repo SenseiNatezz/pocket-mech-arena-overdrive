@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## Level-up menu (created by the HUD): pauses the game and offers 3 compact upgrade cards from
-## Upgrades.roll_choices(). Short, wide cards (icon left, name + description right) under a light shade.
+## Upgrades.roll_choices(). Short, wide cards (icon left, name + description right) under a light shade:
+## side by side on landscape screens, one column of wider cards on portrait / narrow ones.
 ## PLACEMENT: every time it opens it looks at what's on screen (the HUD status card / run info / boss
 ## bar, the mech, other overlays like the Weapon Range weapon bar + spawn panel) and
 ## sits in the free band that covers the least of them (preferring the upper half).
@@ -45,6 +46,12 @@ class UpgradeCard:
 		_desc.add_theme_color_override("font_color", Color(0.82, 0.88, 0.96))
 		_desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_desc)
+
+	## Portrait / narrow screens use wider cards stacked vertically.
+	func set_width(w: float) -> void:
+		custom_minimum_size = Vector2(w, CARD_SIZE.y)
+		pivot_offset = custom_minimum_size / 2
+		_desc.size = Vector2(w - 94, 46)
 
 	func setup(upgrade: StringName) -> void:
 		id = upgrade
@@ -103,7 +110,9 @@ var _root: Control
 var _box: VBoxContainer
 var _title: Label
 var _sub: Label
-var _row: HBoxContainer
+## Horizontal on landscape screens, vertical (stacked cards) on portrait / narrow ones.
+var _row: BoxContainer
+var _stacked := false
 var _cards: Array[UpgradeCard] = []
 var _arm_t := 0.0
 var _auto_t := -1.0
@@ -133,7 +142,7 @@ func _ready() -> void:
 	head.add_child(_title)
 	_sub = _label("", 15, Color(0.8, 0.9, 1.0))
 	head.add_child(_sub)
-	_row = HBoxContainer.new()
+	_row = BoxContainer.new()
 	_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_row.add_theme_constant_override("separation", 12)
 	_box.add_child(_row)
@@ -145,6 +154,11 @@ func _ready() -> void:
 	var hint := _label("Click / tap a card   -   Arrows + Enter   -   D-pad + A", 11, Color(1, 1, 1, 0.5))
 	_box.add_child(hint)
 	Upgrades.level_up_ready.connect(open)
+	# Rotating the phone while the menu is up re-fits it (column vs row) and re-places it.
+	get_viewport().size_changed.connect(_on_screen_changed, CONNECT_DEFERRED)
+	var layout := get_node_or_null("/root/Layout")
+	if layout:
+		layout.changed.connect(func(_p: bool) -> void: _on_screen_changed())
 	if Upgrades.pending > 0:
 		open.call_deferred()
 
@@ -180,6 +194,7 @@ func open() -> void:
 ## Shows a fresh set of 3 cards (animated in).
 func _deal() -> void:
 	var choices := Upgrades.roll_choices(3)
+	_fit_to_screen()
 	_sub.text = "LEVEL %d   -   choose an upgrade%s" % [Upgrades.level - Upgrades.pending + 1,
 		"   (%d more after this)" % (Upgrades.pending - 1) if Upgrades.pending > 1 else ""]
 	_arm_t = ARM_TIME
@@ -193,8 +208,9 @@ func _deal() -> void:
 		card.modulate.a = 0.0
 		var tw := card.create_tween().set_parallel()
 		tw.tween_property(card, "modulate:a", 1.0, 0.2).set_delay(i * 0.07)
-		tw.tween_property(card, "position:y", 0.0, 0.25).from(24.0).set_delay(i * 0.07) \
-			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		if not _stacked:  # (a stacked column owns the cards' y, so those only fade in)
+			tw.tween_property(card, "position:y", 0.0, 0.25).from(24.0).set_delay(i * 0.07) \
+				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_place()
 	_title.pivot_offset = _title.size / 2
 	_title.scale = Vector2(1.25, 1.25)
@@ -203,6 +219,25 @@ func _deal() -> void:
 
 
 # --- placement ------------------------------------------------------------------------------------------
+
+func _on_screen_changed() -> void:
+	if visible:
+		_fit_to_screen()
+		_place()
+
+
+## Landscape: 3 cards side by side. Portrait (or too narrow for 3 across): one column of wider cards.
+func _fit_to_screen() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	_stacked = vp.x < vp.y or vp.x < CARD_SIZE.x * 3 + 24 + 32
+	_row.vertical = _stacked
+	_row.add_theme_constant_override("separation", 10 if _stacked else 12)
+	var w := minf(460.0, vp.x - 48.0) if _stacked else CARD_SIZE.x
+	for c in _cards:
+		c.set_width(w)
+	_row.reset_size()
+	_box.reset_size()
+
 
 ## Puts the menu (centred horizontally) at the height where it covers the least of what's on screen.
 func _place() -> void:
@@ -238,9 +273,9 @@ func _reserved_rects(vp: Vector2) -> Array:
 	out.append([Rect2(0, 0, 392, 124 if touch else 132), 1.0])
 	out.append([Rect2(vp.x - 440, 108 if touch else 0, 440, 56 if touch else 62), 1.0])
 	var hud := get_parent()
-	if hud and is_instance_valid(hud.get("boss")) and not hud.boss.dead:
-		var w := minf(vp.x * 0.5, 640.0)
-		out.append([Rect2(vp.x / 2 - w / 2, (160.0 if touch else 132.0) - 26.0, w, 48), 1.0])
+	if hud and is_instance_valid(hud.get("boss")) and not hud.boss.dead and hud.has_method("boss_bar_rect"):
+		var bar: Rect2 = hud.boss_bar_rect()
+		out.append([bar.grow_individual(0, 26, 0, 8), 1.0])
 	# The mech.
 	var mech := get_tree().get_first_node_in_group("player") as Node2D
 	if mech:

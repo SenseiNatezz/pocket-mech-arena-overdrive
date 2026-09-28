@@ -184,6 +184,8 @@ func _pick_attack() -> void:
 	options.erase(_last_attack)
 	_state = options.pick_random()
 	_last_attack = _state
+	# Every attack starts squared up to the player.
+	_turret = dir_to_target()
 	match _state:
 		&"fan":
 			_step = 3

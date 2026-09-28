@@ -18,9 +18,9 @@ const TRAIL_THRUST := preload("res://assets/hq/fx/slash_trail_thrust.png")
 const IMPACT := preload("res://assets/hq/fx/slash_impact.png")
 
 ## Hilt position at rest in Body space (the sprite faces up; +x = the mech's right hand).
-const HAND := Vector2(26, -14)
+const HAND := Vector2(22, -24)
 ## Rest pose: blade angled this far to the right of the aim, drawn at this fraction of its length.
-const REST_ANGLE := 0.8
+const REST_ANGLE := 0.45
 const REST_SCALE := 0.8
 ## Swing pivot -> hilt distance (the arm).
 const ARM := 18.0
@@ -31,6 +31,9 @@ const TRAIL_INNER := 0.28
 ## Impact flashes per swing, and how long the blade holds its finishing pose before easing back.
 const MAX_FLASHES := 3
 const HOLD := 0.22
+## Middle of each weapon's handle / grip area, as a fraction of its art height from the bottom
+## (measured from assets/hq/weapons/*.png). Long-hafted weapons are held a way up the shaft.
+const GRIP_AT := {"beam_saber": 0.15, "katana": 0.12, "spear": 0.28, "axe": 0.22, "scythe": 0.3, "greatsword": 0.14}
 
 var mech: Mech
 var _id := &""
@@ -56,11 +59,14 @@ var _fx: Node2D
 var _started := false
 var _flashes := 0
 var _hold := 0.0
+## Where the fist holds the current weapon, as a fraction of its art height from the bottom (GRIP_AT).
+var _grip_at := 0.12
 
 
 func _ready() -> void:
 	top_level = true
-	z_index = 3
+	# Relative to the mech (z 2): one below it, so the mech's fist is drawn over the handle it holds.
+	z_index = -1
 	_fx = TrailLayer.new()
 	_fx.rig = self
 	add_child(_fx)
@@ -167,6 +173,7 @@ func _equip(id: StringName) -> void:
 	_id = id
 	var w: Dictionary = MeleeKit.WEAPONS[id]
 	_tex = load("res://assets/hq/weapons/%s.png" % w["tex"])
+	_grip_at = GRIP_AT.get(String(w["tex"]), 0.12)
 	_length = w["reach"] * 0.95
 	_setup(w)
 	if w.get("hue", 0.0) != 0.0:
@@ -253,14 +260,18 @@ func _draw() -> void:
 		_draw_blade(_grip[b], _angle[b], _length * _ext[b])
 
 
+## `length` = how far the weapon reaches beyond the fist. The art is scaled so that part matches, and
+## drawn so the fist (`grip`) sits on the middle of the handle (_grip_at), with the pommel / shaft end
+## behind the hand. The rig draws BELOW the mech, so the mech's fist covers the handle it holds.
 func _draw_blade(grip: Vector2, angle: float, length: float) -> void:
 	var size := _tex.get_size()
-	var s := length / size.y
-	# Soft ground shadow, then the blade (art points up, grip at the bottom).
+	var s := length / (size.y * (1.0 - _grip_at))
+	var at := Vector2(-size.x / 2, -size.y * (1.0 - _grip_at))
+	# Soft ground shadow, then the weapon (art points up, handle at the bottom).
 	draw_set_transform(grip + Vector2(6, 9), angle + PI / 2, Vector2(s, s))
-	draw_texture(_tex, Vector2(-size.x / 2, -size.y), Color(0, 0, 0, 0.3))
+	draw_texture(_tex, at, Color(0, 0, 0, 0.3))
 	draw_set_transform(grip, angle + PI / 2, Vector2(s, s))
-	draw_texture(_tex, Vector2(-size.x / 2, -size.y))
+	draw_texture(_tex, at)
 	draw_set_transform(Vector2.ZERO)
 
 

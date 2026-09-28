@@ -14,6 +14,8 @@ extends Camera2D
 const PHONE_ZOOM := 1.3
 const TABLET_ZOOM := 1.15
 const PHONE_MAX_INCHES := 7.5
+## Portrait: how far (world px) the view shifts down so the mech sits above the thumb controls.
+const PORTRAIT_RAISE := 80.0
 
 var trauma := 0.0
 var _lead := Vector2.ZERO
@@ -52,6 +54,10 @@ func _process(delta: float) -> void:
 			var d := get_viewport().get_mouse_position().distance_to(screen_mech)
 			strength = clampf(d / (get_viewport_rect().size.y * 0.45), 0.0, 1.0)
 		target = mech.aim_dir * lead_distance * strength
+		if Layout.portrait:
+			# Narrow screen: half the sideways lead (it would push the mech to the edge), and frame the
+			# mech a little above centre, clear of the thumb controls along the bottom.
+			target = Vector2(target.x * 0.5, target.y + PORTRAIT_RAISE)
 	_lead = _lead.lerp(target, 1.0 - exp(-lead_smoothing * delta))
 	zoom = zoom.lerp(Vector2.ONE * _wanted_zoom(), 1.0 - exp(-4.0 * delta))
 	trauma = maxf(trauma - shake_decay * delta, 0.0)

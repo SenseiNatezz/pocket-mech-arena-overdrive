@@ -2,11 +2,14 @@ extends CanvasLayer
 ## Weapon Range overlay (see environment/gun_range.gd):
 ##   weapon bar  every weapon's Higgsfield art with its hotkey; click/tap a slot to switch
 ##   spawn panel SPAWN ENEMY buttons for every enemy type, SPAWN BOSS (Warden / Ronin / Seraph) + CLEAR
-## Two layouts, re-applied live when the input device or window size changes:
-##   desktop  weapon bar bottom centre (+ key hints), spawn panel down the right side
-##   touch    weapon bar sized to fit between the two thumb sticks, above the pause button; the spawn
-##            panel folds into a SPAWN toggle under the status card (a compact 2-column grid), so
-##            nothing covers the touch buttons
+## Layouts, re-applied live when the input device, window size or orientation (Layout.changed) changes:
+##   desktop   weapon bar bottom centre (+ key hints), spawn panel down the right side
+##   touch     weapon bar sized to fit between the two thumb sticks, above the pause button; the spawn
+##             panel folds into a SPAWN toggle under the status card (a compact 2-column grid), so
+##             nothing covers the touch buttons
+##   portrait  weapon bar as a 3-column grid bottom-left, above the move stick and left of the portrait
+##             ability buttons (x 16..238, clear of NOVA at x 258; bottom edge vp.y - 310); compact SPAWN
+##             toggle as on touch
 ## Keyboard hotkeys are handled by the range.
 
 const GOLD := Color(1.0, 0.82, 0.3)
@@ -18,13 +21,17 @@ const SLOT_GAP := 6
 const TOUCH_LEFT_STICK_RIGHT := 290.0
 const TOUCH_RIGHT_STICK_LEFT := 490.0
 const TOUCH_PAUSE_CLEAR := 70.0
+## Portrait: weapon grid columns, slot size and where it sits (clear of the portrait touch layout).
+const PORTRAIT_COLS := 3
+const PORTRAIT_SLOT := Vector2(70, 94)
+const PORTRAIT_BAR_BOTTOM := 310.0
 
 var gun_range: Node
 var _slots: Array[Button] = []
 var _keys: Array[Label] = []
 var _name: Label
 var _hint: Label
-var _bar: HBoxContainer
+var _bar: GridContainer
 var _panel: PanelContainer
 var _grid: GridContainer
 var _heads: Array[Label] = []
@@ -32,6 +39,7 @@ var _boss_btns: Array[Button] = []
 var _toggle: Button
 var _spawn_open := false
 var _touch := false
+var _portrait := false
 
 
 func _ready() -> void:
@@ -42,8 +50,9 @@ func _ready() -> void:
 	add_child(root)
 
 	# Weapon bar.
-	_bar = HBoxContainer.new()
-	_bar.add_theme_constant_override("separation", SLOT_GAP)
+	_bar = GridContainer.new()
+	_bar.add_theme_constant_override("h_separation", SLOT_GAP)
+	_bar.add_theme_constant_override("v_separation", SLOT_GAP)
 	root.add_child(_bar)
 	var ids: Array[StringName] = gun_range.weapon_ids()
 	for i in ids.size():
@@ -84,7 +93,10 @@ func _ready() -> void:
 
 	_spawn_open = OS.get_cmdline_user_args().has("--spawn-open")  # debug: screenshots of the open grid
 	Controls.device_changed.connect(func(_d: int) -> void: _relayout())
-	get_viewport().size_changed.connect(_relayout)
+	get_viewport().size_changed.connect(_relayout, CONNECT_DEFERRED)
+	var layout := get_node_or_null("/root/Layout")
+	if layout:
+		layout.changed.connect(func(_p: bool) -> void: _relayout())
 	_relayout()
 	refresh()
 
@@ -105,43 +117,65 @@ func _toggle_spawn() -> void:
 func _relayout() -> void:
 	_touch = Controls.device == Controls.Device.TOUCH
 	var vp := get_viewport().get_visible_rect().size
+	_portrait = vp.x < vp.y
+	# Touch screens and portrait both use the compact spawn toggle (no side panel).
+	var compact := _touch or _portrait
 	var n := _slots.size()
 	var slot := SLOT
+	var cols := n
 	var bar_bottom := vp.y - 14.0
-	if _touch:
+	if _portrait:
+		slot = PORTRAIT_SLOT
+		cols = PORTRAIT_COLS
+		bar_bottom = vp.y - PORTRAIT_BAR_BOTTOM
+	elif _touch:
 		var avail := (vp.x - TOUCH_RIGHT_STICK_LEFT) - TOUCH_LEFT_STICK_RIGHT - 20.0
 		var w := clampf((avail - (n - 1) * SLOT_GAP) / n, 36.0, 62.0)
 		slot = Vector2(w, roundf(w * 1.35))
 		bar_bottom = vp.y - TOUCH_PAUSE_CLEAR
 	for i in n:
 		_slots[i].custom_minimum_size = slot
-		_keys[i].visible = not _touch
+		_keys[i].visible = not compact
+	_bar.columns = cols
 	_bar.size = Vector2.ZERO
-	var bar_w := n * (slot.x + SLOT_GAP) - SLOT_GAP
+	var rows := ceili(n / float(cols))
+	var bar_w := cols * (slot.x + SLOT_GAP) - SLOT_GAP
+	var bar_h := rows * (slot.y + SLOT_GAP) - SLOT_GAP
 	var bar_x := vp.x / 2 - bar_w / 2
-	if _touch:
+	if _portrait:
+		bar_x = 16.0
+	elif _touch:
 		# Centre between the sticks (not the screen) so it never slides under the aim stick.
 		bar_x = TOUCH_LEFT_STICK_RIGHT + ((vp.x - TOUCH_RIGHT_STICK_LEFT) - TOUCH_LEFT_STICK_RIGHT) / 2 - bar_w / 2
-	_bar.position = Vector2(bar_x, bar_bottom - slot.y)
-	_name.add_theme_font_size_override("font_size", 18 if _touch else 22)
-	_name.position = Vector2(bar_x + bar_w / 2 - _name.size.x / 2, _bar.position.y - (30.0 if _touch else 64.0))
-	_hint.visible = not _touch
+	_bar.position = Vector2(bar_x, bar_bottom - bar_h)
+	if _portrait:
+		# Weapon name left-aligned just above the grid.
+		_name.add_theme_font_size_override("font_size", 16)
+		_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		_name.size = Vector2(bar_w + 40, 26)
+		_name.position = Vector2(bar_x, _bar.position.y - 30.0)
+	else:
+		_name.add_theme_font_size_override("font_size", 18 if _touch else 22)
+		_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_name.size = Vector2(600, 30)
+		_name.position = Vector2(bar_x + bar_w / 2 - _name.size.x / 2, _bar.position.y - (30.0 if _touch else 64.0))
+	_hint.visible = not compact
 	_hint.position = Vector2(vp.x / 2 - _hint.size.x / 2, _bar.position.y - 30.0)
 
-	_toggle.visible = _touch
+	_toggle.visible = compact
 	_toggle.text = "SPAWN  -" if _spawn_open else "SPAWN  +"
 	_toggle.position = Vector2(16, 116)
-	_panel.visible = not _touch or _spawn_open
-	_grid.columns = 2 if _touch else 1
+	_panel.visible = not compact or _spawn_open
+	_grid.columns = 2 if compact else 1
 	for h in _heads:
-		h.visible = not _touch
+		h.visible = not compact
 	for b in _boss_btns:
-		b.text = ("Boss: %s" if _touch else "%s") % b.get_meta("name")
+		b.text = ("Boss: %s" if compact else "%s") % b.get_meta("name")
 	for c in _grid.get_children():
 		if c is Button:
-			c.custom_minimum_size = Vector2(150, 34) if _touch else Vector2(160, 31)
+			c.custom_minimum_size = Vector2(150, 34) if compact else Vector2(160, 31)
 	_panel.size = Vector2.ZERO
-	_panel.position = Vector2(16, 158) if _touch else Vector2(vp.x - 196, 64)
+	_panel.position = Vector2(16, 158) if compact else Vector2(vp.x - 196, 64)
 
 
 func _label(txt: String, fs: int, col: Color) -> Label:

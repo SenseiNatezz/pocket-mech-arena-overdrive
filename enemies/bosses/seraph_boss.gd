@@ -55,7 +55,7 @@ func die() -> void:
 
 func _think(delta: float) -> void:
 	var speed_mult := 1.0 + (phase - 1) * 0.25
-	_turret = _turret.slerp(dir_to_target(), 1.0 - exp(-3.0 * delta))
+	_turret = _turret.slerp(dir_to_target(), 1.0 - exp(-(8.0 if _state != &"idle" else 4.0) * delta))
 	facing = _turret
 	if _roar > 0.0:
 		_roar -= delta
@@ -141,6 +141,8 @@ func _pick_attack() -> void:
 	options.erase(_last_attack)
 	_state = options.pick_random()
 	_last_attack = _state
+	# Every attack starts squared up to the player.
+	_turret = dir_to_target()
 	match _state:
 		&"volley":
 			_step = COUNT * 2
