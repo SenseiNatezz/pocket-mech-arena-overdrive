@@ -1,9 +1,9 @@
-# Pocket Mech Arena - Uragun Version
+# Pocket Mech Arena
 
-Landscape twin-stick, top-down mech shooter made in Godot 4.7 (GL Compatibility).
+Twin-stick, top-down mech shooter made in Godot 4.7 (GL Compatibility). Plays in landscape or portrait.
 
-**Play in your browser:** https://senseinatezz.github.io/pocket-mech-arena-uragun/
-**Windows download:** see [Releases](https://github.com/SenseiNatezz/pocket-mech-arena-uragun/releases)
+**Play in your browser:** https://senseinatezz.github.io/pocket-mech-arena-overdrive/
+**Windows download:** see [Releases](https://github.com/SenseiNatezz/pocket-mech-arena-overdrive/releases)
 
 ## How to play
 Five levels on painted top-down maps: Frozen Outpost, Jungle Megafactory, Alien Outpost, Skyway
