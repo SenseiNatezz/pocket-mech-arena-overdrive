@@ -40,6 +40,13 @@ const ASSETS := {
 	# Heavy Tank (replaced the Mortar Crab) + Gun Range target drone.
 	"enemies3/heavy_tank.png": [260, 0.2],
 	"enemies3/target_drone.png": [120, 0.2],
+	# Endless-mode robots (raw/enemies4 already faces up, trimmed; drawn at ~0.62 scale in game).
+	"enemies4/tidebreaker.png": [384, 0.15],
+	"enemies4/widow.png": [272, 0.15],
+	"enemies4/hornet.png": [168, 0.15],
+	"enemies4/coil.png": [304, 0.15],
+	"enemies4/bastion.png": [304, 0.15],
+	"enemies4/cinder.png": [256, 0.15],
 	# Armory weapons (card art + in-game swing sprites; all point up).
 	"weapons/beam_rifle.png": [256, 0.1],
 	"weapons/sniper.png": [256, 0.1],
@@ -60,7 +67,7 @@ const ASSETS := {
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var only: String = args[0] if not args.is_empty() else ""
-	for d in ["enemies2", "enemies3", "weapons"]:
+	for d in ["enemies2", "enemies3", "enemies4", "weapons"]:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT + d))
 	for f: String in ASSETS:
 		if not f.begins_with(only):

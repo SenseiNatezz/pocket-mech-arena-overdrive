@@ -94,6 +94,7 @@ func _run() -> void:
 	_check("5 waves beaten unlock the Sniper Beam", Game.is_unlocked(&"sniper"))
 	_check("leveled up along the way (level %d, %d upgrades)" % [Upgrades.level, Upgrades.stacks.size()],
 		Upgrades.level >= 3 and not Upgrades.stacks.is_empty())
+	await _new_robots()
 
 	# Stuck-wave safety nets. Let the next wave warp in, then keep one enemy alive.
 	await _wait_until(func() -> bool: return arena.zone._pending == 0 and not arena.zone._alive.is_empty(), 20.0)
@@ -140,3 +141,45 @@ func _run() -> void:
 
 	print("ENDLESS TEST %s (%d failed)" % ["OK" if _fails == 0 else "FAILED", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+## The Endless-only robots: late mixes bring them in (elites capped), early ones don't, and all six
+## run their AI next to the (invulnerable) mech for a few seconds: mines, flames, lunges, charges, wards.
+func _new_robots() -> void:
+	var kinds := ["hornet", "coil", "widow", "cinder", "bastion", "tidebreaker"]
+	var seen := {}
+	var caps_ok := true
+	for i in 40:
+		var l: Array[String] = arena.zone.endless_wave(24)
+		for k in l:
+			seen[k] = true
+		caps_ok = caps_ok and l.count("bastion") <= 3 and l.count("tidebreaker") <= 2
+	_check("late Endless waves bring the new robots (%s)" % ", ".join(seen.keys()), kinds.all(func(k: String) -> bool: return seen.has(k)))
+	_check("Bastion / Tidebreaker per-wave caps hold", caps_ok)
+	_check("early waves don't have them", not arena.zone.endless_wave(2).any(func(k: String) -> bool: return k in kinds))
+	var center := mech.global_position + Vector2(320, 0)
+	var bots := {}
+	for i in kinds.size():
+		var e: Enemy = arena.zone.ENEMIES[kinds[i]].instantiate()
+		e.position = center + Vector2.from_angle(TAU * i / kinds.size()) * 110.0
+		(arena.zone.enemy_parent if arena.zone.enemy_parent else arena.zone.get_parent()).add_child(e)
+		bots[kinds[i]] = e
+	await _frames(360)
+	_check("all six new robots run their AI for 6 s", kinds.all(func(k: String) -> bool:
+		return is_instance_valid(bots[k]) and not bots[k].dead))
+	_check("Widow lays mines (%d)" % bots["widow"].mines_laid, bots["widow"].mines_laid > 0)
+	_check("Bastion wards nearby robots (%d)" % bots["bastion"]._warded.size(), not bots["bastion"]._warded.is_empty())
+	_check("Tidebreaker has armor", bots["tidebreaker"].max_armor > 0.0)
+	# Warded robots take half damage.
+	var ally: Enemy = bots["bastion"]._warded[0] if not bots["bastion"]._warded.is_empty() else null
+	if ally and is_instance_valid(ally):
+		var before: float = ally.hp + ally.armor
+		ally.take_damage(10.0, ally.global_position + Vector2(0, 1), mech)
+		_check("warded robot takes half damage (%.1f)" % (before - ally.hp - ally.armor), is_equal_approx(before - ally.hp - ally.armor, 5.0)
+			or ally.armor_tier > 0)
+	# Cinder's fuel tanks blow when it dies (no errors, hurts nearby robots).
+	for k in kinds:
+		if is_instance_valid(bots[k]) and not bots[k].dead:
+			bots[k].die()
+	await _frames(10)
+	_check("new robots die cleanly", kinds.all(func(k: String) -> bool: return not is_instance_valid(bots[k]) or bots[k].dead))

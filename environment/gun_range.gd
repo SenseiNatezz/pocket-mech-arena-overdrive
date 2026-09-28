@@ -23,6 +23,9 @@ const SOLO_SPOT := Vector2(1700, 1880)
 const ENEMY_KINDS := [
 	["chaser", "Scrap Hound"], ["shooter", "Scrap Gunner"], ["blade_striker", "Blade Striker"],
 	["aegis_guardian", "Aegis Guardian"], ["lancer", "Lancer"], ["heavy_tank", "Heavy Tank"],
+	# Endless-mode robots.
+	["hornet", "Hornet"], ["coil", "Coil"], ["widow", "Widow"], ["cinder", "Cinder"], ["bastion", "Bastion"],
+	["tidebreaker", "Tidebreaker"],
 ]
 ## [scene path under res://enemies, display name, accent]
 const BOSS_KINDS := [
@@ -148,12 +151,16 @@ func spawn_boss(path: String) -> void:
 			hud.show_banner("BOSS DESTROYED", Color(0.4, 1.0, 0.6)))
 
 
-## Removes every enemy (spawned ones, a boss and anything it summoned).
+## Removes every enemy (spawned ones, a boss and anything it summoned) and any Widow mines left lying
+## around.
 func clear_enemies() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e is Enemy and is_instance_valid(e):
 			Combat.shockwave(e.global_position, 60.0, Color(0.5, 0.9, 1.0), 0.3)
 			e.queue_free()
+	for n in get_tree().get_nodes_in_group("damageable"):
+		if n is Widow.Mine and is_instance_valid(n):
+			n.queue_free()
 	_spawned.clear()
 	Combat.clear_enemy_bullets()
 

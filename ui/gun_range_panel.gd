@@ -3,9 +3,9 @@ extends CanvasLayer
 ##   weapon bar  every weapon's Higgsfield art with its hotkey; click/tap a slot to switch
 ##   spawn panel SPAWN ENEMY buttons for every enemy type, SPAWN BOSS (Warden / Ronin / Seraph) + CLEAR
 ## Layouts, re-applied live when the input device, window size or orientation (Layout.changed) changes:
-##   desktop   weapon bar bottom centre (+ key hints), spawn panel down the right side
+##   desktop   weapon bar bottom centre (+ key hints), spawn panel (2-column grids) down the right side
 ##   touch     weapon bar sized to fit between the two thumb sticks, above the pause button; the spawn
-##             panel folds into a SPAWN toggle under the status card (a compact 2-column grid), so
+##             panel folds into a SPAWN toggle under the status card (compact 3-column grids), so
 ##             nothing covers the touch buttons
 ##   portrait  weapon bar as a 3-column grid bottom-left, above the move stick and left of the portrait
 ##             ability buttons (x 16..238, clear of NOVA at x 258; bottom edge vp.y - 310); compact SPAWN
@@ -33,7 +33,9 @@ var _name: Label
 var _hint: Label
 var _bar: GridContainer
 var _panel: PanelContainer
+## Enemy buttons, and boss buttons + CLEAR ALL (2 columns on desktop, 3 in the compact touch/portrait menu).
 var _grid: GridContainer
+var _boss_grid: GridContainer
 var _heads: Array[Label] = []
 var _boss_btns: Array[Button] = []
 var _toggle: Button
@@ -76,20 +78,22 @@ func _ready() -> void:
 	_panel = PanelContainer.new()
 	_panel.add_theme_stylebox_override("panel", _box(Color(0.02, 0.05, 0.12, 0.8), CYAN))
 	root.add_child(_panel)
-	_grid = GridContainer.new()
-	_grid.add_theme_constant_override("h_separation", 6)
-	_grid.add_theme_constant_override("v_separation", 6)
-	_panel.add_child(_grid)
-	_heads.append(_head("SPAWN ENEMY"))
+	# Headings + two button grids (enemies; bosses + CLEAR) stacked in one column.
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 6)
+	_panel.add_child(list)
+	_heads.append(_head(list, "SPAWN ENEMY"))
+	_grid = _button_grid(list)
 	for k in gun_range.ENEMY_KINDS:
 		_grid.add_child(_button(k[1], func() -> void: gun_range.spawn_enemy(k[0])))
-	_heads.append(_head("SPAWN BOSS"))
+	_heads.append(_head(list, "SPAWN BOSS"))
+	_boss_grid = _button_grid(list)
 	for k in gun_range.BOSS_KINDS:
 		var b := _button(k[1], func() -> void: gun_range.spawn_boss(k[0]), k[2].lightened(0.35))
 		b.set_meta("name", k[1])
-		_grid.add_child(b)
+		_boss_grid.add_child(b)
 		_boss_btns.append(b)
-	_grid.add_child(_button("CLEAR ALL", gun_range.clear_enemies, Color(1.0, 0.55, 0.45)))
+	_boss_grid.add_child(_button("CLEAR ALL", gun_range.clear_enemies, Color(1.0, 0.55, 0.45)))
 
 	_spawn_open = OS.get_cmdline_user_args().has("--spawn-open")  # debug: screenshots of the open grid
 	Controls.device_changed.connect(func(_d: int) -> void: _relayout())
@@ -101,11 +105,19 @@ func _ready() -> void:
 	refresh()
 
 
-func _head(txt: String) -> Label:
+func _head(parent: Control, txt: String) -> Label:
 	var l := _label(txt, 16, GOLD)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_grid.add_child(l)
+	parent.add_child(l)
 	return l
+
+
+func _button_grid(parent: Control) -> GridContainer:
+	var g := GridContainer.new()
+	g.add_theme_constant_override("h_separation", 6)
+	g.add_theme_constant_override("v_separation", 6)
+	parent.add_child(g)
+	return g
 
 
 func _toggle_spawn() -> void:
@@ -166,16 +178,19 @@ func _relayout() -> void:
 	_toggle.text = "SPAWN  -" if _spawn_open else "SPAWN  +"
 	_toggle.position = Vector2(16, 116)
 	_panel.visible = not compact or _spawn_open
-	_grid.columns = 2 if compact else 1
+	# Compact: 3 columns so the open menu stays above the landscape move stick (y 158..~414).
+	# Desktop: 2 columns down the right side, well above the weapon bar.
+	for g: GridContainer in [_grid, _boss_grid]:
+		g.columns = 3 if compact else 2
+		for c in g.get_children():
+			c.custom_minimum_size = Vector2(150, 34) if compact else Vector2(150, 31)
+		g.reset_size()
 	for h in _heads:
 		h.visible = not compact
 	for b in _boss_btns:
 		b.text = ("Boss: %s" if compact else "%s") % b.get_meta("name")
-	for c in _grid.get_children():
-		if c is Button:
-			c.custom_minimum_size = Vector2(150, 34) if compact else Vector2(160, 31)
-	_panel.size = Vector2.ZERO
-	_panel.position = Vector2(16, 158) if compact else Vector2(vp.x - 196, 64)
+	_panel.reset_size()
+	_panel.position = Vector2(16, 158) if compact else Vector2(vp.x - 16 - _panel.get_combined_minimum_size().x, 64)
 
 
 func _label(txt: String, fs: int, col: Color) -> Label:

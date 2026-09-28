@@ -138,13 +138,19 @@ func _run() -> void:
 	var one: Enemy = gr._spawned[0]
 	one.die()
 	await _frames(5)
+	var mines_before := get_tree().get_nodes_in_group("damageable").filter(func(n: Node) -> bool: return n is Widow.Mine).size()
 	gr.clear_enemies()
 	await _frames(5)
 	var left := 0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e is Enemy:
 			left += 1
+	var mines := 0
+	for n in get_tree().get_nodes_in_group("damageable"):
+		if n is Widow.Mine:
+			mines += 1
 	_check("CLEAR removes spawned enemies (%d left)" % left, left == 0)
+	_check("CLEAR also removes Widow mines (%d laid, %d left)" % [mines_before, mines], mines == 0)
 
 	# Bosses: each one spawns with the HUD health bar; a new one replaces the old; phases work.
 	var hud := gr.get_node("HUD")

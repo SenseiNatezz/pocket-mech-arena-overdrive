@@ -36,6 +36,10 @@ var max_armor := 0.0
 var armor_tier := 0
 const ARMOR_NUMBER := Color(0.7, 0.85, 1.0)
 const TRIPLE_ARMOR_TINT := Color(0.55, 0.8, 1.5)
+## Bastion ward (enemies/bastion.gd): while `ward_t` > 0 this enemy takes WARD_MULT damage. A Bastion
+## keeps refreshing it on allies in range, so the ward drops soon after the Bastion dies.
+const WARD_MULT := 0.5
+var ward_t := 0.0
 
 
 func _ready() -> void:
@@ -77,6 +81,7 @@ func _physics_process(delta: float) -> void:
 	_contact_cd -= delta
 	_hp_bar_t -= delta
 	_spawn_t -= delta
+	ward_t -= delta
 	_flash = move_toward(_flash, 0.0, delta * 6.0)
 	if not is_instance_valid(target):
 		target = get_tree().get_first_node_in_group("player") as Mech
@@ -142,6 +147,9 @@ func take_damage(amount: float, _from_pos: Vector2, source: Node = null) -> void
 		return
 	_flash = 1.0
 	_hp_bar_t = 2.0
+	if ward_t > 0.0:
+		amount *= WARD_MULT
+		Combat.spark(global_position, Color(0.3, 1.0, 0.6), 0.6)
 	Combat.report_damage(amount, source, self)
 	# Armor soaks hits first: each point of armor absorbs `armor_tier` points of damage, so stripping
 	# it takes 2x / 3x the hits of the same amount of HP. Leftover damage carries into HP.

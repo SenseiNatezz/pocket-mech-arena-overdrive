@@ -22,6 +22,13 @@ const ENEMIES := {
 	"striker": preload("res://enemies/blade_striker.tscn"),
 	"aegis": preload("res://enemies/aegis_guardian.tscn"),
 	"lancer": preload("res://enemies/lancer.tscn"),
+	# Endless-only robots (see endless_wave).
+	"hornet": preload("res://enemies/hornet.tscn"),
+	"coil": preload("res://enemies/coil.tscn"),
+	"widow": preload("res://enemies/widow.tscn"),
+	"cinder": preload("res://enemies/cinder.tscn"),
+	"bastion": preload("res://enemies/bastion.tscn"),
+	"tidebreaker": preload("res://enemies/tidebreaker.tscn"),
 }
 
 @export var waves: PackedStringArray = [
@@ -106,6 +113,8 @@ func wave_damage_mult() -> float:
 
 ## Endless wave `n`: grows by ~1.4 enemies a wave (capped); shooters join at wave 2, heavy tanks at 3,
 ## blade strikers at 4, lancers at 6, aegis guardians at 8 - and all of them get more common later.
+## The Endless-only robots join too: Hornet drones at 3 (in pairs), Coils at 5, Widows at 7, Cinders at 9,
+## Bastions at 11 and the Tidebreaker mini-boss at 12 (those last two are capped per wave).
 ## Boss waves bring a few escorts instead of a full wave.
 func endless_wave(n: int) -> Array[String]:
 	var count := mini(4 + int(n * 1.4), MAX_ENDLESS_ENEMIES)
@@ -123,16 +132,36 @@ func endless_wave(n: int) -> Array[String]:
 		kinds.append(["lancer", 0.25 + minf(n * 0.01, 0.2)])
 	if n >= 8:
 		kinds.append(["aegis", 0.15 + minf(n * 0.008, 0.15)])
+	if n >= 3:
+		kinds.append(["hornet", 0.3 + minf(n * 0.01, 0.2)])
+	if n >= 5:
+		kinds.append(["coil", 0.25 + minf(n * 0.01, 0.15)])
+	if n >= 7:
+		kinds.append(["widow", 0.2 + minf(n * 0.008, 0.15)])
+	if n >= 9:
+		kinds.append(["cinder", 0.15 + minf(n * 0.008, 0.15)])
+	if n >= 11:
+		kinds.append(["bastion", 0.12])
+	if n >= 12:
+		kinds.append(["tidebreaker", 0.06 + minf(n * 0.002, 0.06)])
+	# Per-wave caps for the elites (one more of each every 10 waves).
+	var caps := {"bastion": 1 + n / 10, "tidebreaker": 1 + n / 20}
 	var total := 0.0
 	for k in kinds:
 		total += k[1]
 	var list: Array[String] = []
-	for i in count:
+	while list.size() < count:
 		var r := randf() * total
 		for k in kinds:
 			r -= k[1]
 			if r <= 0.0:
-				list.append(k[0])
+				var kind: String = k[0]
+				if caps.has(kind) and list.count(kind) >= caps[kind]:
+					break
+				list.append(kind)
+				# Hornets come in pairs.
+				if kind == "hornet" and list.size() < count:
+					list.append(kind)
 				break
 	return list
 
@@ -165,8 +194,12 @@ func _scale_for_difficulty(list: Array[String]) -> Array[String]:
 	out.shuffle()
 	while out.size() > want:
 		out.pop_back()
+	# Extra copies never duplicate the capped elites (Bastion, Tidebreaker).
+	var fill := list.filter(func(k: String) -> bool: return k not in ["bastion", "tidebreaker"])
+	if fill.is_empty():
+		fill = list
 	while out.size() < want:
-		out.append(list.pick_random())
+		out.append(fill.pick_random())
 	return out
 
 
@@ -204,7 +237,7 @@ func _spawn(kind: String, pos: Vector2) -> void:
 	e.move_speed *= Game.diff("speed")
 	e.damage_mult = wave_damage_mult()
 	# Tank-type enemies: armor tier by wave - triple armor gets likelier the further in you are.
-	if e is HeavyTank:
+	if e is HeavyTank or e is Tidebreaker:
 		e.armor_tier = 3 if randf() < triple_armor_chance() else 2
 	e.died.connect(_on_enemy_died)
 	_alive.append(e)

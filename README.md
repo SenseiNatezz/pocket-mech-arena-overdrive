@@ -33,7 +33,9 @@ destroyed. Switch weapons with 1-9, 0, - / mouse wheel / Tab or the weapon bar.
 **Tutorial:** new pilots are offered a 2-minute guided training mission before their first run (also under Settings > Tutorial).
 
 **Endless Mode (main menu):** endless waves on a random open map. Each wave is bigger and tougher, a
-Warden boss arrives every 5 waves, and your best wave is saved.
+Warden boss arrives every 5 waves, and your best wave is saved. Six extra robots join the later waves:
+Hornet drones, the Coil serpent, the mine-laying Widow, the flamethrower Cinder, the shield-commander
+Bastion and the armored Tidebreaker crab (all spawnable in the Weapon Range too).
 
 | Action | Keyboard / Mouse | Gamepad | Touch |
 |---|---|---|---|
