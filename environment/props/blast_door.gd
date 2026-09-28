@@ -3,6 +3,8 @@ extends StaticBody2D
 ## slides open; closes again behind the player when the boss fight starts. `size` in pixels.
 
 @export var size := Vector2(256, 128)
+## Painted boss arena: the gateway is in the art, so no dark backdrop behind the doors.
+@export var painted := false
 
 var is_open := false
 var locked_text := "LOCKED"
@@ -48,7 +50,8 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	var r := Rect2(-size / 2, size)
-	draw_rect(r, Color(0.05, 0.05, 0.07))
+	if not painted:
+		draw_rect(r, Color(0.05, 0.05, 0.07))
 	var half := r.size.x / 2 * (1.0 - _open_k)
 	var steel := Color(0.36, 0.38, 0.43)
 	for side in [-1, 1]:

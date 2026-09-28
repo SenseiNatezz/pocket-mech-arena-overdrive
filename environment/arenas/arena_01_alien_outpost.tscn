@@ -1,0 +1,37 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://environment/scenic_arena.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/hq/env_outpost_topdown.png" id="2"]
+[ext_resource type="Script" path="res://environment/arenas/layouts/outpost_topdown_layout.gd" id="3"]
+[ext_resource type="PackedScene" path="res://player/mech.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://ui/hud.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://ui/touch_controls.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://enemies/bosses/seraph_boss.tscn" id="7"]
+
+[node name="AlienOutpost" type="Node2D"]
+script = ExtResource("1")
+map_texture = ExtResource("2")
+map_layout = ExtResource("3")
+map_scale = 1.5
+intro_texture = ExtResource("2")
+arena_name = "Alien Outpost"
+intro_subtitle = "Level 3  //  Enemy colony  -  destroy the defenders and breach the command core"
+waves = PackedStringArray("chaser:4, aegis:1", "shooter:3, lancer:2", "aegis:2, chaser:3, tank:1", "lancer:3, striker:2, shooter:2", "aegis:2, lancer:2, striker:2, chaser:3")
+enemy_hp_mult = 1.25
+enemy_damage_mult = 1.15
+bombard_from_wave = 3
+boss_hp = 3300.0
+boss_name = "SERAPH"
+boss_accent = Color(0.75, 0.35, 1, 1)
+boss_scene = ExtResource("7")
+
+[node name="Navigation" type="NavigationRegion2D" parent="."]
+
+[node name="World" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Mech" parent="World" instance=ExtResource("4")]
+
+[node name="HUD" parent="." instance=ExtResource("5")]
+
+[node name="TouchControls" parent="." instance=ExtResource("6")]

@@ -1,6 +1,6 @@
 extends Node2D
 ## Telegraphed artillery strike: a red warning circle fills up for `delay` seconds (about 1 s), then
-## the shell lands and explodes. Spawned through Combat.artillery() by lobbers, the boss and the
+## the shell lands and explodes. Spawned through Combat.artillery() by heavy tanks, the boss and the
 ## arena bombardment hazard. Optionally draws the shell arcing in from `from`.
 
 var radius := 70.0

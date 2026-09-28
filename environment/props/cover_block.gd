@@ -1,9 +1,17 @@
 extends StaticBody2D
 ## Destructible cover: concrete barricade that blocks movement and bullets from both sides, cracks
 ## as it takes damage and crumbles after enough hits. `size` in pixels (e.g. 64x40 or 128x40).
+## Optional per-map look: `texture` (stretched to `size`, drawn a little taller). With `hits_to_break`
+## > 0 it crumbles after that many hits instead of by damage (heavy hits count double).
+
+const TEX := preload("res://assets/hq/barricade.png")
 
 @export var size := Vector2(64, 40)
-@export var max_hp := 160.0
+@export var max_hp := 72.0
+@export var texture: Texture2D
+@export var hits_to_break := 0
+## A hit this strong counts as two in hits mode.
+const HEAVY_HIT := 40.0
 
 var hp := 0.0
 var hit_radius := 26.0
@@ -20,6 +28,8 @@ func _ready() -> void:
 	box.size = size
 	shape.shape = box
 	add_child(shape)
+	if hits_to_break > 0:
+		max_hp = hits_to_break
 	hp = max_hp
 	hit_radius = size.length() * 0.4
 	var rng := RandomNumberGenerator.new()
@@ -36,7 +46,7 @@ func _ready() -> void:
 func take_hit(amount: float, from_pos: Vector2) -> void:
 	if hp <= 0.0:
 		return
-	hp -= amount
+	hp -= amount if hits_to_break <= 0 else (2.0 if amount >= HEAVY_HIT else 1.0)
 	_flash = 1.0
 	Combat.burst(global_position + (from_pos - global_position).limit_length(size.x * 0.4), Color(0.55, 0.55, 0.58), 120.0, 0.6)
 	if hp <= 0.0:
@@ -57,20 +67,17 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	var r := Rect2(-size / 2, size)
+	# HQ barricade sprite fitted to the block's width; it darkens and cracks as it takes damage.
 	var damage := 1.0 - hp / max_hp
-	var top := Color(0.52, 0.53, 0.56).lerp(Color.WHITE, _flash * 0.5)
-	var face := Color(0.34, 0.35, 0.38)
-	# Shadow, front face (3/4 view) and top.
-	draw_rect(Rect2(r.position + Vector2(6, 10), r.size), Color(0, 0, 0, 0.35))
-	draw_rect(Rect2(r.position + Vector2(0, r.size.y * 0.55), Vector2(r.size.x, r.size.y * 0.45 + 6)), face)
-	draw_rect(Rect2(r.position, Vector2(r.size.x, r.size.y * 0.6)), top)
-	draw_line(r.position, r.position + Vector2(r.size.x, 0), top.lightened(0.3), 2.0)
-	# Hazard stripes on the face.
-	var x := r.position.x + 4
-	while x < r.end.x - 8:
-		draw_line(Vector2(x, r.end.y + 2), Vector2(x + 8, r.position.y + r.size.y * 0.6), Color(0.95, 0.7, 0.15, 0.8), 3.0)
-		x += 16
+	var tex: Texture2D = texture if texture else TEX
+	# Top-down textures fill their footprint; the old side-view barricade is drawn a little taller.
+	var k := minf(size.x / tex.get_width(), size.y * (1.15 if texture else 1.4) / tex.get_height())
+	var half := tex.get_size() / 2
+	draw_set_transform(Vector2(5, 8), 0.0, Vector2.ONE * k)
+	draw_texture(tex, -half, Color(0, 0, 0, 0.4))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE * k)
+	draw_texture(tex, -half, Color.WHITE.darkened(damage * 0.45).lerp(Color.WHITE, _flash * 0.6))
+	draw_set_transform(Vector2.ZERO)
 	var shown := mini(int(ceil(damage * _cracks.size())), _cracks.size())
 	for i in shown:
-		draw_polyline(_cracks[i], Color(0.1, 0.1, 0.12), 2.0)
+		draw_polyline(_cracks[i], Color(0.08, 0.08, 0.1, 0.9), 2.0)

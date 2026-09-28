@@ -1,32 +1,69 @@
 extends Node
-## Tiny synthesizer: builds every sound effect at startup so the project needs no audio files.
-## Autoloaded as Sfx. Usage: Sfx.play(&"shoot", -12.0)
+## Sound effects (autoload Sfx). Usage: Sfx.play(&"shoot", -12.0)
+## Every sound is a real recording from assets/audio/sfx/<name>.wav when one exists (Higgsfield
+## generated, trimmed + loudness-matched), otherwise a tiny built-in synth version - so the game never
+## goes silent if a file is missing. All sounds play on the "SFX" bus (Settings > Sound FX volume).
+## Rapid-fire sounds are capped to a few overlapping voices (the oldest one is restarted).
 
 const RATE := 22050
+const SFX_DIR := "res://assets/audio/sfx/"
+## Recordings are normalised quieter than the old synth sounds; this lifts them to the same level so
+## every existing Sfx.play(name, volume_db) call keeps its balance.
+const FILE_GAIN_DB := 7.0
+## Most copies of one sound playing at once (default MAX_VOICES).
+const MAX_VOICES := 4
+const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"pickup": 3, &"missile": 3,
+	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1}
 
 var _streams: Dictionary = {}
+var _from_file: Dictionary = {}
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	for i in 24:
+	for i in 32:
 		var p := AudioStreamPlayer.new()
+		p.bus = &"SFX"
 		add_child(p)
 		_players.append(p)
 	_build()
+	for sound in _streams.keys():
+		var path: String = SFX_DIR + String(sound) + ".wav"
+		if ResourceLoader.exists(path):
+			_streams[sound] = load(path)
+			_from_file[sound] = true
 
 
 func play(sound: StringName, volume_db := 0.0, pitch_jitter := 0.06) -> void:
-	var stream: AudioStreamWAV = _streams.get(sound)
+	var stream: AudioStream = _streams.get(sound)
 	if stream == null:
 		return
-	var player := _free_player()
+	var player := _voice_for(sound)
 	player.stream = stream
-	player.volume_db = volume_db
+	player.set_meta("sound", sound)
+	player.volume_db = volume_db + (FILE_GAIN_DB if _from_file.has(sound) else 0.0)
 	player.pitch_scale = 1.0 + randf_range(-pitch_jitter, pitch_jitter)
 	player.play()
+
+
+## A player for `sound`: if that sound already has its full number of voices going, reuse the one
+## that has played longest; otherwise any free player.
+func _voice_for(sound: StringName) -> AudioStreamPlayer:
+	var cap: int = VOICE_CAP.get(sound, MAX_VOICES)
+	var same: Array[AudioStreamPlayer] = []
+	for p in _players:
+		if p.playing and p.get_meta("sound", &"") == sound:
+			same.append(p)
+	if same.size() >= cap:
+		var oldest := same[0]
+		for p in same:
+			if p.get_playback_position() > oldest.get_playback_position():
+				oldest = p
+		oldest.stop()
+		return oldest
+	return _free_player()
 
 
 ## Plays every sound once, silently. Web builds register each sample with the browser on first

@@ -22,6 +22,8 @@ Controls="*res://autoload/controls.gd"
 Combat="*res://autoload/combat.gd"
 Sfx="*res://autoload/sfx.gd"
 Game="*res://autoload/game.gd"
+Upgrades="*res://autoload/upgrades.gd"
+Music="*res://autoload/music.gd"
 Debug="*res://tools/debug_runner.gd"
 
 [display]
@@ -97,6 +99,10 @@ overdrive={
 use={
 "deadzone": 0.5,
 "events": [Object(InputEventKey,"physical_keycode":82), Object(InputEventJoypadButton,"device":-1,"button_index":0,"pressed":true)]
+}
+beam={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":67), Object(InputEventMouseButton,"device":-1,"button_index":3,"pressed":true), Object(InputEventJoypadButton,"device":-1,"button_index":2,"pressed":true)]
 }
 pause={
 "deadzone": 0.5,

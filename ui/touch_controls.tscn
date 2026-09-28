@@ -84,6 +84,26 @@ action = &"fire_secondary"
 label = "ALT FIRE"
 accent = Color(0.5, 1, 0.85, 1)
 
+[node name="Beam" type="Control" parent="Root"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -256.0
+offset_top = -330.0
+offset_right = -160.0
+offset_bottom = -234.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("3")
+action = &"beam"
+label = "BEAM"
+accent = Color(0.4, 0.85, 1, 1)
+indicator = 7
+
 [node name="Nova" type="Control" parent="Root"]
 layout_mode = 1
 anchors_preset = 1

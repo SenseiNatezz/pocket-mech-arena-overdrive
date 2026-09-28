@@ -3,6 +3,9 @@ extends Node2D
 ## Recharges for `cooldown` seconds after use. Works with the mech's generic "interactable" contract:
 ## `prompt_text`, `can_interact(mech)`, `interact(mech)`.
 
+const TEX := preload("res://assets/hq/repair_pad.png")
+const SPRITE_SCALE := 0.56
+
 @export var cooldown := 25.0
 @export var heal_fraction := 0.35
 
@@ -41,19 +44,14 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	var is_ready := _cooldown_left <= 0.0
 	var glow := Color(0.3, 1.0, 0.55) if is_ready else Color(0.45, 0.5, 0.55)
-	# Pad.
-	draw_circle(Vector2(4, 6), 46, Color(0, 0, 0, 0.3))
-	draw_circle(Vector2.ZERO, 46, Color(0.2, 0.22, 0.26))
-	draw_circle(Vector2.ZERO, 40, Color(0.13, 0.15, 0.18))
-	draw_arc(Vector2.ZERO, 46, 0, TAU, 48, Color(0.5, 0.52, 0.58), 3.0, true)
-	for i in 8:
-		var a := i * TAU / 8 + _t * (0.6 if is_ready else 0.1)
-		draw_line(Vector2.from_angle(a) * 32, Vector2.from_angle(a) * 39, Color(glow, 0.8), 3.0)
-	# Holographic cross.
-	var bob := sin(_t * 3.0) * 3.0
-	var cross := Color(glow, 0.55 + 0.25 * sin(_t * 5.0)) if is_ready else Color(glow, 0.3)
-	draw_rect(Rect2(-6, -20 + bob, 12, 32), cross)
-	draw_rect(Rect2(-16, -10 + bob, 32, 12), cross)
-	draw_circle(Vector2(0, -4 + bob), 30, Color(glow, 0.08))
-	if not is_ready:
-		draw_arc(Vector2.ZERO, 52, -PI / 2, -PI / 2 + TAU * (1.0 - _cooldown_left / cooldown), 48, Color(0.3, 1.0, 0.55, 0.8), 4.0, true)
+	# HQ pad sprite; dimmed while recharging, with a pulsing hologram glow when ready.
+	var half := TEX.get_size() / 2
+	draw_set_transform(Vector2(5, 7), 0.0, Vector2.ONE * SPRITE_SCALE)
+	draw_texture(TEX, -half, Color(0, 0, 0, 0.35))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE * SPRITE_SCALE)
+	draw_texture(TEX, -half, Color.WHITE if is_ready else Color(0.55, 0.6, 0.6))
+	draw_set_transform(Vector2.ZERO)
+	if is_ready:
+		draw_circle(Vector2.ZERO, 26 + 4 * sin(_t * 4.0), Color(glow, 0.12 + 0.06 * sin(_t * 5.0)))
+	else:
+		draw_arc(Vector2.ZERO, 66, -PI / 2, -PI / 2 + TAU * (1.0 - _cooldown_left / cooldown), 48, Color(0.3, 1.0, 0.55, 0.8), 4.0, true)

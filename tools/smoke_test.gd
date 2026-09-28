@@ -109,6 +109,55 @@ func _run() -> void:
 	await _tap(&"use")
 	_check("use refills repair charges", mech.repair_charges == mech.repair_charges_max)
 
+	# Gunfire breaks destructible props (a barricade at (300, 260) in the test range).
+	var barricade: Node2D = null
+	for n in get_tree().current_scene.get_children():
+		if n.get_script() and n.get_script().resource_path.ends_with("cover_block.gd"):
+			barricade = n
+			break
+	mech.global_position = barricade.global_position + Vector2(-230, 0)
+	Controls.touch_aim = Vector2.RIGHT
+	await _frames(5)
+	Input.action_press(&"fire_primary")
+	var tt := 0
+	while is_instance_valid(barricade) and tt < 240:
+		await get_tree().physics_frame
+		tt += 1
+	Input.action_release(&"fire_primary")
+	_check("gunfire breaks a barricade (%.1f s)" % (tt / 60.0), not is_instance_valid(barricade))
+
+	# No knockback: getting hit or caught in an explosion doesn't push the Gundam.
+	Controls.touch_move = Vector2.ZERO
+	mech.global_position = Vector2(-600, 450)
+	await _frames(30)
+	var still := mech.global_position
+	mech._invuln = 0.0
+	mech.take_damage(5.0, still + Vector2(80, 0), null)
+	Combat.area_damage(still + Vector2(-60, 0), 200.0, 5.0, null, true, Vector2.ZERO, PI, 600.0)
+	await _frames(20)
+	_check("no knockback when hit (moved %.1f px)" % mech.global_position.distance_to(still), mech.global_position.distance_to(still) < 1.0)
+	mech.hp = mech.max_hp
+
+	# Beam Cannon: charges, fires through the dummy, then cools down.
+	mech.global_position = Vector2(150, -160)
+	Controls.touch_aim = Vector2.RIGHT
+	await _frames(20)
+	var dummy: Node2D = null
+	for d in get_tree().get_nodes_in_group("enemies"):
+		if d.global_position.distance_to(Vector2(420, -160)) < 40.0:
+			dummy = d
+	var hp_before: float = dummy.hp
+	await _tap(&"beam")
+	_check("beam starts charging", mech.beam.state == BeamCannon.State.CHARGE)
+	await _frames(50)
+	_check("beam fires", mech.beam.state == BeamCannon.State.FIRE)
+	await _frames(40)
+	_check("beam damages what it passes through (%.0f -> %.0f)" % [hp_before, dummy.hp], dummy.hp < hp_before or dummy.hp == dummy.max_hp)
+	await _frames(40)
+	_check("beam goes on cooldown", mech.beam.state == BeamCannon.State.COOLDOWN and mech.beam.ready_fraction() < 1.0)
+	await _tap(&"beam")
+	_check("beam can't refire during cooldown", mech.beam.state == BeamCannon.State.COOLDOWN)
+
 	# Pooling: bullets are reused, not leaked.
 	var pool := get_tree().current_scene.get_node_or_null("Combat")
 	_check("bullet pool exists", pool != null)

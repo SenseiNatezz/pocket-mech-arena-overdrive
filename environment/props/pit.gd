@@ -5,6 +5,8 @@ extends StaticBody2D
 ## `size` in pixels. The arena leaves the floor tiles empty under it so the skyline shows through.
 
 @export var size := Vector2(128, 128)
+## Off for painted maps, where the hole is already part of the art.
+@export var draw_visual := true
 
 var _t := 0.0
 
@@ -24,10 +26,13 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
-	queue_redraw()
+	if draw_visual:
+		queue_redraw()
 
 
 func _draw() -> void:
+	if not draw_visual:
+		return
 	var r := Rect2(-size / 2, size)
 	# Depth: dark gradient on the inner north wall (3/4 view) + side shading.
 	for i in 10:

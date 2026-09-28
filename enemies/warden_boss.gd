@@ -10,6 +10,8 @@ signal phase_changed(phase: int)
 signal defeated
 
 const CHASER := preload("res://enemies/chaser.tscn")
+const TEX := preload("res://assets/hq/warden.png")
+const SPRITE_SCALE := 0.56
 
 @export var boss_name := "WARDEN"
 @export var accent := Color(1.0, 0.25, 0.2)
@@ -203,40 +205,22 @@ func _end_attack() -> void:
 
 func _draw() -> void:
 	var shake := Vector2(randf_range(-4, 4), randf_range(-4, 4)) if _roar > 0.0 or _dying > 0.0 else Vector2.ZERO
+	# HQ sprite: the whole walker turns to face its target (art faces up), with a heavy stomping bob.
+	var rot := _turret.angle() + PI / 2
+	var stomp := absf(sin(_t * 6.0)) * 0.025 if velocity.length() > 20.0 else 0.0
+	var s := Vector2.ONE * (SPRITE_SCALE + stomp)
+	var half := TEX.get_size() / 2
+	# Red is the art's native accent; other accents (Mk-II) tint the whole machine.
+	var body_tint := Color.WHITE if accent.r > 0.9 and accent.g < 0.4 else Color.WHITE.lerp(accent, 0.45)
+	draw_set_transform(shake + Vector2(10, 16), rot, s)
+	draw_texture(TEX, -half, Color(0, 0, 0, 0.45))
+	draw_set_transform(shake, rot, s)
+	draw_texture(TEX, -half, tint(body_tint))
 	draw_set_transform(shake)
-	draw_circle(Vector2(8, 16), hit_radius * 1.1, Color(0, 0, 0, 0.35))
-	var steel := tint(Color(0.3, 0.32, 0.37))
-	var walk := sin(_t * 6.0) * 8.0 if velocity.length() > 20.0 else 0.0
-	# Legs.
-	for i in 4:
-		var a := PI / 4 + i * PI / 2
-		var dir := Vector2.from_angle(a)
-		var knee := dir * 70 + dir.orthogonal() * (walk if i % 2 == 0 else -walk)
-		draw_line(dir * 30, knee, Color(0.16, 0.17, 0.2), 14.0)
-		draw_line(knee, knee + dir * 26, Color(0.22, 0.23, 0.27), 10.0)
-		draw_circle(knee, 9, steel.lightened(0.1))
-		draw_circle(knee + dir * 28, 8, Color(0.12, 0.12, 0.14))
-	# Hull.
-	var hull := PackedVector2Array()
-	for i in 8:
-		hull.append(Vector2.from_angle(i * TAU / 8 + PI / 8) * 58)
-	draw_colored_polygon(hull, steel)
-	draw_polyline(hull + PackedVector2Array([hull[0]]), steel.darkened(0.5), 3.0)
-	for i in 4:
-		var a := i * PI / 2
-		draw_line(Vector2.from_angle(a) * 36, Vector2.from_angle(a) * 54, Color(accent, 0.8), 4.0)
-	# Core (pulses faster each phase).
+	# Reactor core glow (pulses faster each phase).
 	var pulse := 0.5 + 0.5 * sin(_t * (3.0 + phase * 2.5))
-	draw_circle(Vector2.ZERO, 30, steel.darkened(0.3))
-	draw_circle(Vector2.ZERO, 16 + pulse * 4, Color(accent, 0.35))
-	draw_circle(Vector2.ZERO, 11, accent.lightened(0.3 * pulse))
-	# Twin cannon turret.
-	var side := _turret.orthogonal()
-	for s in [-1, 1]:
-		draw_line(side * 14 * s, side * 14 * s + _turret * 64, Color(0.12, 0.12, 0.14), 11.0)
-		draw_circle(side * 14 * s + _turret * 64, 4, Color(accent, 0.8))
-	draw_circle(Vector2.ZERO, 20, steel.lightened(0.15))
-	draw_circle(_turret * 8, 6, Color(1, 0.9, 0.6))
+	draw_circle(Vector2.ZERO, 26 + pulse * 10, Color(accent, 0.18 + 0.12 * pulse))
+	draw_circle(Vector2.ZERO, 9 + pulse * 3, Color(accent.lightened(0.5), 0.55))
 	draw_set_transform(Vector2.ZERO)
 	if _state == &"charge_windup":
 		draw_line(Vector2.ZERO, _charge_dir * 600.0, Color(1.0, 0.15, 0.1, 0.25 + 0.3 * sin(_t * 30.0)), 40.0)

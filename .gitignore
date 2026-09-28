@@ -1,3 +1,6 @@
 .godot/
 build/
 *.tmp
+# Raw Higgsfield source renders (~500 MB): only the asset tools read these; the game uses the
+# processed copies in assets/hq/.
+assets/hq/raw/

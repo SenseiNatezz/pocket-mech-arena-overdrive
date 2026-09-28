@@ -68,13 +68,34 @@ const DECOR: Array[Vector2i] = [Vector2i(0, 7), Vector2i(0, 7), Vector2i(1, 7), 
 @export var skyline_tint := Color(1, 1, 1)
 @export_tool_button("Rebuild Layout", "Reload") var rebuild_button := rebuild
 
+@export_group("Painted map")
+## Optional: a painted top-down map (e.g. a Higgsfield render) used as the main zone instead of
+## generated tiles. Needs a layout script with the traced collision (environment/arenas/layouts/).
+@export var map_texture: Texture2D
+@export var map_layout: Script
+## World pixels per image pixel (sets how big the painted map is compared to the mech).
+@export var map_scale := 1.15
+## Optional painted boss arena (needs a painted main map too). Its gate lines up with the door.
+@export var boss_map_texture: Texture2D
+@export var boss_layout: Script
+@export var boss_map_scale := 0.8
+## Tint for the tile start pad / outer walls and the far-below skyline (matches alien palettes).
+@export var tile_tint := Color(1, 1, 1)
+## Optional intro card shown for a few seconds when the arena starts.
+@export var intro_texture: Texture2D
+@export var intro_subtitle := ""
+## Fills everything outside the playable rooms (no empty void around the map). Tiled texture if
+## set (painted arenas), otherwise rooftop tiles.
+@export var backdrop_texture: Texture2D
+@export var backdrop_tint := Color(0.55, 0.55, 0.6)
+
 @export_group("Encounter")
 @export var waves: PackedStringArray = [
 	"chaser:4",
 	"chaser:3, shooter:2",
-	"chaser:3, shooter:1, lobber:2",
-	"shooter:4, lobber:2",
-	"chaser:5, shooter:2, lobber:2",
+	"chaser:3, shooter:1, tank:2",
+	"shooter:4, tank:2",
+	"chaser:5, shooter:2, tank:2",
 ]
 @export var enemy_hp_mult := 1.0
 @export var enemy_damage_mult := 1.0
@@ -82,6 +103,8 @@ const DECOR: Array[Vector2i] = [Vector2i(0, 7), Vector2i(0, 7), Vector2i(1, 7), 
 @export var boss_hp := 2600.0
 @export var boss_name := "WARDEN"
 @export var boss_accent := Color(1.0, 0.25, 0.2)
+## Boss for this level (Warden when empty). Endless mode keeps its own boss list.
+@export var boss_scene: PackedScene
 
 var main_rect: Rect2i
 var boss_rect: Rect2i
@@ -98,7 +121,13 @@ var _keep_clear := {}
 var _building_rects: Array[Rect2i] = []
 var _pit_rects: Array[Rect2i] = []
 var _center_x := 0
+var _door_x := 0
+var _gap_x := 0
 var _boss_started := false
+var _layout: Object
+var _map_k := Vector2.ONE
+var _boss_layout: Object
+var _boss_k := Vector2.ONE
 
 @onready var floor_layer: TileMapLayer = $Floor
 @onready var shadow_layer: TileMapLayer = $Shadows
@@ -117,6 +146,8 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	skyline.modulate = skyline_tint
+	for l: CanvasItem in [floor_layer, shadow_layer, decor_layer, wall_layer, rim_layer]:
+		l.modulate = tile_tint
 	_spawn_props()
 	_setup_flow()
 	_bake_navigation()
@@ -124,13 +155,36 @@ func _ready() -> void:
 	if mech:
 		mech.global_position = player_spawn
 		mech.died.connect(func() -> void: player_died.emit())
-		var cam := mech.get_node("Camera2D") as Camera2D
-		cam.limit_left = grid_rect.position.x * T
-		cam.limit_top = grid_rect.position.y * T
-		cam.limit_right = grid_rect.end.x * T
-		cam.limit_bottom = grid_rect.end.y * T
-		cam.reset_smoothing()
+		set_camera_region(&"main")
+		(mech.get_node("Camera2D") as Camera2D).reset_smoothing()
 	objective_changed.emit.call_deferred("Head north into the plaza")
+
+
+## Camera limits follow the part of the level you're in, so the boss arena stays hidden behind its
+## wall until the door opens:  main (start pad + battle zone) -> open (door open) -> boss.
+func set_camera_region(region: StringName) -> void:
+	var mech := world.get_node_or_null("Mech") as Mech
+	if mech == null:
+		return
+	var cam := mech.get_node("Camera2D") as Camera2D
+	var r: Rect2i
+	match region:
+		&"main":
+			r = Rect2i(main_rect.position.x - 1, main_rect.position.y - 2, main_rect.size.x + 2, 0)
+			r.end = Vector2i(r.end.x, start_rect.end.y + 1)
+		&"boss":
+			r = Rect2i(boss_rect.position.x - 1, boss_rect.position.y - 2, boss_rect.size.x + 2, boss_rect.size.y + 4)
+		_:
+			r = grid_rect
+	var px := Rect2(Vector2(r.position) * T, Vector2(r.size) * T)
+	var vp := get_viewport_rect().size
+	if px.size.x < vp.x:
+		px = px.grow_individual((vp.x - px.size.x) / 2, 0, (vp.x - px.size.x) / 2, 0)
+	cam.limit_smoothed = true
+	cam.limit_left = int(px.position.x)
+	cam.limit_top = int(px.position.y)
+	cam.limit_right = int(px.end.x)
+	cam.limit_bottom = int(px.end.y)
 
 
 func _process(delta: float) -> void:
@@ -150,27 +204,73 @@ func rebuild() -> void:
 	_pit_rects.clear()
 	_rng.seed = layout_seed
 
+	var painted := map_texture != null and map_layout != null
+	_layout = map_layout.new() if painted else null
 	var mw := maxi(roundi(size_in_screens.x * 20.0), 16)
 	var mh := maxi(roundi(size_in_screens.y * 11.25), 12)
+	if painted:
+		mw = roundi(_layout.image_size.x * map_scale / T)
+		mh = roundi(_layout.image_size.y * map_scale / T)
+		_map_k = Vector2(mw * T, mh * T) / _layout.image_size
 	var bw := mini(maxi(roundi(boss_room_screens.x * 20.0), 14), mw)
 	var bh := maxi(roundi(boss_room_screens.y * 11.25), 10)
 	_center_x = MARGIN + 1 + mw / 2
-	boss_rect = Rect2i(_center_x - bw / 2, MARGIN + 2, bw, bh)
-	main_rect = Rect2i(MARGIN + 1, boss_rect.end.y + 2, mw, mh)
-	start_rect = Rect2i(_center_x - 6, main_rect.end.y + 1, 12, 7)
+	_door_x = _center_x
+	_gap_x = _center_x
+	if painted:
+		_door_x = MARGIN + 1 + roundi(_layout.door_x * _map_k.x / T)
+		_gap_x = MARGIN + 1 + roundi(_layout.gap_x * _map_k.x / T)
+	_boss_layout = boss_layout.new() if painted and boss_map_texture != null and boss_layout != null else null
+	var boss_x := clampi(_door_x - bw / 2, MARGIN + 1, MARGIN + 1 + mw - bw)
+	if _boss_layout:
+		# Painted boss arena: its bottom band (fortress wall + gate) doubles as the main zone's north wall.
+		var crop: Rect2 = _boss_layout.crop
+		bw = mini(roundi(crop.size.x * boss_map_scale / T), mw)
+		bh = roundi(crop.size.y * boss_map_scale / T)
+		_boss_k = Vector2(bw * T, bh * T) / crop.size
+		var gate_off := roundi((_boss_layout.gate_x - crop.position.x) * _boss_k.x / T)
+		boss_x = clampi(_door_x - gate_off, MARGIN + 1, MARGIN + 1 + mw - bw)
+		boss_rect = Rect2i(boss_x, MARGIN, bw, bh)
+		main_rect = Rect2i(MARGIN + 1, boss_rect.end.y, mw, mh)
+	else:
+		boss_rect = Rect2i(boss_x, MARGIN + 2, bw, bh)
+		main_rect = Rect2i(MARGIN + 1, boss_rect.end.y + 2, mw, mh)
+	start_rect = Rect2i(_gap_x - 6, main_rect.end.y + 1, 12, 7)
 	grid_rect = Rect2i(0, 0, mw + 2 + MARGIN * 2, start_rect.end.y + 1 + MARGIN)
 
-	_room_walls(boss_rect, 2)
+	if not _boss_layout:
+		_room_walls(boss_rect, 2)
 	_room_walls(main_rect, 2)
 	_room_walls(start_rect, 1)
-	_paint_floor(boss_rect, &"metal")
-	_paint_floor(main_rect, &"street")
+	if _boss_layout:
+		# The painted fortress wall replaces the tile wall where the boss arena sits.
+		for y in [main_rect.position.y - 2, main_rect.position.y - 1]:
+			for x in range(boss_rect.position.x, boss_rect.end.x):
+				_unwall(Vector2i(x, y))
+	else:
+		_paint_floor(boss_rect, &"metal")
+	if painted:
+		for y in range(main_rect.position.y, main_rect.end.y):
+			for x in range(main_rect.position.x, main_rect.end.x):
+				_unwall(Vector2i(x, y))
+	else:
+		_paint_floor(main_rect, &"street")
 	_paint_floor(start_rect, &"metal")
+	_update_map_art()
 	# Doorways: boss door (2 rows of wall) and the south gap into the start pad.
-	for x in range(_center_x - 2, _center_x + 2):
-		for y in [main_rect.position.y - 2, main_rect.position.y - 1, main_rect.end.y]:
+	for x in range(_door_x - 2, _door_x + 2):
+		for y in [main_rect.position.y - 2, main_rect.position.y - 1]:
 			_unwall(Vector2i(x, y))
-			floor_layer.set_cell(Vector2i(x, y), SRC, METAL)
+			if not _boss_layout:
+				floor_layer.set_cell(Vector2i(x, y), SRC, METAL)
+	for x in range(_gap_x - 2, _gap_x + 2):
+		_unwall(Vector2i(x, main_rect.end.y))
+		floor_layer.set_cell(Vector2i(x, main_rect.end.y), SRC, METAL)
+	if painted:
+		if not _boss_layout:
+			_boss_pillars()
+		_fill_backdrop()
+		return
 	# Keep a walkable spine from the start pad to the boss door, and space near both doorways.
 	for y in range(main_rect.position.y, main_rect.end.y):
 		for x in range(_center_x - 3, _center_x + 3):
@@ -184,6 +284,90 @@ func rebuild() -> void:
 	_boss_pillars()
 	_place_wrecks()
 	_scatter_decor()
+	_fill_backdrop()
+
+
+## Shows the painted map (if any) stretched over the main zone, under everything else.
+func _update_map_art() -> void:
+	var art := get_node_or_null("MapArt") as Sprite2D
+	if map_texture == null or _layout == null:
+		if art:
+			art.queue_free()
+		return
+	if art == null:
+		art = Sprite2D.new()
+		art.name = "MapArt"
+		add_child(art)
+		move_child(art, 0)
+	art.texture = map_texture
+	art.centered = false
+	art.z_index = -10
+	art.position = Vector2(main_rect.position) * T
+	art.scale = Vector2(main_rect.size) * T / map_texture.get_size()
+	var boss_art := get_node_or_null("BossArt") as Sprite2D
+	if _boss_layout == null:
+		if boss_art:
+			boss_art.queue_free()
+		return
+	if boss_art == null:
+		boss_art = Sprite2D.new()
+		boss_art.name = "BossArt"
+		add_child(boss_art)
+		move_child(boss_art, 1)
+	var crop: Rect2 = _boss_layout.crop
+	boss_art.texture = boss_map_texture
+	boss_art.centered = false
+	boss_art.region_enabled = true
+	boss_art.region_rect = crop
+	boss_art.z_index = -10
+	boss_art.position = Vector2(boss_rect.position) * T
+	boss_art.scale = _boss_k
+
+
+## Painted boss arena pixel (original image coords) -> world position.
+func boss_to_world(p: Vector2) -> Vector2:
+	return Vector2(boss_rect.position) * T + (p - (_boss_layout.crop as Rect2).position) * _boss_k
+
+
+## Painted map pixel -> world position.
+func map_to_world(p: Vector2) -> Vector2:
+	return Vector2(main_rect.position) * T + p * _map_k
+
+
+## Covers every cell of the grid outside the rooms, walls and floors so no empty space shows.
+func _fill_backdrop() -> void:
+	var cells: Array[Vector2i] = []
+	for y in range(grid_rect.position.y, grid_rect.end.y):
+		for x in range(grid_rect.position.x, grid_rect.end.x):
+			var c := Vector2i(x, y)
+			if floor_layer.get_cell_source_id(c) != -1 or wall_layer.get_cell_source_id(c) != -1:
+				continue
+			if main_rect.has_point(c) or boss_rect.has_point(c) or start_rect.has_point(c):
+				continue
+			cells.append(c)
+	var node := get_node_or_null("Backdrop") as Node2D
+	if node:
+		node.free()
+	if backdrop_texture == null:
+		# Own RNG so the backdrop never shifts the gameplay layout (props use _rng afterwards).
+		var r := RandomNumberGenerator.new()
+		r.seed = layout_seed + 99
+		for c in cells:
+			wall_layer.set_cell(c, SRC, ROOFS[r.randi() % ROOFS.size()])
+		return
+	node = Node2D.new()
+	node.name = "Backdrop"
+	node.z_index = -11
+	node.modulate = backdrop_tint
+	add_child(node)
+	move_child(node, 0)
+	var tex := backdrop_texture
+	var tw := tex.get_width()
+	var th := tex.get_height()
+	node.draw.connect(func() -> void:
+		for c in cells:
+			var src := Rect2(posmod(c.x * T, tw), posmod(c.y * T, th), T, T)
+			node.draw_texture_rect_region(tex, Rect2(Vector2(c) * T, Vector2(T, T)), src))
 
 
 func _room_walls(r: Rect2i, top_rows: int) -> void:
@@ -383,8 +567,12 @@ func _random_free_cell(r: Rect2i, clearance := 1) -> Vector2i:
 func _spawn_props() -> void:
 	var P := "res://environment/props/"
 	var H := "res://environment/hazards/"
+	if _layout:
+		_spawn_map_props(P, H)
+		return
 	for r in _pit_rects:
 		_add_prop(floor_props, P + "pit.gd", rect_center(r), StaticBody2D, {"size": Vector2(r.size) * T})
+	_scatter_hq_decals()
 	# Repair stations: start pad + main zone (beside the west wall).
 	_add_prop(floor_props, P + "repair_station.gd", cell_center(Vector2i(start_rect.position.x + 2, start_rect.position.y + 3)), Node2D)
 	var west := Vector2i(main_rect.position.x + 2, main_rect.position.y + main_rect.size.y / 2 - 3)
@@ -429,6 +617,186 @@ func _spawn_props() -> void:
 	player_spawn = cell_center(Vector2i(_center_x, start_rect.position.y + 4))
 
 
+## Painted-map mode: invisible collision traced over the art + gameplay props from the layout.
+func _spawn_map_props(P: String, H: String) -> void:
+	var holder := Node2D.new()
+	holder.name = "MapCollision"
+	add_child(holder)
+	for poly: PackedVector2Array in _layout.solids:
+		var body := StaticBody2D.new()
+		body.collision_layer = 1
+		body.collision_mask = 0
+		body.add_to_group("nav_obstacles")
+		var cp := CollisionPolygon2D.new()
+		var pts := PackedVector2Array()
+		for p in poly:
+			pts.append(map_to_world(p))
+		cp.polygon = pts
+		body.add_child(cp)
+		holder.add_child(body)
+	for r: Rect2 in _layout.cover:
+		var body := StaticBody2D.new()
+		body.collision_layer = 32  # cover: stops bullets from both sides and blocks movement
+		body.collision_mask = 0
+		body.add_to_group("nav_obstacles")
+		var shape := CollisionShape2D.new()
+		var box := RectangleShape2D.new()
+		box.size = r.size * _map_k
+		shape.shape = box
+		body.position = map_to_world(r.get_center())
+		body.add_child(shape)
+		holder.add_child(body)
+	for r: Rect2 in _layout.pits:
+		_add_prop(floor_props, P + "pit.gd", map_to_world(r.get_center()), StaticBody2D,
+			{"size": r.size * _map_k, "draw_visual": false})
+	var painted_barrels: bool = _layout.get("barrels_painted") != false
+	for p: Vector2 in _layout.barrels:
+		_add_prop(world, H + "explosive_barrel.gd", map_to_world(p), StaticBody2D, {"painted": painted_barrels})
+	_spawn_structures()
+	for p: Vector2 in _layout.crates:
+		_add_prop(world, P + "crate.gd", map_to_world(p), StaticBody2D)
+	if "destructible_cover" in _layout:
+		for i in _layout.destructible_cover.size():
+			var wide: bool = i % 2 == 0
+			_add_prop(world, P + "cover_block.gd", map_to_world(_layout.destructible_cover[i]), StaticBody2D,
+				{"size": Vector2(150 if wide else 90, 48)})
+	for i in _layout.electric_panels.size():
+		_add_prop(floor_props, H + "electric_panel.gd", map_to_world(_layout.electric_panels[i]), Area2D,
+			{"size": Vector2(2 * T, 2 * T), "phase": i * 1.3})
+	_add_prop(floor_props, P + "repair_station.gd", map_to_world(_layout.repair_station), Node2D)
+	_add_prop(floor_props, P + "repair_station.gd", cell_center(Vector2i(start_rect.position.x + 2, start_rect.position.y + 3)), Node2D)
+	if _boss_layout:
+		for poly: PackedVector2Array in _boss_layout.solids:
+			var body := StaticBody2D.new()
+			body.collision_layer = 1
+			body.collision_mask = 0
+			body.add_to_group("nav_obstacles")
+			var cp := CollisionPolygon2D.new()
+			var pts := PackedVector2Array()
+			for p in poly:
+				pts.append(boss_to_world(p))
+			cp.polygon = pts
+			body.add_child(cp)
+			holder.add_child(body)
+		for r: Rect2 in _boss_layout.pillars:
+			var body := StaticBody2D.new()
+			body.collision_layer = 1
+			body.collision_mask = 0
+			body.add_to_group("nav_obstacles")
+			var shape := CollisionShape2D.new()
+			var box := RectangleShape2D.new()
+			box.size = r.size * _boss_k
+			shape.shape = box
+			body.position = boss_to_world(r.get_center())
+			body.add_child(shape)
+			holder.add_child(body)
+	else:
+		for i in 4:
+			var c := _random_free_cell(boss_rect)
+			if c.x >= 0 and c.y < boss_rect.end.y - 3:
+				_block(Rect2i(c, Vector2i.ONE))
+				_add_prop(world, P + "cover_block.gd", cell_center(c), StaticBody2D)
+	player_spawn = cell_center(Vector2i(_gap_x, start_rect.position.y + 4))
+
+
+## Painted-map mode: placed structures (outpost buildings), dormant turrets and ground decals.
+func _spawn_structures() -> void:
+	if _layout.get("structures") == null:
+		return
+	var poly: PackedVector2Array = _layout.get("wall_poly") if _layout.get("wall_poly") != null else PackedVector2Array()
+	for s: Dictionary in _layout.structures:
+		var st := OutpostStructure.new()
+		st.texture = load("res://assets/hq/outpost/%s.png" % s["tex"])
+		st.width = s["w"] * _map_k.x
+		st.flip = s.get("flip", false)
+		if s.get("poly", false):
+			st.polygon = poly
+		else:
+			st.footprint = s.get("fp", st.footprint)
+		st.max_hp = s.get("hp", 0.0) * enemy_hp_mult
+		st.explosive = s.get("explosive", false)
+		st.place_visual_center(map_to_world(s["at"]))
+		world.add_child(st)
+	for p: Vector2 in _layout.turrets:
+		var t: Enemy = load("res://enemies/outpost_turret.tscn").instantiate()
+		t.max_hp *= enemy_hp_mult * Game.diff("hp")
+		t.damage_mult = enemy_damage_mult * Game.diff("damage")
+		t.position = map_to_world(p)
+		world.add_child(t)
+	var crater: Texture2D = load("res://assets/hq/outpost/crater.png")
+	for p: Vector2 in _layout.decals:
+		var d := Sprite2D.new()
+		d.texture = crater
+		d.position = map_to_world(p)
+		d.rotation = _rng.randf() * TAU
+		d.scale = Vector2.ONE * _rng.randf_range(0.55, 0.8)
+		d.z_index = -7
+		floor_props.add_child(d)
+
+
+## Image-space rects covered by placed structures and turrets (for spawn-point checks).
+var _struct_rects: Array[Rect2] = []
+func _structure_rects() -> Array[Rect2]:
+	if not _struct_rects.is_empty() or _layout.get("structures") == null:
+		return _struct_rects
+	for s: Dictionary in _layout.structures:
+		var tex: Texture2D = load("res://assets/hq/outpost/%s.png" % s["tex"])
+		var size: Vector2 = tex.get_size() * (float(s["w"]) / tex.get_width())
+		var vis := Rect2(s["at"] - size / 2, size)
+		if s.get("poly", false):
+			_struct_rects.append(Rect2(vis.position + Vector2(0, size.y * 0.25), Vector2(size.x, size.y * 0.75)))
+		else:
+			var f: Rect2 = s.get("fp", Rect2(0.1, 0.4, 0.8, 0.55))
+			if s.get("flip", false):
+				f.position.x = 1.0 - f.position.x - f.size.x
+			_struct_rects.append(Rect2(vis.position + f.position * size, f.size * size))
+	for p: Vector2 in _layout.turrets:
+		_struct_rects.append(Rect2(p - Vector2(110, 90), Vector2(220, 180)))
+	return _struct_rects
+
+
+## Painted-map mode: is this world point open floor (not inside/near traced collision)?
+func _map_open(world_pos: Vector2, margin := 48.0) -> bool:
+	var p := (world_pos - Vector2(main_rect.position) * T) / _map_k
+	var m := margin / _map_k.x
+	for r in _structure_rects():
+		if r.grow(m).has_point(p):
+			return false
+	for poly: PackedVector2Array in _layout.solids:
+		if Geometry2D.is_point_in_polygon(p, poly):
+			return false
+		for i in poly.size():
+			if Geometry2D.get_closest_point_to_segment(p, poly[i], poly[(i + 1) % poly.size()]).distance_to(p) < m:
+				return false
+	for r: Rect2 in _layout.cover:
+		if r.grow(m).has_point(p):
+			return false
+	for r: Rect2 in _layout.pits:
+		if r.grow(m).has_point(p):
+			return false
+	return true
+
+
+## High-detail ground decals (Higgsfield renders): rubble piles and blast scorches, randomly rotated
+## and scaled, on open floor in the main zone. Purely visual.
+func _scatter_hq_decals() -> void:
+	var decals: Array[Texture2D] = [load("res://assets/hq/rubble.png"), load("res://assets/hq/scorch.png")]
+	var count := main_rect.get_area() / 45
+	for i in count:
+		var c := Vector2i(_rng.randi_range(main_rect.position.x + 1, main_rect.end.x - 2),
+			_rng.randi_range(main_rect.position.y + 1, main_rect.end.y - 2))
+		if _solid.has(c) or floor_layer.get_cell_source_id(c) == -1:
+			continue
+		var s := Sprite2D.new()
+		s.texture = decals[i % decals.size()]
+		s.position = cell_center(c) + Vector2(_rng.randf_range(-24, 24), _rng.randf_range(-24, 24))
+		s.rotation = _rng.randf() * TAU
+		s.scale = Vector2.ONE * _rng.randf_range(0.5, 0.85)
+		s.modulate = Color(0.85, 0.85, 0.9, 0.9)
+		s.z_index = -7
+		floor_props.add_child(s)
+
+
 func _add_prop(parent: Node, script_path: String, pos: Vector2, base: Variant, props := {}) -> Node2D:
 	var n: Node2D = base.new()
 	n.set_script(load(script_path))
@@ -444,7 +812,8 @@ func _bake_navigation() -> void:
 	var np := NavigationPolygon.new()
 	np.agent_radius = 30.0
 	np.parsed_geometry_type = NavigationPolygon.PARSED_GEOMETRY_STATIC_COLLIDERS
-	np.parsed_collision_mask = 1 | 64
+	# Painted maps use indestructible cover (layer 6), so enemies path around it too.
+	np.parsed_collision_mask = 1 | 64 | (32 if _layout else 0)
 	np.source_geometry_mode = NavigationPolygon.SOURCE_GEOMETRY_GROUPS_EXPLICIT
 	np.source_geometry_group_name = &"nav_obstacles"
 	var a := Vector2(grid_rect.position) * T
@@ -459,11 +828,19 @@ func _bake_navigation() -> void:
 func _setup_flow() -> void:
 	var P := "res://environment/props/"
 	# Energy barrier across the south gap (seals the zone once the fight starts).
-	var gap := _add_prop(world, P + "energy_barrier.gd", Vector2(_center_x * T, main_rect.end.y * T + T / 2.0), StaticBody2D,
+	var gap := _add_prop(world, P + "energy_barrier.gd", Vector2(_gap_x * T, main_rect.end.y * T + T / 2.0), StaticBody2D,
 		{"size": Vector2(4 * T, T)})
 	# Blast door to the boss room.
-	door = _add_prop(floor_props, P + "blast_door.gd", Vector2(_center_x * T, (main_rect.position.y - 1) * T), StaticBody2D,
-		{"size": Vector2(4 * T, 2 * T)})
+	var door_pos := Vector2(_door_x * T, (main_rect.position.y - 1) * T)
+	var door_size := Vector2(4 * T, 2 * T)
+	if _boss_layout:
+		# Fill the painted gate exactly so nothing can slip past the closed door.
+		var gl := boss_to_world(Vector2(_boss_layout.gate_left, 0)).x
+		var gr := boss_to_world(Vector2(_boss_layout.gate_right, 0)).x
+		door_pos.x = (gl + gr) / 2
+		door_size.x = gr - gl + 8
+	door = _add_prop(floor_props, P + "blast_door.gd", door_pos, StaticBody2D,
+		{"size": door_size, "painted": _boss_layout != null})
 	# Encounter zone = the main area minus its southern rows (so it triggers past the barrier line).
 	zone = EncounterZone.new()
 	var zr := Rect2(Vector2(main_rect.position) * T, Vector2(main_rect.size.x, main_rect.size.y - 3) * T)
@@ -479,11 +856,14 @@ func _setup_flow() -> void:
 	for y in range(main_rect.position.y + 1, main_rect.end.y - 4):
 		for x in range(main_rect.position.x + 1, main_rect.end.x - 1):
 			var c := Vector2i(x, y)
-			if not _solid.has(c) and not _blocked.has(c):
+			var open := _map_open(cell_center(c)) if _layout else not _solid.has(c) and not _blocked.has(c)
+			if open:
 				pts.append(cell_center(c))
 	zone.spawn_points = pts
 	add_child(zone)
 	zone.started.connect(func() -> void:
+		for t in get_tree().get_nodes_in_group("turrets"):
+			t.set("active", true)
 		banner.emit("ZONE LOCKED", Color(1.0, 0.35, 0.4))
 		objective_changed.emit("Destroy all hostiles"))
 	zone.wave_started.connect(func(i: int, n: int) -> void:
@@ -521,6 +901,7 @@ func debug_skip_to_boss() -> void:
 
 func _on_zone_cleared() -> void:
 	door.open()
+	set_camera_region(&"open")
 	banner.emit("ZONE CLEARED - BOSS DOOR OPEN", Color(0.4, 1.0, 0.6))
 	objective_changed.emit("Enter the boss arena (north)")
 
@@ -528,11 +909,12 @@ func _on_zone_cleared() -> void:
 func _start_boss() -> void:
 	_boss_started = true
 	door.close()
+	set_camera_region(&"boss")
 	banner.emit(boss_name, boss_accent)
 	objective_changed.emit("Destroy the %s" % boss_name)
-	var b: Enemy = load("res://enemies/warden_boss.tscn").instantiate()
-	b.max_hp = boss_hp
-	b.damage_mult = enemy_damage_mult
+	var b: Enemy = (boss_scene if boss_scene else load("res://enemies/warden_boss.tscn")).instantiate()
+	b.max_hp = boss_hp * Game.diff("boss_hp")
+	b.damage_mult = enemy_damage_mult * Game.diff("damage")
 	b.set("boss_name", boss_name)
 	b.set("accent", boss_accent)
 	b.position = rect_center(Rect2i(boss_rect.position, Vector2i(boss_rect.size.x, boss_rect.size.y / 2)))
@@ -548,4 +930,5 @@ func _on_boss_defeated() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e is Enemy and not e.dead:
 			e.die()
+	Upgrades.vacuum()
 	get_tree().create_timer(2.0, false).timeout.connect(func() -> void: arena_cleared.emit())

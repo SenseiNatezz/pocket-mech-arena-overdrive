@@ -57,10 +57,10 @@ func _build_walls() -> void:
 		body.add_child(shape)
 		add_child(body)
 	var cam := mech.get_node("Camera2D") as Camera2D
-	cam.limit_left = int(-half.x - WALL - 200)
-	cam.limit_top = int(-half.y - WALL - 200)
-	cam.limit_right = int(half.x + WALL + 200)
-	cam.limit_bottom = int(half.y + WALL + 200)
+	cam.limit_left = int(-half.x - WALL)
+	cam.limit_top = int(-half.y - WALL)
+	cam.limit_right = int(half.x + WALL)
+	cam.limit_bottom = int(half.y + WALL)
 
 
 func _draw_floor(c: Node2D) -> void:

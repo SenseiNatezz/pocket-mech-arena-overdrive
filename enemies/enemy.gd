@@ -30,6 +30,12 @@ var _t := 0.0
 var _spawn_t := 0.5
 var _agent: NavigationAgent2D
 var _repath_t := 0.0
+## Armor layer (tank-type enemies, see set_armor): soaks damage before HP.
+var armor := 0.0
+var max_armor := 0.0
+var armor_tier := 0
+const ARMOR_NUMBER := Color(0.7, 0.85, 1.0)
+const TRIPLE_ARMOR_TINT := Color(0.55, 0.8, 1.5)
 
 
 func _ready() -> void:
@@ -134,13 +140,39 @@ func shoot(dir: Vector2, speed: float, damage: float, color := Color(1.0, 0.35, 
 func take_damage(amount: float, _from_pos: Vector2, source: Node = null) -> void:
 	if dead:
 		return
-	hp -= amount
 	_flash = 1.0
 	_hp_bar_t = 2.0
-	Combat.damage_number(global_position, amount)
 	Combat.report_damage(amount, source, self)
+	# Armor soaks hits first: each point of armor absorbs `armor_tier` points of damage, so stripping
+	# it takes 2x / 3x the hits of the same amount of HP. Leftover damage carries into HP.
+	if armor > 0.0:
+		var absorbed := minf(armor, amount / armor_tier)
+		armor -= absorbed
+		amount -= absorbed * armor_tier
+		Combat.damage_number(global_position, absorbed * armor_tier, ARMOR_NUMBER, self)
+		if armor <= 0.0:
+			Combat.burst(global_position, Color(0.75, 0.8, 0.9), 320.0, 1.4)
+			Combat.shockwave(global_position, hit_radius * 2.2, Color(0.7, 0.85, 1.0), 0.3)
+			Sfx.play(&"shield", -4.0, 0.0)
+		if amount <= 0.001:
+			return
+	hp -= amount
+	Combat.damage_number(global_position, amount, Color(1, 0.85, 0.6), self)
 	if hp <= 0.0:
 		die()
+
+
+## Gives this enemy an armor layer: `tier` 2 or 3 (2x / 3x the hits of its HP to strip). Call after its
+## max_hp is final (difficulty / wave scaling); armor matches max_hp in size.
+func set_armor(tier: int) -> void:
+	armor_tier = tier
+	max_armor = max_hp
+	armor = max_armor
+
+
+## Body tint for armored enemies: triple armor reads as cold hardened steel.
+func armor_tint() -> Color:
+	return TRIPLE_ARMOR_TINT if armor_tier >= 3 and armor > 0.0 else Color.WHITE
 
 
 func knock(impulse: Vector2) -> void:
@@ -158,12 +190,23 @@ func die() -> void:
 
 
 ## Shared HP bar (shown briefly after taking damage).
+## Armored enemies always show their bars: armor (steel blue, with a pip per tier) above HP.
 func draw_hp_bar(y: float) -> void:
-	if _hp_bar_t <= 0.0 or hp >= max_hp:
+	var armored := max_armor > 0.0
+	if not armored and (_hp_bar_t <= 0.0 or hp >= max_hp):
 		return
 	var w := hit_radius * 2.2
 	draw_rect(Rect2(-w / 2, y, w, 5), Color(0, 0, 0, 0.6))
 	draw_rect(Rect2(-w / 2, y, w * clampf(hp / max_hp, 0.0, 1.0), 5), Color(1.0, 0.35, 0.3))
+	if armored:
+		var ay := y - 8.0
+		var col := Color(0.55, 0.8, 1.0) if armor_tier >= 3 else Color(0.78, 0.82, 0.9)
+		draw_rect(Rect2(-w / 2 - 1, ay - 1, w + 2, 7), Color(0, 0, 0, 0.7))
+		if armor > 0.0:
+			draw_rect(Rect2(-w / 2, ay, w * clampf(armor / max_armor, 0.0, 1.0), 5), col.lerp(Color.WHITE, _flash * 0.5))
+		# Tier pips (2 or 3) at the bar's left end.
+		for i in armor_tier:
+			draw_rect(Rect2(-w / 2 - 6 - i * 5, ay, 3, 5), col)
 
 
 ## Tint helper: flash to white when hit.

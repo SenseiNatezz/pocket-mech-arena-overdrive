@@ -1,7 +1,10 @@
 extends Area2D
-## Placeholder target for testing weapons (Step 1). Takes damage, shows numbers, feeds the
-## player's heat/overdrive meters, and respawns a couple of seconds after being destroyed.
-## Real enemies (chaser / shooter / artillery) arrive in Step 5.
+## Training target drone (Higgsfield sprite) for the Test Range / Gun Range. Takes damage, shows
+## numbers, feeds the player's heat/overdrive meters, and respawns a couple of seconds after being
+## destroyed. Hovers in place (knockback pushes it, then it drifts home).
+
+const TEX := preload("res://assets/hq/enemies3/target_drone.png")
+const SPRITE_SCALE := 0.58
 
 @export var max_hp := 400.0
 @export var respawn_time := 2.5
@@ -33,7 +36,7 @@ func take_damage(amount: float, _from_pos: Vector2, source: Node = null) -> void
 		return
 	hp -= amount
 	_flash = 1.0
-	Combat.damage_number(global_position, amount)
+	Combat.damage_number(global_position, amount, Color(1, 0.85, 0.6), self)
 	Combat.report_damage(amount, source, self)
 	if hp <= 0.0:
 		_destroyed()
@@ -68,13 +71,11 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	# Placeholder art: a tripod target drone with an HP ring.
-	var base := Color(0.55, 0.25, 0.2).lerp(Color.WHITE, _flash)
-	draw_circle(Vector2(6, 10), 32, Color(0, 0, 0, 0.35))
-	for i in 3:
-		var a := i * TAU / 3.0 + PI / 2
-		draw_line(Vector2.ZERO, Vector2.from_angle(a) * 34, Color(0.2, 0.2, 0.24), 6.0)
-	draw_circle(Vector2.ZERO, 24, base.darkened(0.3))
-	draw_circle(Vector2.ZERO, 18, base)
-	draw_circle(Vector2.ZERO, 8, Color(1, 0.3, 0.2).lerp(Color.WHITE, 0.3 + 0.3 * sin(_t * 6.0)))
-	draw_arc(Vector2.ZERO, 38, -PI / 2, -PI / 2 + TAU * hp / max_hp, 32, Color(0.4, 1.0, 0.5, 0.8), 4.0, true)
+	var bob := sin(_t * 2.4) * 3.0
+	var half := TEX.get_size() / 2
+	draw_set_transform(Vector2(8, 16), 0.0, Vector2.ONE * SPRITE_SCALE * 0.9)
+	draw_texture(TEX, -half, Color(0, 0, 0, 0.3))
+	draw_set_transform(Vector2(0, bob), sin(_t * 0.8) * 0.08, Vector2.ONE * SPRITE_SCALE)
+	draw_texture(TEX, -half, Color.WHITE.lerp(Color(1.6, 1.3, 1.3), _flash))
+	draw_set_transform(Vector2.ZERO)
+	draw_arc(Vector2(0, bob), 42, -PI / 2, -PI / 2 + TAU * hp / max_hp, 32, Color(0.4, 1.0, 0.5, 0.8), 4.0, true)

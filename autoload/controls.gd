@@ -22,6 +22,9 @@ var touch_aim := Vector2.ZERO
 var touch_active := false
 ## Debug: when true, real input is ignored (used by automated tests / capture runs).
 var ignore_real_input := false
+## Distance from the mech to the mouse cursor (keyboard/mouse only; 0 = unknown). Used so shots
+## converge on what you point at.
+var aim_distance := 0.0
 
 var _last_aim := Vector2.RIGHT
 
@@ -60,6 +63,7 @@ func get_move() -> Vector2:
 
 ## Aim direction from `from_world` (the mech's global position). Unit vector; never zero.
 func get_aim(from_world: Vector2, viewport: Viewport) -> Vector2:
+	aim_distance = 0.0
 	if touch_aim.length() > AIM_DEADZONE:
 		_last_aim = touch_aim.normalized()
 		return _last_aim
@@ -73,6 +77,7 @@ func get_aim(from_world: Vector2, viewport: Viewport) -> Vector2:
 		var to_mouse := mouse_world - from_world
 		if to_mouse.length() > 8.0:
 			_last_aim = to_mouse.normalized()
+			aim_distance = to_mouse.length()
 	elif device == Device.GAMEPAD:
 		# No right-stick input: aim where you're moving (twin-stick convention).
 		var move := get_move()

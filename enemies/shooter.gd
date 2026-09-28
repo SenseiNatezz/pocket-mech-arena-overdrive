@@ -1,7 +1,7 @@
 class_name Shooter
 extends Enemy
-## "Sentry Drone": hovering gunner. Keeps mid range, strafes, and fires 3-round bursts after a short
-## glowing wind-up.
+## "Scrap Gunner" (Higgsfield sprite): armored twin-cannon walker. Keeps mid range, strafes, and fires
+## 3-round bursts from alternating rotary cannons after a short glowing wind-up.
 
 @export var preferred_range := Vector2(260, 440)
 @export var burst_cooldown := 1.9
@@ -14,6 +14,14 @@ var _burst_left := 0
 var _burst_t := 0.0
 var _strafe := 1.0
 var _strafe_t := 0.0
+var _barrel := 1.0
+var _recoil := 0.0
+
+const TEX := preload("res://assets/hq/scrap_gunner.png")
+const SPRITE_SCALE := 0.55
+## Rotary cannon tips in sprite space (sprite faces up), before scaling.
+const MUZZLE_L := Vector2(-46, -69)
+const MUZZLE_R := Vector2(45, -69)
 
 
 func _think(delta: float) -> void:
@@ -39,7 +47,12 @@ func _think(delta: float) -> void:
 		if _burst_t <= 0.0:
 			_burst_t = 0.11
 			_burst_left -= 1
-			shoot(facing.rotated(randf_range(-0.05, 0.05)), bullet_speed, bullet_damage)
+			_barrel = -_barrel
+			_recoil = 1.0
+			var m := _muzzle_world(_barrel)
+			var dir := (target.global_position - m).normalized().rotated(randf_range(-0.04, 0.04))
+			Combat.fire(m, dir * bullet_speed, bullet_damage * damage_mult, false, self, Color(1.0, 0.35, 0.25), 1.1, 2.5)
+			Combat.spark(m, Color(1.0, 0.5, 0.25), 0.9)
 			Sfx.play(&"enemy_shoot", -14.0)
 	elif _charge > 0.0:
 		_charge -= delta
@@ -51,24 +64,30 @@ func _think(delta: float) -> void:
 		_charge = 0.45
 
 
+func _muzzle_world(side: float) -> Vector2:
+	var local := (MUZZLE_L if side < 0.0 else MUZZLE_R) * SPRITE_SCALE
+	return global_position + local.rotated(facing.angle() + PI / 2)
+
+
+func _process(delta: float) -> void:
+	_recoil = move_toward(_recoil, 0.0, delta * 8.0)
+
+
 func _draw() -> void:
-	var hover := sin(_t * 4.0) * 3.0
-	draw_circle(Vector2(0, 14), hit_radius * 0.8, Color(0, 0, 0, 0.28))
-	var body := tint(Color(0.3, 0.42, 0.46))
-	var hexa := PackedVector2Array()
-	for i in 6:
-		hexa.append(Vector2.from_angle(i * TAU / 6.0) * hit_radius + Vector2(0, hover - 6))
-	draw_colored_polygon(hexa, body)
-	draw_polyline(hexa + PackedVector2Array([hexa[0]]), body.darkened(0.45), 2.0)
-	# Turret toward the player.
-	var c := Vector2(0, hover - 6)
-	draw_line(c, c + facing * (hit_radius + 10), Color(0.15, 0.15, 0.18), 7.0)
-	draw_circle(c, 10, body.lightened(0.2))
-	var glow := Color(1.0, 0.3, 0.55)
+	var rot := facing.angle() + PI / 2
+	var step := sin(_t * 12.0) * 0.03 if velocity.length() > 20.0 else 0.0
+	var s := Vector2(SPRITE_SCALE + step, SPRITE_SCALE - step)
+	var half := TEX.get_size() / 2
+	var kick := Vector2(0, _recoil * 4.0).rotated(rot)
+	draw_set_transform(Vector2(6, 9) + kick, rot, s)
+	draw_texture(TEX, -half, Color(0, 0, 0, 0.4))
+	draw_set_transform(kick, rot, s)
+	draw_texture(TEX, -half, tint(Color.WHITE))
+	# Wind-up: both rotary cannons glow before the burst.
 	if _charge > 0.0:
-		draw_circle(c + facing * (hit_radius + 10), 6 + (0.45 - _charge) * 16, Color(glow, 0.5))
-	draw_circle(c, 5, glow)
-	# Side thrusters.
-	for side in [-1, 1]:
-		draw_circle(c + Vector2(side * hit_radius * 0.8, 6), 4, Color(0.4, 0.8, 1.0, 0.6 + 0.3 * sin(_t * 20.0)))
-	draw_hp_bar(-hit_radius - 22)
+		var k := 1.0 - _charge / 0.45
+		for m in [MUZZLE_L, MUZZLE_R]:
+			draw_circle(m, 14.0 + 14.0 * k, Color(1.0, 0.35, 0.2, 0.35 + 0.3 * k))
+			draw_circle(m, 7.0, Color(1.0, 0.85, 0.6, 0.8))
+	draw_set_transform(Vector2.ZERO)
+	draw_hp_bar(-hit_radius - 30)

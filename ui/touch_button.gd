@@ -3,7 +3,7 @@ extends Control
 ## `indicator` draws live status on the button: boost cooldown ring, heat cost fill, repair
 ## charges, overdrive meter, or (for USE) only shows the button when something is in range.
 
-enum Indicator { NONE, BOOST_COOLDOWN, HEAT_COST_NOVA, HEAT_COST_CONE, REPAIR_CHARGES, OVERDRIVE_METER, USE_CONTEXT }
+enum Indicator { NONE, BOOST_COOLDOWN, HEAT_COST_NOVA, HEAT_COST_CONE, REPAIR_CHARGES, OVERDRIVE_METER, USE_CONTEXT, BEAM_COOLDOWN }
 
 @export var action := &"boost"
 @export var label := "BOOST"
@@ -79,6 +79,10 @@ func _draw() -> void:
 			Indicator.REPAIR_CHARGES:
 				is_ready = m.repair_charges > 0
 				sub = "x%d" % m.repair_charges
+			Indicator.BEAM_COOLDOWN:
+				if m.beam:
+					fill = m.beam.ready_fraction()
+					is_ready = fill >= 1.0
 			Indicator.OVERDRIVE_METER:
 				fill = m.overdrive_meter / 100.0 if m.overdrive_left <= 0.0 else m.overdrive_left / m.overdrive_time
 				is_ready = m.overdrive_meter >= 100.0 or m.overdrive_left > 0.0

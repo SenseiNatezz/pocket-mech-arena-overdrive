@@ -37,25 +37,25 @@ func _think(delta: float) -> void:
 		facing = velocity.normalized()
 
 
+const TEX := preload("res://assets/hq/scrap_hound.png")
+const SPRITE_SCALE := 0.5
+
+
 func _draw() -> void:
-	var rot := facing.angle()
-	var crouch := 0.85 if _windup > 0.0 else 1.0
-	draw_circle(Vector2(4, 8), hit_radius, Color(0, 0, 0, 0.3))
-	draw_set_transform(Vector2.ZERO, rot, Vector2(crouch, 1.0))
-	var body := tint(Color(0.62, 0.24, 0.16))
-	var step := sin(_t * 18.0) * 6.0 if velocity.length() > 30.0 else 0.0
-	for side in [-1, 1]:
-		draw_line(Vector2(8, 6 * side), Vector2(18 + step * side, 20 * side), Color(0.2, 0.2, 0.23), 4.0)
-		draw_line(Vector2(-8, 6 * side), Vector2(-18 - step * side, 20 * side), Color(0.2, 0.2, 0.23), 4.0)
-	draw_colored_polygon(PackedVector2Array([Vector2(24, 0), Vector2(8, -13), Vector2(-16, -11), Vector2(-22, 0),
-		Vector2(-16, 11), Vector2(8, 13)]), body)
-	draw_colored_polygon(PackedVector2Array([Vector2(16, 0), Vector2(4, -7), Vector2(-10, -6), Vector2(-10, 6), Vector2(4, 7)]),
-		body.lightened(0.2))
-	for i in 3:
-		draw_line(Vector2(-4 - i * 6, -9), Vector2(-8 - i * 6, -16), Color(0.75, 0.75, 0.8), 2.0)
-	var eye := Color(1.0, 0.85, 0.2) if _windup > 0.0 else Color(1.0, 0.4, 0.1)
-	draw_circle(Vector2(18, 0), 4.5, eye)
-	draw_circle(Vector2(18, 0), 9.0, Color(eye, 0.25))
+	# HQ sprite (art faces up, so rotate by facing + 90 deg). Gait = small squash/stretch while running.
+	var rot := facing.angle() + PI / 2
+	var gait := sin(_t * 18.0) * 0.05 if velocity.length() > 30.0 else 0.0
+	var crouch := Vector2(1.12, 0.82) if _windup > 0.0 else Vector2(1.0 - gait, 1.0 + gait)
+	var s := crouch * SPRITE_SCALE
+	var half := TEX.get_size() / 2
+	draw_set_transform(Vector2(6, 9), rot, s)
+	draw_texture(TEX, -half, Color(0, 0, 0, 0.4))
+	draw_set_transform(Vector2.ZERO, rot, s)
+	draw_texture(TEX, -half, tint(Color.WHITE))
+	# Eye flare while winding up a lunge.
+	if _windup > 0.0:
+		draw_circle(Vector2(0, -53), 18.0, Color(1.0, 0.8, 0.2, 0.35))
+		draw_circle(Vector2(0, -53), 8.0, Color(1.0, 0.95, 0.6, 0.9))
 	draw_set_transform(Vector2.ZERO)
 	if _windup > 0.0:
 		draw_line(Vector2.ZERO, facing * lunge_range * 0.7, Color(1.0, 0.3, 0.2, 0.35), 3.0)
