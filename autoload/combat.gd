@@ -151,6 +151,25 @@ func small_blast(pos: Vector2, radius: float, damage: float, source: Node) -> vo
 	spark(pos, Color(1.0, 0.75, 0.35), radius / 45.0)
 	burst(pos, Color(1.0, 0.55, 0.2), radius * 3.0, 0.9)
 	Sfx.play(&"explode", -16.0, 0.15)
+	_cluster(pos, damage, source)
+
+
+## CLUSTER MISSILES combo (Target Lock + Explosive Rounds): the player's explosions spit 3 homing
+## micro-missiles (half the blast's damage each). Throttled so fast weapons don't flood the screen.
+var _cluster_ms := 0
+
+
+func _cluster(pos: Vector2, damage: float, source: Node) -> void:
+	if Upgrades.level_of(&"cluster") <= 0 or source == null or not source.is_in_group("player"):
+		return
+	var now := Time.get_ticks_msec()
+	if now < _cluster_ms:
+		return
+	_cluster_ms = now + 120
+	for i in 3:
+		var dir := Vector2.from_angle(randf() * TAU)
+		var b := fire(pos + dir * 12.0, dir * 520.0, damage * 0.5, true, source, Upgrades.COMBO_GOLD, 0.75, 1.1)
+		b.homing = 9.0
 
 
 # --- damage ----------------------------------------------------------------------------------------
@@ -411,3 +430,142 @@ func _process(_delta: float) -> void:
 	for l in _labels:
 		if is_instance_valid(l) and l.visible:
 			_place_number(l)
+
+
+# --- hit feel ------------------------------------------------------------------------------------------
+## HIT-STOP: the whole game freezes for a split second on heavy impacts (big kills, rams, beam ignition)
+## so they land with weight. SLOW-MO: a short slow-motion beat (boss kills, a wave's last robot, Last
+## Stand). Both run on real time (Engine.time_scale), never while the game is paused, and the strongest
+## request wins. `--no-hitstop` turns both off (capture tools).
+const HITSTOP_SCALE := 0.04
+var _stop_until := 0
+var _slow_until := 0
+var _slow_start := 0
+var _slow_scale := 1.0
+var _feel_off := OS.get_cmdline_user_args().has("--no-hitstop")
+var _timescale_node: Node
+
+
+func hitstop(duration: float) -> void:
+	if _feel_off or get_tree().paused:
+		return
+	_ensure_timescale_node()
+	_stop_until = maxi(_stop_until, Time.get_ticks_msec() + int(duration * 1000.0))
+
+
+func slowmo(scale: float, duration: float) -> void:
+	if _feel_off:
+		return
+	_ensure_timescale_node()
+	var now := Time.get_ticks_msec()
+	if now < _slow_until and scale > _slow_scale:
+		return  # a deeper slow-mo is already running
+	_slow_scale = scale
+	_slow_start = now
+	_slow_until = now + int(duration * 1000.0)
+
+
+## Time scale is driven from a PROCESS_MODE_ALWAYS child so it can snap back to 1 when the game pauses.
+func _ensure_timescale_node() -> void:
+	if is_instance_valid(_timescale_node):
+		return
+	_timescale_node = TimeScaler.new()
+	_timescale_node.combat = self
+	add_child(_timescale_node)
+
+
+func _time_scale_now() -> float:
+	if get_tree().paused:
+		return 1.0
+	var now := Time.get_ticks_msec()
+	if now < _stop_until:
+		return HITSTOP_SCALE
+	if now < _slow_until:
+		# Ease back to full speed over the last 40% of the slow-mo.
+		var k := float(now - _slow_start) / maxf(float(_slow_until - _slow_start), 1.0)
+		return lerpf(_slow_scale, 1.0, smoothstep(0.6, 1.0, k))
+	return 1.0
+
+
+class TimeScaler:
+	extends Node
+	var combat: Node
+
+	func _ready() -> void:
+		process_mode = Node.PROCESS_MODE_ALWAYS
+
+	func _process(_d: float) -> void:
+		var s: float = combat._time_scale_now()
+		if not is_equal_approx(Engine.time_scale, s):
+			Engine.time_scale = s
+
+
+## DEBRIS: a destroyed robot bursts into tumbling metal shards (gunmetal plates, a few in the robot's
+## colour, glowing embers) that arc up, bounce once with a shadow, skid and fade. `size` ~ hit_radius.
+func debris(pos: Vector2, size: float, tint := Color(0.75, 0.5, 0.35)) -> void:
+	var d := Debris.new()
+	d.setup(pos, size, tint)
+	_world().add_child(d)
+
+
+class Debris:
+	extends Node2D
+	var _shards: Array = []
+	var _t := 0.0
+	const LIFE := 1.6
+
+	func setup(pos: Vector2, size: float, tint: Color) -> void:
+		position = pos
+		z_index = 2
+		var n := clampi(int(size / 3.5), 5, 16)
+		for i in n:
+			var a := randf() * TAU
+			var speed := randf_range(120.0, 260.0) * (0.7 + size / 60.0)
+			var kind := randi() % 6  # 0-3 gunmetal, 4 tinted, 5 ember
+			var col := Color(0.24, 0.26, 0.3).lerp(Color(0.42, 0.44, 0.48), randf())
+			if kind == 4:
+				col = tint
+			elif kind == 5:
+				col = Color(1.0, 0.65, 0.25)
+			_shards.append({"p": Vector2.ZERO, "v": Vector2.from_angle(a) * speed, "h": randf_range(4.0, 14.0),
+				"vh": randf_range(160.0, 320.0), "r": randf() * TAU, "vr": randf_range(-14.0, 14.0),
+				"s": randf_range(3.0, 7.0) * (0.8 + size / 80.0), "c": col, "ember": kind == 5, "bounced": false})
+
+	func _process(delta: float) -> void:
+		_t += delta
+		if _t > LIFE:
+			queue_free()
+			return
+		for s in _shards:
+			s["p"] += s["v"] * delta
+			s["v"] *= exp(-(3.5 if s["h"] <= 0.0 else 0.8) * delta)
+			s["r"] += s["vr"] * delta
+			s["vh"] -= 900.0 * delta
+			s["h"] += s["vh"] * delta
+			if s["h"] <= 0.0:
+				s["h"] = 0.0
+				if not s["bounced"]:
+					s["bounced"] = true
+					s["vh"] = absf(s["vh"]) * 0.35
+				else:
+					s["vh"] = 0.0
+					s["vr"] *= 0.9
+		queue_redraw()
+
+	func _draw() -> void:
+		var fade := clampf((LIFE - _t) / 0.5, 0.0, 1.0)
+		for s in _shards:
+			var p: Vector2 = s["p"]
+			var sz: float = s["s"]
+			# Shadow on the ground, shard lifted by its height.
+			draw_circle(p + Vector2(2, 3), sz * 0.6, Color(0, 0, 0, 0.3 * fade))
+			var c: Vector2 = p - Vector2(0, s["h"])
+			var pts := PackedVector2Array()
+			for k in 4:
+				var ang: float = s["r"] + k * TAU / 4.0 + (0.4 if k % 2 == 0 else 0.0)
+				pts.append(c + Vector2.from_angle(ang) * sz * (1.0 if k % 2 == 0 else 0.6))
+			var col: Color = s["c"]
+			if s["ember"]:
+				draw_circle(c, sz * 1.4, Color(1.0, 0.5, 0.15, 0.25 * fade))
+			draw_colored_polygon(pts, Color(col, fade))
+			draw_line(pts[0], pts[1], Color(col.lightened(0.45), 0.8 * fade), 1.0)

@@ -2,7 +2,8 @@ extends CanvasLayer
 ## In-game HUD + menus. Everything here is built in code:
 ##   top-left   HP (+ shield pips), heat (with Cone/Nova cost ticks), overdrive, repair kits, boost
 ##              cooldown dial, beam cooldown, pilot level + XP bar + equipped weapon
-##   top-center objective, wave/zone banners, boss health bar
+##   top-center objective, wave/zone banners (upper third, on a dark strip), boss health bar
+##   boss card  letterbox + the boss's name and epithet whenever a boss arrives (see _show_boss_card)
 ##   top-right  arena name (or endless wave), time, kills
 ##   panels     pause (resume / restart / screen shake / main menu + upgrades owned), game over,
 ##              victory, and the level-up menu (ui/level_up_menu.gd)
@@ -12,12 +13,19 @@ const LEVEL_UP_MENU := preload("res://ui/level_up_menu.gd")
 
 var mech: Mech
 var arena: Node
-var boss: Node
+## Setting a new boss (arena boss_started, Endless boss waves, gun range spawns) shows its name card.
+var boss: Node:
+	set = _set_boss
 var level_menu: CanvasLayer
 var _bars: Control
 var _objective: Label
 var _banner: Label
+var _banner_box: PanelContainer
+var _banner_style: StyleBoxFlat
 var _banner_tw: Tween
+var _card: Control
+var _card_name := ""
+var _help: Label
 var _pause_panel: Control
 var _over_panel: Control
 var _retry_boss_btn: Button
@@ -32,6 +40,12 @@ var _hp_shown := 1.0
 var _ended := false
 var _unlock_toast: PanelContainer
 var _toast_tw: Tween
+var _radio_box: PanelContainer
+var _radio_text: Label
+const BLACKOUT := preload("res://ui/blackout.gdshader")
+var _blackout: ColorRect
+var _blackout_k := 0.0
+var _radio_tw: Tween
 
 
 func _ready() -> void:
@@ -41,6 +55,14 @@ func _ready() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	# BLACKOUT twist: darkness over the arena (under every HUD element), a pool of light around the mech.
+	_blackout = ColorRect.new()
+	_blackout.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_blackout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_blackout.material = ShaderMaterial.new()
+	(_blackout.material as ShaderMaterial).shader = BLACKOUT
+	_blackout.visible = false
+	root.add_child(_blackout)
 	_bars = Control.new()
 	_bars.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_bars.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -55,12 +77,25 @@ func _ready() -> void:
 	Layout.changed.connect(_on_layout)
 	_on_layout(Layout.portrait)
 
+	# Wave / zone banners: upper third, clear of the objective line and boss bar, on a dark strip with a
+	# coloured underline so they read over the arena and the mech (see show_banner / _place_banner).
+	_banner_box = PanelContainer.new()
+	_banner_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_banner_style = StyleBoxFlat.new()
+	_banner_style.bg_color = Color(0.01, 0.02, 0.05, 0.66)
+	_banner_style.border_width_bottom = 3
+	_banner_style.set_corner_radius_all(4)
+	_banner_style.content_margin_left = 30
+	_banner_style.content_margin_right = 30
+	_banner_style.content_margin_top = 0
+	_banner_style.content_margin_bottom = 2
+	_banner_box.add_theme_stylebox_override("panel", _banner_style)
+	_banner_box.modulate.a = 0.0
 	_banner = _label(46, Color.WHITE)
-	_banner.set_anchors_preset(Control.PRESET_CENTER)
-	_banner.position = Vector2(-500, -150)
-	_banner.size = Vector2(1000, 70)
-	_banner.modulate.a = 0.0
-	root.add_child(_banner)
+	_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	_banner.add_theme_constant_override("outline_size", 12)
+	_banner_box.add_child(_banner)
+	root.add_child(_banner_box)
 
 	_pause_panel = _panel("PAUSED", [["RESUME", _resume], ["RESTART ARENA", _restart], ["SCREEN SHAKE: ON", _toggle_shake],
 		["MAIN MENU", _to_menu]], true)
@@ -81,9 +116,58 @@ func _ready() -> void:
 	_unlock_toast = _make_unlock_toast()
 	root.add_child(_unlock_toast)
 	Game.weapon_unlocked.connect(_on_weapon_unlocked)
+	_radio_box = _make_radio_box()
+	root.add_child(_radio_box)
+	Radio.line_started.connect(_on_radio_line)
 	level_menu = LEVEL_UP_MENU.new()
 	add_child(level_menu)
 	_hook_scene.call_deferred()
+
+
+## Radio subtitles (autoload/radio.gd): "HALCYON  <line>" in a dark strip low on the screen (above the
+## touch controls in portrait), fading out when the line ends.
+func _make_radio_box() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.02, 0.04, 0.08, 0.78)
+	sb.border_color = Color(0.35, 0.8, 1.0, 0.6)
+	sb.border_width_left = 3
+	sb.set_corner_radius_all(4)
+	sb.set_content_margin_all(8)
+	sb.content_margin_left = 12
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.modulate.a = 0.0
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	p.add_child(h)
+	var who := Label.new()
+	who.text = "HALCYON"
+	who.add_theme_font_size_override("font_size", 14)
+	who.add_theme_color_override("font_color", Color(0.35, 0.8, 1.0))
+	who.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	h.add_child(who)
+	# (every callout fits on one line, so no wrapping - wrapped labels in containers size badly)
+	_radio_text = Label.new()
+	_radio_text.add_theme_font_size_override("font_size", 16)
+	h.add_child(_radio_text)
+	return p
+
+
+func _on_radio_line(text: String, duration: float) -> void:
+	var vp := get_viewport().get_visible_rect().size
+	_radio_text.text = text
+	_radio_box.reset_size()
+	var w := _radio_box.get_combined_minimum_size().x
+	_radio_box.size = _radio_box.get_combined_minimum_size()
+	var y := vp.y - (600.0 if Layout.portrait else 110.0)
+	_radio_box.position = Vector2(roundf((vp.x - w) / 2.0), y)
+	if _radio_tw:
+		_radio_tw.kill()
+	_radio_tw = create_tween()
+	_radio_tw.tween_property(_radio_box, "modulate:a", 1.0, 0.15)
+	_radio_tw.tween_interval(duration)
+	_radio_tw.tween_property(_radio_box, "modulate:a", 0.0, 0.4)
 
 
 ## Wrapped info text right under a panel's title.
@@ -195,25 +279,175 @@ func _panel(title: String, buttons: Array, with_help := false) -> Control:
 		b.pressed.connect(buttons[i][1])
 		v.add_child(b)
 	if with_help:
-		var help := _label(13, Color(1, 1, 1, 0.6))
-		help.text = "KB/Mouse: WASD move, mouse aim, LMB fire, RMB scatter, Space boost,\nE nova, Q cone, F repair, Shift overdrive, R use, C beam\n" \
-			+ "Gamepad: sticks move/aim, RT fire, LT scatter, LB boost,\nY nova, RB cone, B repair, R3 overdrive, A use, X beam"
-		v.add_child(help)
+		_help = _label(13, Color(1, 1, 1, 0.6))
+		v.add_child(_help)
+		_refresh_help()
+		Controls.bindings_changed.connect(_refresh_help)
 	return shade
 
 
+## Pause-menu controls help. Keyboard / mouse keys are rebindable, so they come from Controls.
+func _refresh_help() -> void:
+	if _help == null:
+		return
+	var k := func(action: StringName) -> String: return Controls.key_name(action)
+	var move: String = k.call(&"move_up") + k.call(&"move_left") + k.call(&"move_down") + k.call(&"move_right")
+	if move.length() != 4:
+		move = "%s/%s/%s/%s" % [k.call(&"move_up"), k.call(&"move_left"), k.call(&"move_down"), k.call(&"move_right")]
+	_help.text = "KB/Mouse: %s move, mouse aim, %s fire, %s scatter, %s boost,\n%s nova, %s cone, %s repair, %s overdrive, %s use, %s beam\n" % [
+		move, k.call(&"fire_primary"), k.call(&"fire_secondary"), k.call(&"boost"), k.call(&"heat_attack_1"),
+		k.call(&"heat_attack_2"), k.call(&"self_repair"), k.call(&"overdrive"), k.call(&"use"), k.call(&"beam")] \
+		+ "Gamepad: sticks move/aim, RT fire, LT scatter, LB boost,\nY nova, RB cone, B repair, R3 overdrive, A use, X beam"
+
+
 func show_banner(text: String, color := Color.WHITE) -> void:
+	# The boss name card is already showing this name.
+	if is_instance_valid(_card) and text == _card_name:
+		return
 	_banner.text = text
 	_banner.add_theme_color_override("font_color", color)
+	_banner_style.border_color = Color(color, 0.85)
 	if _banner_tw:
 		_banner_tw.kill()
-	_banner.scale = Vector2(1.3, 1.3)
-	_banner.pivot_offset = _banner.size / 2
+	var fit := _place_banner()
+	_banner_box.scale = Vector2.ONE * fit * 1.3
 	_banner_tw = create_tween()
 	_banner_tw.set_parallel()
-	_banner_tw.tween_property(_banner, "modulate:a", 1.0, 0.15)
-	_banner_tw.tween_property(_banner, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	_banner_tw.chain().tween_property(_banner, "modulate:a", 0.0, 0.5).set_delay(1.6)
+	_banner_tw.tween_property(_banner_box, "modulate:a", 1.0, 0.15)
+	_banner_tw.tween_property(_banner_box, "scale", Vector2.ONE * fit, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_banner_tw.chain().tween_property(_banner_box, "modulate:a", 0.0, 0.5).set_delay(1.6)
+
+
+## Sizes the banner strip to its text and centres it in the upper third: just under the status card in
+## landscape, under the boss bar in portrait. Returns the scale that fits it on screen (long banners on a
+## narrow portrait screen shrink).
+func _place_banner() -> float:
+	_banner.add_theme_font_size_override("font_size", 38 if Layout.portrait else 46)
+	_banner_box.reset_size()
+	var sz := _banner_box.get_combined_minimum_size()
+	_banner_box.size = sz
+	var vp := _screen_size()
+	_banner_box.position = Vector2(roundf((vp.x - sz.x) / 2.0), 178.0 if Layout.portrait else 128.0)
+	_banner_box.pivot_offset = sz / 2.0
+	return minf(1.0, (vp.x - 24.0) / maxf(sz.x, 1.0))
+
+
+# --- boss name card ------------------------------------------------------------------------------------
+
+## Subtitle under each boss's name ("WARDEN - CRYO UNIT" -> "SIEGE WALKER  -  CRYO UNIT"; Endless
+## "RONIN MK-II" uses RONIN's).
+const BOSS_EPITHETS := {
+	"WARDEN": "Siege Walker",
+	"RONIN": "Masterless Blade",
+	"SHOGUN": "Warlord of the Ruins",
+	"SERAPH": "Herald of Six Blades",
+	"VULCAN": "The Forge Titan",
+}
+const BOSS_CARD_TIME := 2.3
+
+
+func _set_boss(b: Node) -> void:
+	var fresh := b != boss and is_instance_valid(b)
+	boss = b
+	if fresh and is_node_ready() and b.get("boss_name") != null:
+		_show_boss_card(b)
+
+
+## [big name, subtitle] for a boss name.
+static func boss_title(full: String) -> PackedStringArray:
+	var big := full
+	var tags: Array[String] = []
+	var dash := full.find(" - ")
+	if dash >= 0:
+		big = full.substr(0, dash)
+		tags.append(full.substr(dash + 3))
+	var mk := big.find(" MK-")
+	var epithet: String = BOSS_EPITHETS.get(big.substr(0, mk) if mk >= 0 else big, "")
+	if epithet != "":
+		tags.push_front(epithet)
+	return PackedStringArray([big, "  -  ".join(tags).to_upper()])
+
+
+## Cinematic boss card: letterbox bars slide in, the name slams in (lower third in landscape, under the
+## boss bar in portrait) with its epithet above and an accent rule below, then it all fades after
+## ~BOSS_CARD_TIME s. Sits under the banners / panels / radio strip and pauses with the game.
+func _show_boss_card(b: Node) -> void:
+	if is_instance_valid(_card):
+		_card.queue_free()
+	var full := String(b.get("boss_name"))
+	var accent: Color = b.get("accent") if b.get("accent") is Color else Color(1.0, 0.3, 0.25)
+	var title := boss_title(full)
+	_card_name = full
+	# The arena's own "<BOSS NAME>" banner would only repeat the card.
+	if _banner.text == full:
+		if _banner_tw:
+			_banner_tw.kill()
+		_banner_box.modulate.a = 0.0
+	var vp := _screen_size()
+	var card := Control.new()
+	card.name = "BossCard"
+	card.set_anchors_preset(Control.PRESET_FULL_RECT)
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.process_mode = Node.PROCESS_MODE_PAUSABLE
+	_bars.get_parent().add_child(card)
+	_bars.get_parent().move_child(card, _bars.get_index() + 1)
+	_card = card
+	var bar_h := roundf(vp.y * (0.055 if Layout.portrait else 0.075))
+	var bars: Array[ColorRect] = []
+	for top: bool in [true, false]:
+		var r := ColorRect.new()
+		r.color = Color(0, 0, 0, 0.9)
+		r.size = Vector2(vp.x, bar_h)
+		r.position = Vector2(0, -bar_h if top else vp.y)
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(r)
+		bars.append(r)
+	var name_y := 262.0 if Layout.portrait else roundf(vp.y * 0.68)
+	var name_l := _label(52 if Layout.portrait else 66, Color.WHITE)
+	name_l.text = title[0]
+	name_l.add_theme_color_override("font_outline_color", Color(accent.darkened(0.75), 0.95))
+	name_l.add_theme_constant_override("outline_size", 14)
+	name_l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	name_l.add_theme_constant_override("shadow_offset_y", 5)
+	name_l.size = Vector2(vp.x, 90)
+	name_l.position = Vector2(0, name_y - 45)
+	name_l.pivot_offset = name_l.size / 2
+	card.add_child(name_l)
+	var sub := _label(18 if Layout.portrait else 20, accent.lightened(0.45))
+	var spaced := FontVariation.new()
+	spaced.base_font = ThemeDB.fallback_font
+	spaced.spacing_glyph = 4
+	sub.add_theme_font_override("font", spaced)
+	sub.text = title[1]
+	sub.size = Vector2(vp.x, 30)
+	sub.position = Vector2(0, name_y - 82)
+	card.add_child(sub)
+	var rule_w := minf(vp.x - 80.0, 620.0)
+	var rule := ColorRect.new()
+	rule.color = accent
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rule.size = Vector2(0, 3)
+	rule.position = Vector2(vp.x / 2.0, name_y + 44)
+	card.add_child(rule)
+	name_l.modulate.a = 0.0
+	name_l.scale = Vector2(1.6, 1.6)
+	sub.modulate.a = 0.0
+	var tw := card.create_tween()
+	tw.set_parallel()
+	tw.tween_property(bars[0], "position:y", 0.0, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(bars[1], "position:y", vp.y - bar_h, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(name_l, "modulate:a", 1.0, 0.16).set_delay(0.12)
+	tw.tween_property(name_l, "scale", Vector2.ONE, 0.3).set_delay(0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(Sfx.play.bind(&"slam", -10.0, 0.0)).set_delay(0.14)
+	tw.tween_property(rule, "size:x", rule_w, 0.4).set_delay(0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(rule, "position:x", (vp.x - rule_w) / 2.0, 0.4).set_delay(0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(sub, "modulate:a", 1.0, 0.35).set_delay(0.32)
+	tw.tween_property(sub, "position:y", name_y - 76, 0.35).set_delay(0.32).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	var out := BOSS_CARD_TIME - 0.45
+	tw.tween_property(card, "modulate:a", 0.0, 0.45).set_delay(out)
+	tw.tween_property(bars[0], "position:y", -bar_h, 0.45).set_delay(out).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tw.tween_property(bars[1], "position:y", vp.y, 0.45).set_delay(out).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(card.queue_free)
 
 
 ## Mid-run "NEW WEAPON UNLOCKED" card (top right) with the weapon's art. The results screen still
@@ -305,12 +539,23 @@ func _upgrade_summary() -> String:
 	for id: StringName in Upgrades.CATALOG:
 		if Upgrades.level_of(id) > 0:
 			parts.append("%s %d" % [Upgrades.display_name(id), Upgrades.level_of(id)])
+	for id: StringName in Upgrades.COMBOS:
+		if Upgrades.level_of(id) > 0:
+			parts.append("COMBO %s" % Upgrades.display_name(id).to_upper())
 	var weapon_name: String = Game.weapon_info(mech.weapon if mech else Game.weapon)["name"]
 	return "Level %d  -  %s\n%s" % [Upgrades.level, weapon_name,
 		"Upgrades: " + ", ".join(parts) if not parts.is_empty() else "No upgrades yet - defeat enemies to level up"]
 
 
 ## Unlock announcement for results screens ("" when nothing new).
+## Banks this run's Hangar scrap and says how much it was (results screens).
+func _scrap_text() -> String:
+	if not Game.scrap_enabled and Game.run_scrap <= 0.0:
+		return ""
+	var got := Game.bank_scrap()
+	return "\n+%d SCRAP   (Hangar: %d)" % [got, Game.scrap]
+
+
 func _unlock_text() -> String:
 	if Game.new_unlocks.is_empty():
 		return ""
@@ -360,9 +605,10 @@ func _show_game_over() -> void:
 		_over_stats.text = "Survived %d wave%s   (Best %d%s)\nLevel %d    Time %s    Kills %d%s" % [
 			Game.endless_wave, "" if Game.endless_wave == 1 else "s", best,
 			"  NEW RECORD!" if Game.endless_wave > Game.endless_best_at_start else "", Upgrades.level,
-			_fmt_time(Game.run_time), Game.kills, _unlock_text()]
+			_fmt_time(Game.run_time), Game.kills, _unlock_text() + _scrap_text()]
 	else:
-		_over_stats.text = "Level %d    Time %s    Kills %d" % [Upgrades.level, _fmt_time(Game.run_time), Game.kills]
+		_over_stats.text = "Level %d    Time %s    Kills %d%s" % [Upgrades.level, _fmt_time(Game.run_time), Game.kills,
+			_scrap_text()]
 	_retry_boss_btn.visible = Game.can_retry_boss()
 	var retry := _over_panel.find_child("Btn0", true, false) as Button
 	if not Game.is_endless():
@@ -379,7 +625,7 @@ func _show_victory() -> void:
 		await level_menu.closed
 	_ended = true
 	_win_stats.text = "Level %d    Time %s    Kills %d%s" % [Upgrades.level, _fmt_time(Game.run_time), Game.kills,
-		_unlock_text()]
+		_unlock_text() + _scrap_text()]
 	_next_btn.visible = Game.has_next_arena()
 	_win_panel.show()
 	(_win_panel.find_child("Btn0" if _next_btn.visible else "Btn1", true, false) as Button).grab_focus()
@@ -399,12 +645,30 @@ func _process(delta: float) -> void:
 	if mech:
 		_hp_shown = lerpf(_hp_shown, mech.hp / mech.max_hp, 1.0 - exp(-6.0 * delta))
 	_bars.queue_redraw()
+	_update_blackout(delta)
+
+
+## BLACKOUT twist: fade the darkness in / out and keep the light pool on the mech.
+func _update_blackout(delta: float) -> void:
+	var want := 1.0 if Game.is_endless() and Game.endless_twist == &"blackout" and mech and not mech.dead else 0.0
+	_blackout_k = move_toward(_blackout_k, want, delta * 0.8)
+	_blackout.visible = _blackout_k > 0.0
+	if not _blackout.visible:
+		return
+	var vp := _bars.size
+	var mat := _blackout.material as ShaderMaterial
+	mat.set_shader_parameter("center", _bars.get_viewport().get_canvas_transform() * mech.global_position)
+	mat.set_shader_parameter("rect_size", vp)
+	mat.set_shader_parameter("radius", minf(vp.x, vp.y) * 0.42)
+	mat.set_shader_parameter("strength", _blackout_k)
+	mat.set_shader_parameter("t", _t)
 
 
 func _draw_bars() -> void:
 	var c := _bars
 	var font := ThemeDB.fallback_font
 	var vp := c.size
+	_draw_enemy_arrows(c, font, vp)
 	if mech:
 		var hp_frac := mech.hp / mech.max_hp
 		# Low-HP warning vignette.
@@ -440,6 +704,13 @@ func _draw_bars() -> void:
 		var tag := String(d["name"]).to_upper()
 		c.draw_string_outline(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, 5, Color(0, 0, 0, 0.8))
 		c.draw_string(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, d["color"])
+		# Endless twist badge.
+		if Game.is_endless() and Game.TWISTS.has(Game.endless_twist):
+			var tw: Dictionary = Game.TWISTS[Game.endless_twist]
+			var txt := "TWIST: %s" % tw["name"]
+			c.draw_string_outline(font, Vector2(vp.x - 420, iy + 36), txt, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, 5, Color(0, 0, 0, 0.8))
+			c.draw_string(font, Vector2(vp.x - 420, iy + 36), txt, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13,
+				Color(tw["color"], 0.75 + 0.25 * sin(_t * 3.0)))
 
 
 func _text(font: Font, pos: Vector2, s: String, size: int, col: Color) -> void:
@@ -587,9 +858,84 @@ func _dial(p: Vector2, frac: float, col: Color, caption: String, font: Font) -> 
 	_bars.draw_string(font, p + Vector2(-20, 17), caption, HORIZONTAL_ALIGNMENT_CENTER, 40, 8, Color(col, 0.75))
 
 
+## Off-screen enemy arrows: every robot outside the view gets a small arrow at the screen edge, pointing
+## at it, in its signature colour (bosses: bigger, in their accent colour, with a ring). When only a
+## few robots are left, the arrows grow, pulse and show the distance, so the last stragglers of a wave
+## are quick to find.
+const ARROW_COLORS := {
+	&"Chaser": Color(1.0, 0.55, 0.3), &"Shooter": Color(1.0, 0.4, 0.3), &"HeavyTank": Color(1.0, 0.6, 0.2),
+	&"BladeStriker": Color(1.0, 0.35, 0.85), &"AegisGuardian": Color(0.35, 0.9, 1.0), &"Lancer": Color(0.5, 1.0, 0.7),
+	&"Hornet": Color(0.45, 0.65, 1.0), &"Coil": Color(1.0, 0.4, 0.9), &"Widow": Color(0.65, 1.0, 0.2),
+	&"Cinder": Color(0.55, 0.8, 1.0), &"Bastion": Color(0.3, 1.0, 0.6), &"Tidebreaker": Color(1.0, 0.55, 0.35),
+	&"MagmaCrawler": Color(1.0, 0.45, 0.15), &"Anvil": Color(0.8, 0.82, 0.88), &"Slagspitter": Color(1.0, 0.8, 0.25),
+}
+const ARROW_MARGIN := 30.0
+## Screen area of the status card (top-left); arrows slide past it.
+const STATUS_CARD := Rect2(0, 0, 390, 126)
+## At or below this many robots left, arrows switch to "straggler" mode (bigger, pulsing, distance).
+const ARROW_FEW := 3
+
+
+func _draw_enemy_arrows(c: Control, font: Font, vp: Vector2) -> void:
+	if not mech or mech.dead:
+		return
+	var enemies := get_tree().get_nodes_in_group("enemies")
+	var alive := 0
+	for e in enemies:
+		if e is Enemy and not e.dead:
+			alive += 1
+	var few := alive <= ARROW_FEW
+	var xf := c.get_viewport().get_canvas_transform()
+	var center := vp / 2.0
+	var half := center - Vector2.ONE * ARROW_MARGIN
+	var pulse := 0.5 + 0.5 * sin(_t * 6.0)
+	for e in enemies:
+		if not (e is Enemy) or e.dead:
+			continue
+		var p: Vector2 = xf * e.global_position
+		var r: float = e.hit_radius * xf.get_scale().x
+		if Rect2(Vector2.ZERO, vp).grow(-r * 0.5).has_point(p):
+			continue  # on screen
+		var dir := (p - center).normalized()
+		# Where the ray from the screen centre leaves the (inset) screen rectangle.
+		var t := minf(half.x / maxf(absf(dir.x), 0.001), half.y / maxf(absf(dir.y), 0.001))
+		var at := center + dir * t
+		# Keep clear of the status card (top-left): slide along the edge past it.
+		if STATUS_CARD.has_point(at):
+			if at.x <= ARROW_MARGIN + 1.0:
+				at.y = STATUS_CARD.end.y + 12.0
+			else:
+				at.x = STATUS_CARD.end.x + 12.0
+		var is_boss := e is WardenBoss
+		var col: Color = e.get("accent") if is_boss else ARROW_COLORS.get(e.get_script().get_global_name(), Color(1.0, 0.4, 0.35))
+		var size := 24.0 if is_boss else (19.0 if few else 14.0)
+		var alpha := 0.65 + 0.35 * pulse if few or is_boss else 0.75
+		if few:
+			size += 3.0 * pulse
+		var side := dir.orthogonal()
+		var tip := at + dir * size
+		var tri := PackedVector2Array([tip, at - dir * size * 0.5 + side * size * 0.75, at - dir * size * 0.2,
+			at - dir * size * 0.5 - side * size * 0.75])
+		var outline := tri.duplicate()
+		outline.append(tip)
+		# Dark backing so it reads on bright maps (snow, sand) too.
+		c.draw_circle(at + dir * size * 0.2, size * 1.05, Color(0.02, 0.03, 0.08, 0.45 * alpha))
+		c.draw_colored_polygon(tri, Color(col, alpha))
+		c.draw_polyline(outline, Color(0, 0, 0, 0.7 * alpha), 2.0, true)
+		if is_boss:
+			c.draw_arc(at, size * 1.35, 0.0, TAU, 24, Color(col, 0.4 + 0.3 * pulse), 2.0, true)
+		if few or is_boss:
+			var m := "%dm" % roundi(mech.global_position.distance_to(e.global_position) / 10.0)
+			var tp := at - dir * (size + 20.0) + Vector2(-24, 6)
+			c.draw_string_outline(font, tp, m, HORIZONTAL_ALIGNMENT_CENTER, 48, 15, 5, Color(0, 0, 0, 0.85))
+			c.draw_string(font, tp, m, HORIZONTAL_ALIGNMENT_CENTER, 48, 15, Color(col.lightened(0.4), 1.0))
+
+
 ## Portrait: the objective line drops below the status card (the top row is full there).
 func _on_layout(portrait: bool) -> void:
 	_objective.position.y = 122.0 if portrait else 14.0
+	if _banner_box and _banner_box.modulate.a > 0.0:
+		_place_banner.call_deferred()
 
 
 ## Boss health bar: centred right under the top edge, between the status card (left) and the run info
@@ -603,3 +949,8 @@ func boss_bar_rect() -> Rect2:
 	var half := minf(vp.x / 2.0 - 405.0, vp.x / 2.0 - right_reserve)
 	var w := clampf(half * 2.0, 300.0, 640.0)
 	return Rect2(vp.x / 2.0 - w / 2.0, 30.0, w, 14.0)
+
+
+## HUD canvas size (falls back to the viewport before the first layout pass).
+func _screen_size() -> Vector2:
+	return _bars.size if _bars.size.x > 0.0 else get_viewport().get_visible_rect().size

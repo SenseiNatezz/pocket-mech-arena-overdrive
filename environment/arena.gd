@@ -871,7 +871,7 @@ func _setup_flow() -> void:
 		objective_changed.emit("Wave %d / %d - destroy all hostiles" % [i, n]))
 	zone.wave_cleared.connect(func(i: int, n: int) -> void:
 		if i < n:
-			banner.emit("WAVE CLEARED", Color(0.4, 1.0, 0.6)))
+			banner.emit("WAVE BROKEN - REINFORCEMENTS INBOUND" if zone.last_overlapped else "WAVE CLEARED", Color(0.4, 1.0, 0.6)))
 	zone.cleared.connect(_on_zone_cleared)
 	# Boss trigger: inside the boss room past the door.
 	var trig := Area2D.new()

@@ -7,6 +7,10 @@ extends Node
 ##            (20, 45, 80, 125...) - endless waves keep growing, so leveling has to slow down with them.
 ##            Both get steeper in tiers after level 5 (x1.6 from level 5, x2.2 from 10, x3 from 15), and
 ##            MAX_LEVEL (20) is the cap: no more XP or picks after it.
+##            Difficulty: XP gains x Game.diff("xp"), and the campaign's levels from 3 on cost
+##            x Game.diff("xp_curve") (Extreme: 0.45 XP, 1.6x cost - its enemies drop far more XP).
+##   REWARDS  Endless also hands out picks between level-ups: a free pick for every boss destroyed and a
+##            supply drop (XP burst + repair) every third wave (see ScenicArena).
 ##   RUN      stacks reset when a run starts from the menu, carry over on NEXT ARENA, and RESTART
 ##            restores the checkpoint taken when the arena started.
 ## Every number an upgrade changes lives in the helpers at the bottom, so the mech and the menu's
@@ -42,15 +46,66 @@ const CATALOG := {
 	&"salvage": {"name": "Salvage Repair", "max": 3, "color": Color(0.4, 1.0, 0.5)},
 	&"heat_sink": {"name": "Heat Sink", "max": 3, "color": Color(1.0, 0.6, 0.25)},
 	&"magnet": {"name": "Scavenger", "max": 2, "color": Color(0.4, 1.0, 0.85)},
+	# (effects: crit / cryo / executioner in enemies/enemy.gd, drones in player/weapons/bit_drones.gd,
+	# the rest in player/mech.gd)
+	&"crit": {"name": "Critical Targeting", "max": 3, "color": Color(1.0, 0.92, 0.35)},
+	&"drones": {"name": "Bit Drones", "max": 3, "color": Color(0.45, 0.95, 1.0)},
+	&"missile_pod": {"name": "Micro-Missile Pod", "max": 3, "color": Color(1.0, 0.55, 0.45)},
+	&"chain": {"name": "Arc Emitter", "max": 3, "color": Color(0.6, 0.75, 1.0)},
+	&"boost_burst": {"name": "Impulse Burst", "max": 3, "color": Color(0.35, 1.0, 0.95)},
+	&"reactive": {"name": "Reactive Armor", "max": 3, "color": Color(1.0, 0.7, 0.4)},
+	&"cryo": {"name": "Cryo Rounds", "max": 3, "color": Color(0.55, 0.9, 1.0)},
+	&"redline": {"name": "Redline", "max": 3, "color": Color(1.0, 0.3, 0.3)},
+	&"od_core": {"name": "Reactor Overcharge", "max": 3, "color": Color(1.0, 0.85, 0.3)},
+	&"thermal": {"name": "Thermal Amplifier", "max": 3, "color": Color(1.0, 0.5, 0.2)},
+}
+## REROLL / BANISH / SKIP (level-up menu): charges per run. Rerolls deal 3 fresh cards, a banish removes
+## an upgrade from the rest of the run, skipping a pick repairs SKIP_REPAIR HP instead. The Hangar adds
+## charges (Tactical Uplink / Purge Protocol) and every NEXT ARENA adds a reroll.
+const BASE_REROLLS := 2
+const BASE_BANISHES := 1
+const SKIP_REPAIR := 20.0
+
+## COMBOS: two upgrades you've invested in (both taken, 3+ levels between them) unlock a gold COMBO card,
+## dealt into the next level-up (it takes one of the three slots). One level each; `only` = weapons it
+## works with. Effects live where they act (mech.gd, orbit_blades.gd, Combat.small_blast).
+const COMBO_GOLD := Color(1.0, 0.8, 0.25)
+const COMBOS := {
+	&"cluster": {"name": "Cluster Missiles", "needs": [&"target_lock", &"explosive"],
+		"desc": "Every explosion launches 3 homing micro-missiles at nearby robots."},
+	&"blade_storm": {"name": "Blade Storm", "needs": [&"blades", &"shield"],
+		"desc": "Orbit blades grow bigger, spin 60% faster and hit 50% harder."},
+	&"overclock": {"name": "Overclock", "needs": [&"rapid", &"heat_sink"],
+		"desc": "The hotter your mech runs, the faster it fires: up to +40% at full heat."},
+	&"railgun": {"name": "Railgun", "needs": [&"pierce", &"power"], "only": [&"blaster", &"gatling"],
+		"desc": "Every 6th shot is a railgun slug: 4x damage, pierces everything."},
+	&"nano_repair": {"name": "Nano Repair", "needs": [&"salvage", &"armor"],
+		"desc": "Regenerate 2 HP a second after 3 s without taking damage."},
+	&"seeker_swarm": {"name": "Seeker Swarm", "needs": [&"multishot", &"target_lock"], "only": [&"blaster", &"gatling"],
+		"desc": "Your side shots become seekers that chase down robots."},
+	&"storm_bits": {"name": "Storm Bits", "needs": [&"drones", &"chain"],
+		"desc": "Bit Drone shots always arc lightning to another robot nearby."},
+	&"shatter": {"name": "Shatter", "needs": [&"cryo", &"explosive"],
+		"desc": "Chilled robots burst into a freezing blast when destroyed."},
+	&"executioner": {"name": "Executioner", "needs": [&"crit", &"redline"],
+		"desc": "Critical hits destroy robots below 25% HP outright (not bosses)."},
 }
 
 var level := 1
 var xp := 0.0
-## Level-up picks waiting to be made.
+## Level-up picks waiting to be made (bonus picks included).
 var pending := 0
+## Of `pending`, how many are free picks (Hangar Head Start, Endless boss rewards) rather than levels.
+## They're dealt first, under `bonus_title`.
+var bonus_picks := 0
+var bonus_title := "BOSS REWARD!"
 ## True while the level-up menu is open (the HUD's pause menu stays shut meanwhile).
 var choosing := false
 var stacks := {}
+## Level-up menu charges left this run, and the upgrades banished from it.
+var rerolls := 0
+var banishes := 0
+var banished: Array[StringName] = []
 ## Shards spawned before this time fly straight to the player (see vacuum()).
 var vacuum_until_ms := 0
 var _checkpoint := {}
@@ -67,20 +122,45 @@ func reset() -> void:
 	level = 1
 	xp = 0.0
 	pending = 0
+	bonus_picks = 0
 	choosing = false
 	stacks.clear()
+	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls")
+	banishes = BASE_BANISHES + Game.hangar_level(&"banishes")
+	banished.clear()
 	save_checkpoint()
 
 
+## NEXT ARENA (upgrades carry over): one more reroll for the road.
+func next_arena_bonus() -> void:
+	rerolls += 1
+
+
+## Fresh run from the menu with the Hangar's Head Start: free picks waiting when the arena opens (the
+## level-up menu deals them as soon as it's ready).
+func grant_head_start() -> void:
+	var n := Game.hangar_level(&"head_start")
+	if n > 0:
+		pending += n
+		bonus_picks += n
+		bonus_title = "HEAD START"
+
+
+## (unspent Head Start picks are part of the checkpoint, so RETRY offers them again)
 func save_checkpoint() -> void:
-	_checkpoint = {"level": level, "xp": xp, "stacks": stacks.duplicate()}
+	_checkpoint = {"level": level, "xp": xp, "stacks": stacks.duplicate(), "bonus": bonus_picks, "rerolls": rerolls,
+		"banishes": banishes, "banished": banished.duplicate()}
 
 
 func restore_checkpoint() -> void:
 	level = _checkpoint.get("level", 1)
 	xp = _checkpoint.get("xp", 0.0)
 	stacks = _checkpoint.get("stacks", {}).duplicate()
-	pending = 0
+	bonus_picks = _checkpoint.get("bonus", 0)
+	rerolls = _checkpoint.get("rerolls", BASE_REROLLS)
+	banishes = _checkpoint.get("banishes", BASE_BANISHES)
+	banished.assign(_checkpoint.get("banished", []))
+	pending = bonus_picks
 	choosing = false
 
 
@@ -96,6 +176,9 @@ func xp_to_next(lvl := -1) -> float:
 	var base := 2.0 + 2.0 * lvl if lvl < 4 else float(lvl * lvl)
 	if Game.is_endless() and lvl >= 2:
 		base = ENDLESS_XP_FACTOR * lvl * lvl
+	elif lvl >= 3:
+		# Campaign on Extreme: every level past 3 costs extra.
+		base *= Game.diff("xp_curve")
 	for t: Array in XP_TIERS:
 		if lvl >= int(t[0]):
 			return roundf(base * float(t[1]))
@@ -114,7 +197,7 @@ func add_xp(amount: float) -> void:
 	if is_max_level():
 		xp = 0.0
 		return
-	xp += amount * xp_mult()
+	xp += amount * xp_mult() * Game.diff("xp") * (1.0 + 0.06 * Game.hangar_level(&"analytics")) * Game.twist_value("xp")
 	var gained := 0
 	while xp >= xp_to_next():
 		xp -= xp_to_next()
@@ -132,8 +215,10 @@ func add_xp(amount: float) -> void:
 func xp_value(e: Enemy) -> int:
 	if e.is_in_group("boss"):
 		return 30 + roundi(e.max_hp / 200.0)
-	# Armor counts as extra toughness (each armor point takes armor_tier damage to strip).
-	return maxi(1, roundi((e.max_hp + e.max_armor * e.armor_tier) / 45.0))
+	# Armor counts as extra toughness (each armor point takes armor_tier damage to strip). Elites have
+	# double HP already, so the 1.25 on top makes them worth 2.5x.
+	var v := (e.max_hp + e.max_armor * e.armor_tier) / 45.0
+	return maxi(1, roundi(v * (1.25 if e.elite else 1.0)))
 
 
 func _on_enemy_killed(e: Node) -> void:
@@ -167,7 +252,7 @@ func level_of(id: StringName) -> int:
 
 func is_available(id: StringName) -> bool:
 	var u: Dictionary = CATALOG[id]
-	if level_of(id) >= u["max"]:
+	if level_of(id) >= u["max"] or banished.has(id):
 		return false
 	if u.has("only") and not u["only"].has(Game.weapon):
 		return false
@@ -176,42 +261,137 @@ func is_available(id: StringName) -> bool:
 	return true
 
 
-## Up to `n` distinct random upgrades that can still be taken (topped up with Field Repair).
+## Cards per level-up: 3, or 4 with the VX-7 Standard's ADAPTIVE CORE.
+func card_count() -> int:
+	return 4 if Game.chassis == &"standard" else 3
+
+
+## Up to `n` distinct random upgrades that can still be taken (topped up with Field Repair). An unlocked
+## COMBO always takes the last slot.
 func roll_choices(n := 3) -> Array[StringName]:
 	var pool: Array[StringName] = []
 	for id: StringName in CATALOG:
 		if is_available(id):
 			pool.append(id)
 	pool.shuffle()
+	var combos := available_combos()
+	var take := n - (1 if not combos.is_empty() else 0)
 	var out: Array[StringName] = []
-	for id in pool.slice(0, n):
+	for id in pool.slice(0, take):
 		out.append(id)
+	if not combos.is_empty():
+		out.append(combos.pick_random())
 	if out.size() < n:
 		out.append(FIELD_REPAIR)
 	return out
+
+
+func is_combo(id: StringName) -> bool:
+	return COMBOS.has(id)
+
+
+## Combos whose two upgrades are both taken (3+ levels between them), not taken yet, for this weapon.
+func available_combos() -> Array[StringName]:
+	var out: Array[StringName] = []
+	for id: StringName in COMBOS:
+		var c: Dictionary = COMBOS[id]
+		if level_of(id) > 0 or banished.has(id) or (c.has("only") and not c["only"].has(Game.weapon)):
+			continue
+		var a := level_of(c["needs"][0])
+		var b := level_of(c["needs"][1])
+		if a > 0 and b > 0 and a + b >= 3:
+			out.append(id)
+	return out
+
+
+## "Target Lock + Explosive Rounds" for a combo card.
+func combo_parents(id: StringName) -> String:
+	var c: Dictionary = COMBOS[id]
+	return "%s + %s" % [CATALOG[c["needs"][0]]["name"], CATALOG[c["needs"][1]]["name"]]
 
 
 func apply(id: StringName) -> void:
 	if id != FIELD_REPAIR:
 		stacks[id] = level_of(id) + 1
 	pending = maxi(pending - 1, 0)
+	bonus_picks = maxi(bonus_picks - 1, 0)
 	upgrade_applied.emit(id)
+	if is_combo(id):
+		Radio.say(&"combo", true)
+
+
+## Level-up menu REROLL: spends a charge (the menu deals fresh cards). False when none are left.
+func use_reroll() -> bool:
+	if rerolls <= 0:
+		return false
+	rerolls -= 1
+	return true
+
+
+## Level-up menu BANISH: `id` never shows up again this run.
+func banish(id: StringName) -> bool:
+	if banishes <= 0 or id == FIELD_REPAIR or banished.has(id):
+		return false
+	banishes -= 1
+	banished.append(id)
+	return true
+
+
+## Level-up menu SKIP: no upgrade, a quick repair instead (the pick is used up).
+func skip() -> void:
+	pending = maxi(pending - 1, 0)
+	bonus_picks = maxi(bonus_picks - 1, 0)
+	var mech := get_tree().get_first_node_in_group("player") as Mech
+	if mech:
+		mech.heal(SKIP_REPAIR)
+
+
+## A free upgrade pick that isn't a level (Endless boss kill). Opens the pick menu right away.
+func grant_bonus_pick() -> void:
+	pending += 1
+	bonus_picks += 1
+	bonus_title = "BOSS REWARD!"
+	Sfx.play(&"levelup", -4.0, 0.0)
+	if not choosing:
+		level_up_ready.emit()
+
+
+## Supply drop: an XP burst worth `fraction` of the current level's cost (difficulty XP multipliers
+## don't shrink it), sprayed as shards around `pos` and pulled straight to the player.
+func supply_xp(pos: Vector2, fraction: float) -> void:
+	if is_max_level():
+		return
+	var total := xp_to_next() * fraction / maxf(xp_mult() * Game.diff("xp"), 0.01)
+	var world := Combat.world()
+	for i in 8:
+		var orb: Node2D = XP_ORB.new()
+		orb.value = total / 8.0
+		orb.position = pos
+		orb.set("pop", Vector2.from_angle(TAU * i / 8.0) * randf_range(120.0, 220.0))
+		world.add_child.call_deferred(orb)
+	vacuum()
 
 
 func display_name(id: StringName) -> String:
+	if is_combo(id):
+		return COMBOS[id]["name"]
 	return "Field Repair" if id == FIELD_REPAIR else CATALOG[id]["name"]
 
 
 func color(id: StringName) -> Color:
+	if is_combo(id):
+		return COMBO_GOLD
 	return Color(0.4, 1.0, 0.5) if id == FIELD_REPAIR else CATALOG[id]["color"]
 
 
 func max_level(id: StringName) -> int:
-	return 1 if id == FIELD_REPAIR else CATALOG[id]["max"]
+	return 1 if id == FIELD_REPAIR or is_combo(id) else CATALOG[id]["max"]
 
 
 ## What taking `id` right now does (describes the NEXT level, with real numbers).
 func describe(id: StringName) -> String:
+	if is_combo(id):
+		return COMBOS[id]["desc"]
 	var n := level_of(id) + 1
 	var w := Game.weapon
 	match id:
@@ -251,6 +431,31 @@ func describe(id: StringName) -> String:
 		&"magnet":
 			return "XP shards fly to you from %d%% farther, and give +%d%% XP." % [
 				roundi((magnet_mult(n) - 1.0) * 100.0), roundi((xp_mult(n) - 1.0) * 100.0)]
+		&"crit":
+			return "%d%% chance for any hit to deal double damage." % roundi(crit_chance(n) * 100.0)
+		&"drones":
+			return "%d drone%s fly with you, firing at the nearest robot every %.1fs." % [n, "" if n == 1 else "s",
+				drone_interval(n)]
+		&"missile_pod":
+			return "Every %.1fs, launch %d homing micro-missiles at nearby robots." % [missile_interval(n), missile_count(n)]
+		&"chain":
+			return "%d%% chance for hits to arc lightning to %d nearby robot%s." % [roundi(chain_chance(n) * 100.0),
+				n, "" if n == 1 else "s"]
+		&"boost_burst":
+			return "Boosting sets off a shockwave: %d damage around you." % roundi(boost_burst_damage(n))
+		&"reactive":
+			return "Taking a hit discharges a %d-damage blast around you." % roundi(reactive_damage(n))
+		&"cryo":
+			return "%d%% chance for hits to chill robots, slowing them by 40%% for 2s." % roundi(cryo_chance(n) * 100.0)
+		&"redline":
+			return "Below 40%% HP: +%d%% damage and +%d%% attack speed." % [roundi(redline_damage(n) * 100.0),
+				roundi(redline_rate(n) * 100.0)]
+		&"od_core":
+			return "Overdrive lasts %ds longer and charges %d%% faster." % [roundi(od_bonus_time(n)),
+				roundi((od_gain(n) - 1.0) * 100.0)]
+		&"thermal":
+			return "Nova + Cone cost %d%% less heat and deal +%d%% damage." % [roundi((1.0 - ability_cost_mult(n)) * 100.0),
+				roundi((ability_damage_mult(n) - 1.0) * 100.0)]
 		&"field_repair":
 			return "Repair 40 HP and restock one repair kit."
 	return ""
@@ -295,16 +500,19 @@ func fire_rate_mult(lvl := -1) -> float:
 	return 1.0 + 0.15 * _lv(&"rapid", lvl)
 
 
+## (Power Core, times the Hangar's Weapon Calibration)
 func damage_mult(lvl := -1) -> float:
-	return 1.0 + 0.15 * _lv(&"power", lvl)
+	return (1.0 + 0.15 * _lv(&"power", lvl)) * (1.0 + 0.05 * Game.hangar_level(&"calibration"))
 
 
 func max_hp_bonus(lvl := -1) -> float:
 	return 25.0 * _lv(&"armor", lvl)
 
 
+## (Thrusters, times the Hangar's Servo Motors and the chassis)
 func move_mult(lvl := -1) -> float:
-	return 1.0 + 0.1 * _lv(&"thrusters", lvl)
+	return (1.0 + 0.1 * _lv(&"thrusters", lvl)) * (1.0 + 0.04 * Game.hangar_level(&"servos")) \
+		* float(Game.chassis_info()["speed"]) * Game.twist_value("player_speed")
 
 
 func boost_cd_mult(lvl := -1) -> float:
@@ -335,3 +543,72 @@ func magnet_mult(lvl := -1) -> float:
 
 func xp_mult(lvl := -1) -> float:
 	return 1.0 + 0.15 * _lv(&"magnet", lvl)
+
+
+func crit_chance(lvl := -1) -> float:
+	var l := _lv(&"crit", lvl)
+	return 0.0 if l <= 0 else [0.1, 0.18, 0.26][l - 1]
+
+
+func drone_count(lvl := -1) -> int:
+	return _lv(&"drones", lvl)
+
+
+func drone_interval(lvl := -1) -> float:
+	var l := _lv(&"drones", lvl)
+	return 0.9 if l <= 0 else [0.9, 0.8, 0.7][l - 1]
+
+
+func missile_interval(lvl := -1) -> float:
+	var l := _lv(&"missile_pod", lvl)
+	return 3.0 if l <= 0 else [3.0, 2.4, 1.8][l - 1]
+
+
+func missile_count(lvl := -1) -> int:
+	return 3 if _lv(&"missile_pod", lvl) >= 3 else 2
+
+
+func chain_chance(lvl := -1) -> float:
+	var l := _lv(&"chain", lvl)
+	return 0.0 if l <= 0 else [0.12, 0.2, 0.28][l - 1]
+
+
+func boost_burst_damage(lvl := -1) -> float:
+	var l := _lv(&"boost_burst", lvl)
+	return 0.0 if l <= 0 else [25.0, 40.0, 55.0][l - 1]
+
+
+func reactive_damage(lvl := -1) -> float:
+	var l := _lv(&"reactive", lvl)
+	return 0.0 if l <= 0 else [30.0, 50.0, 70.0][l - 1]
+
+
+func cryo_chance(lvl := -1) -> float:
+	var l := _lv(&"cryo", lvl)
+	return 0.0 if l <= 0 else [0.2, 0.3, 0.4][l - 1]
+
+
+func redline_damage(lvl := -1) -> float:
+	var l := _lv(&"redline", lvl)
+	return 0.0 if l <= 0 else [0.2, 0.35, 0.5][l - 1]
+
+
+func redline_rate(lvl := -1) -> float:
+	var l := _lv(&"redline", lvl)
+	return 0.0 if l <= 0 else [0.15, 0.25, 0.35][l - 1]
+
+
+func od_bonus_time(lvl := -1) -> float:
+	return 2.0 * _lv(&"od_core", lvl)
+
+
+func od_gain(lvl := -1) -> float:
+	return 1.0 + 0.2 * _lv(&"od_core", lvl)
+
+
+func ability_cost_mult(lvl := -1) -> float:
+	return 1.0 - 0.12 * _lv(&"thermal", lvl)
+
+
+func ability_damage_mult(lvl := -1) -> float:
+	return 1.0 + 0.2 * _lv(&"thermal", lvl)

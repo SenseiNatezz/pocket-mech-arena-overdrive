@@ -8,4 +8,5 @@ max_hp = 2600.0
 move_speed = 110.0
 acceleration = 900.0
 contact_damage = 22.0
-hit_radius = 64.0
+hit_radius = 90.0
+body_radius = 51.0

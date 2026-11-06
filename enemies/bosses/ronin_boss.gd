@@ -10,7 +10,7 @@ extends WardenBoss
 ## Phases (66% / 33% HP), roar, death sequence, `defeated` and the HUD hookup come from WardenBoss.
 
 const RONIN_TEX := preload("res://assets/hq/enemies2/ronin.png")
-const RONIN_SCALE := 0.6
+const RONIN_SCALE := 0.84
 const STRIKER := preload("res://enemies/blade_striker.tscn")
 const DASH_SPEED := 1150.0
 const DASH_TIME := 0.4
@@ -52,7 +52,7 @@ func _think(delta: float) -> void:
 				var n := 2 * phase - 1
 				for i in n:
 					var dir := _turret.rotated((i - (n - 1) / 2.0) * 0.32)
-					EnergyWave.spawn(global_position + dir * 70.0, dir * (400.0 + phase * 30.0), 16.0 * damage_mult, accent, 50.0, self)
+					EnergyWave.spawn(global_position + dir * 98.0, dir * (400.0 + phase * 30.0), 16.0 * damage_mult, accent, 50.0, self)
 				Sfx.play(&"saber", -3.0)
 			if _step <= 0 and _step_t <= 0.0:
 				_end_attack()
@@ -82,7 +82,7 @@ func _think(delta: float) -> void:
 				Combat.spark(target.global_position, accent, 1.6)
 			var hit_wall := get_slide_collision_count() > 0 and _state_t < DASH_TIME - 0.08
 			if hit_wall:
-				Combat.shockwave(global_position, 150.0, accent, 0.35)
+				Combat.shockwave(global_position, 200.0, accent, 0.35)
 				Combat.shake(0.45)
 				Sfx.play(&"slam", -3.0)
 			if _state_t <= 0.0 or hit_wall:
@@ -90,7 +90,7 @@ func _think(delta: float) -> void:
 				if phase >= 2:
 					for side in [-1.0, 1.0]:
 						var dir: Vector2 = _charge_dir.orthogonal() * side
-						EnergyWave.spawn(global_position + dir * 60.0, dir * 360.0, 14.0 * damage_mult, accent, 44.0, self)
+						EnergyWave.spawn(global_position + dir * 84.0, dir * 360.0, 14.0 * damage_mult, accent, 44.0, self)
 				_dashes -= 1
 				if _dashes > 0:
 					_state = &"dash_windup"
@@ -109,7 +109,7 @@ func _think(delta: float) -> void:
 				if dist_to_target() < hit_radius + 100.0 and dir_to_target().dot(_turret) > 0.35:
 					target.take_damage(12.0 * damage_mult, global_position, self)
 					Combat.spark(target.global_position, accent, 1.0)
-				Combat.damage_destructibles(global_position + _turret * 60.0, hit_radius + 70.0, 20.0, _turret, 1.2)
+				Combat.damage_destructibles(global_position + _turret * 84.0, hit_radius + 70.0, 20.0, _turret, 1.2)
 				Sfx.play(&"saber", -10.0, 0.2)
 				if phase >= 3:
 					for i in 5:
@@ -126,15 +126,15 @@ func _think(delta: float) -> void:
 				var n := 10
 				for i in n:
 					var dir := Vector2.from_angle(TAU * (i + 0.5 * (_step % 2)) / n)
-					EnergyWave.spawn(global_position + dir * 70.0, dir * 330.0, 14.0 * damage_mult, accent, 42.0, self)
-				Combat.shockwave(global_position, 180.0, accent, 0.4)
+					EnergyWave.spawn(global_position + dir * 98.0, dir * 330.0, 14.0 * damage_mult, accent, 42.0, self)
+				Combat.shockwave(global_position, 240.0, accent, 0.4)
 				Sfx.play(&"saber", 0.0)
 			if _step <= 0 and _step_t <= 0.0:
 				_end_attack()
 		&"summon":
 			for i in 2:
 				var e: Enemy = STRIKER.instantiate()
-				e.position = position + Vector2.from_angle(randf() * TAU) * 120.0
+				e.position = position + Vector2.from_angle(randf() * TAU) * 160.0
 				e.damage_mult = damage_mult
 				get_parent().add_child(e)
 			Sfx.play(&"alarm", -10.0, 0.0)
@@ -185,7 +185,7 @@ func _draw() -> void:
 	for i in _trail.size():
 		draw_set_transform(to_local(_trail[i]) + shake, rot, s)
 		draw_texture(RONIN_TEX, -half, Color(accent, 0.3 * (1.0 - i / float(_trail.size()))))
-	draw_set_transform(shake + Vector2(10, 16), rot, s)
+	draw_set_transform(shake + Vector2(14, 22), rot, s)
 	draw_texture(RONIN_TEX, -half, Color(0, 0, 0, 0.45))
 	draw_set_transform(shake, rot, s)
 	var body := tint(Color.WHITE)
@@ -197,10 +197,10 @@ func _draw() -> void:
 	if _slash_fx > 0.0:
 		var a := _turret.angle()
 		var sweep := 0.0 if _state != &"spin" else _spin * (1.0 - _slash_fx) * 0.9
-		draw_arc(Vector2.ZERO, 120.0, a - 1.2 + sweep, a + 1.2 + sweep, 24, Color(accent, 0.45 * _slash_fx), 22.0 * _slash_fx, true)
-		draw_arc(Vector2.ZERO, 126.0, a - 1.0 + sweep, a + 1.0 + sweep, 24, Color(1, 0.95, 0.85, 0.9 * _slash_fx), 4.0, true)
+		draw_arc(Vector2.ZERO, 168.0, a - 1.2 + sweep, a + 1.2 + sweep, 24, Color(accent, 0.45 * _slash_fx), 30.0 * _slash_fx, true)
+		draw_arc(Vector2.ZERO, 176.0, a - 1.0 + sweep, a + 1.0 + sweep, 24, Color(1, 0.95, 0.85, 0.9 * _slash_fx), 5.0, true)
 	draw_set_transform(Vector2.ZERO)
 	if _state == &"dash_windup":
 		var reach := _charge_dir * DASH_SPEED * DASH_TIME
-		draw_line(Vector2.ZERO, reach, Color(1.0, 0.15, 0.1, 0.22 + 0.3 * sin(_t * 30.0)), 90.0)
+		draw_line(Vector2.ZERO, reach, Color(1.0, 0.15, 0.1, 0.22 + 0.3 * sin(_t * 30.0)), 120.0)
 		draw_line(Vector2.ZERO, reach, Color(1.0, 0.35, 0.2, 0.9), 2.0)

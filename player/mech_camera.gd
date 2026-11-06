@@ -9,8 +9,11 @@ extends Camera2D
 @export var max_shake_roll := 0.025
 @export var shake_decay := 1.6
 
-## Touch screens zoom in so the mech and enemies aren't tiny: phones (under ~7.5" diagonal) a lot,
-## tablets a little. Desktop / gamepad play stays at 1.0. `--touch` on desktop previews the phone zoom.
+## Base zoom per device, so the mech and enemies aren't tiny: phones (under ~7.5" diagonal) most,
+## tablets a little less, desktop / gamepad 1.25 (at 1.0 the mech was ~45 px tall in a 720p view).
+## Settings > Camera Zoom multiplies it (Game.camera_zoom_mult: Far 0.8 = the old desktop view).
+## `--touch` on desktop previews the phone zoom.
+const DESKTOP_ZOOM := 1.25
 const PHONE_ZOOM := 1.3
 const TABLET_ZOOM := 1.15
 const PHONE_MAX_INCHES := 7.5
@@ -36,7 +39,7 @@ func _ready() -> void:
 
 
 func _wanted_zoom() -> float:
-	return _touch_zoom if Controls.device == Controls.Device.TOUCH else 1.0
+	return (_touch_zoom if Controls.device == Controls.Device.TOUCH else DESKTOP_ZOOM) * Game.camera_zoom_mult()
 
 
 func add_trauma(amount: float) -> void:

@@ -18,10 +18,11 @@ const H := "res://environment/hazards/"
 
 @export var arena_name := "Frozen Outpost"
 @export var map_texture: Texture2D
+const MAP_SHARPEN := preload("res://environment/map_sharpen.gdshader")
 @export var map_layout: Script
 ## World pixels per painting pixel (sets how big the scenery is compared to the Gundam).
 @export var map_scale := 1.0
-@export_enum("none", "snow", "pollen") var weather := "none"
+@export_enum("none", "snow", "pollen", "embers") var weather := "none"
 @export var intro_texture: Texture2D
 @export var intro_subtitle := ""
 
@@ -96,6 +97,7 @@ func _process(delta: float) -> void:
 	if get_tree().paused:
 		return
 	Game.run_time += delta
+	_storm_tick(delta)
 	_rescue_t -= delta
 	if _rescue_t <= 0.0:
 		_rescue_t = 0.5
@@ -119,9 +121,16 @@ func _process(delta: float) -> void:
 # --- build -------------------------------------------------------------------------------------------------
 
 func _build_art() -> void:
+	# HD: the painting is drawn through a contrast-adaptive sharpening shader (crisper on HD / 4K
+	# screens); the occluders cut from it share the same material so the seams match.
+	var sharpen: ShaderMaterial = null
+	if not OS.get_cmdline_user_args().has("--no-sharpen"):  # (debug: before / after comparisons)
+		sharpen = ShaderMaterial.new()
+		sharpen.shader = MAP_SHARPEN
 	var art := Sprite2D.new()
 	art.name = "MapArt"
 	art.texture = map_texture
+	art.material = sharpen
 	art.centered = false
 	art.scale = Vector2(_k, _k)
 	art.z_index = -10
@@ -131,6 +140,7 @@ func _build_art() -> void:
 	for poly: PackedVector2Array in _layout.occluders:
 		var o := Polygon2D.new()
 		o.texture = map_texture
+		o.material = sharpen
 		var pts := PackedVector2Array()
 		for p in poly:
 			pts.append(p * _k)
@@ -307,6 +317,18 @@ func _add_weather(cam: Camera2D) -> void:
 		p.scale_amount_max = 4.0
 		ramp.set_color(0, Color(1, 1, 1, 0.9))
 		ramp.set_color(1, Color(0.85, 0.92, 1.0, 0.0))
+	elif weather == "embers":
+		# Glowing sparks drifting up off the lava.
+		p.amount = 120
+		p.direction = Vector2(0.2, -1)
+		p.spread = 30.0
+		p.initial_velocity_min = 30.0
+		p.initial_velocity_max = 90.0
+		p.gravity = Vector2(6, -12)
+		p.scale_amount_min = 1.5
+		p.scale_amount_max = 4.0
+		ramp.set_color(0, Color(1.0, 0.8, 0.35, 0.95))
+		ramp.set_color(1, Color(1.0, 0.3, 0.05, 0.0))
 	else:
 		p.direction = Vector2(1, -0.3)
 		p.spread = 40.0
@@ -336,6 +358,9 @@ func _setup_flow() -> void:
 	zone.monitoring = false  # the fight starts after the intro card, not on spawn
 	if Game.is_endless():
 		zone.endless = true
+		# (the campaign's per-level toughness doesn't apply: Endless plays the same on every map)
+		zone.hp_mult = 1.0
+		zone.damage_mult = 1.0
 		zone.hp_ramp = 0.12
 		zone.damage_ramp = 0.04
 		zone.bombard_from_wave = 4
@@ -365,7 +390,7 @@ func _setup_flow() -> void:
 			objective_changed.emit("Wave %d / %d - destroy all hostiles" % [i, n]))
 		zone.wave_cleared.connect(func(i: int, n: int) -> void:
 			if i < n:
-				banner.emit("WAVE CLEARED", Color(0.4, 1.0, 0.6)))
+				banner.emit("WAVE BROKEN - REINFORCEMENTS INBOUND" if zone.last_overlapped else "WAVE CLEARED", Color(0.4, 1.0, 0.6)))
 	zone.cleared.connect(_on_zone_cleared)
 	if Game.start_at_boss:
 		# RETRY BOSS: no waves - the boss drops straight in (checkpoint restored by Game.retry_boss()).
@@ -428,18 +453,27 @@ func _on_boss_defeated() -> void:
 
 # --- endless mode ------------------------------------------------------------------------------------------
 
-## Endless bosses cycle through these variants (name, accent); each one is tougher than the last.
-const ENDLESS_BOSSES := [
-	["WARDEN", Color(1.0, 0.25, 0.2)],
-	["WARDEN - CRYO UNIT", Color(0.45, 0.85, 1.0)],
-	["WARDEN - VERDANT", Color(0.5, 1.0, 0.35)],
-	["WARDEN MK-II", Color(1.0, 0.6, 0.15)],
-	["WARDEN - VOID", Color(0.75, 0.4, 1.0)],
-]
-const ENDLESS_BOSS_HP := 1500.0
+## Endless bosses: Warden / Ronin / Seraph in the run's shuffled order (Game.endless_boss_order); every
+## lap through the three adds "MK-II", "MK-III"... Boss HP = the campaign boss's own HP x
+## (ENDLESS_BOSS_HP_BASE + ENDLESS_BOSS_HP_STEP per earlier boss) x (+ENDLESS_BOSS_HP_PER_LEVEL per player
+## level past 1) x difficulty, so fights last ~30-60 s even against strong builds.
+const ENDLESS_BOSS_HP_BASE := 1.35
+const ENDLESS_BOSS_HP_STEP := 0.4
+const ENDLESS_BOSS_HP_PER_LEVEL := 0.08
+const MARKS := ["II", "III", "IV", "V", "VI"]
+## Every this many waves (boss waves excepted), a supply drop: XP burst + a repair.
+const SUPPLY_EVERY := 3
+## Endless twists: a new one every this many waves from wave 6 (see _roll_twist); storm strike timer.
+const TWIST_EVERY := 5
+var _storm_t := 3.0
+const SUPPLY_XP := 0.4
+const SUPPLY_HEAL := 0.15
 
 
 func _on_endless_wave_started(i: int, _n: int) -> void:
+	# A new 5-wave block (waves 6, 11, 16...) rolls a new TWIST.
+	if i > 1 and (i - 1) % TWIST_EVERY == 0:
+		_roll_twist()
 	if zone.is_boss_wave(i):
 		banner.emit("BOSS WAVE %d" % i, Color(1.0, 0.35, 0.3))
 		objective_changed.emit("Wave %d - destroy the boss and its escort" % i)
@@ -452,41 +486,107 @@ func _on_endless_wave_started(i: int, _n: int) -> void:
 func _on_endless_wave_cleared(i: int, _n: int) -> void:
 	# Weapon unlocks are announced by the HUD's unlock toast (Game.weapon_unlocked).
 	Game.record_endless_wave(i)
+	# (an overlapped wave still has a straggler or two around: "broken", not "cleared")
+	var done := "BROKEN" if zone.last_overlapped else "CLEARED"
 	if zone.is_boss_wave(i):
 		banner.emit("BOSS DESTROYED", Color(0.4, 1.0, 0.6))
+	elif i % SUPPLY_EVERY == 0:
+		banner.emit("WAVE %d %s  -  SUPPLY DROP" % [i, done], Color(0.4, 1.0, 0.6))
+		_supply_drop()
 	else:
-		banner.emit("WAVE %d CLEARED" % i, Color(0.4, 1.0, 0.6))
-	objective_changed.emit("Next wave incoming...")
+		banner.emit("WAVE %d %s" % [i, done], Color(0.4, 1.0, 0.6))
+	objective_changed.emit("Reinforcements inbound - finish the stragglers!" if zone.last_overlapped else "Next wave incoming...")
 
 
-## Boss wave: the next Warden variant drops in (telegraphed) with more HP every time.
+## ENDLESS TWIST (Game.TWISTS): a random modifier for the next 5 waves, never the same twice in a row.
+## Announced with a banner, the objective line and a radio call; the HUD shows it under the run info.
+func _roll_twist() -> void:
+	var options := Game.TWISTS.keys()
+	options.erase(Game.endless_twist)
+	Game.endless_twist = options.pick_random()
+	var info: Dictionary = Game.TWISTS[Game.endless_twist]
+	_storm_t = 3.0
+	get_tree().create_timer(1.3, false).timeout.connect(func() -> void:
+		banner.emit("TWIST: %s" % info["name"], info["color"])
+		objective_changed.emit(String(info["desc"]))
+		Radio.say(StringName("twist_" + String(Game.endless_twist)), true))
+
+
+## CRYSTAL STORM twist: every few seconds, violet lightning strikes a spot near the pilot and one of the
+## robots (the strikes hurt everything, so lure robots into them).
+func _storm_tick(delta: float) -> void:
+	if not zone or not zone.endless or Game.endless_twist != &"storm" or not zone.is_running:
+		return
+	_storm_t -= delta
+	if _storm_t > 0.0:
+		return
+	_storm_t = randf_range(1.8, 2.8)
+	var mech := world.get_node_or_null("Mech") as Mech
+	if mech == null or mech.dead:
+		return
+	var spots: Array[Vector2] = [mech.global_position + Vector2.from_angle(randf() * TAU) * randf_range(120.0, 340.0)]
+	var foes := get_tree().get_nodes_in_group("enemies")
+	if not foes.is_empty():
+		var e: Node2D = foes.pick_random()
+		if is_instance_valid(e):
+			spots.append(e.global_position)
+	for p in spots:
+		var s: Node2D = Combat.STRIKE.new()
+		s.setup(p, 85.0, 16.0 * zone.wave_damage_mult(), null, 1.1, "all", Vector2.INF)
+		s.tint = Color(0.65, 0.3, 1.0)
+		s.lightning = true
+		Combat.world().add_child(s)
+
+
+## Supply drop (every SUPPLY_EVERY waves): a crate slams down next to the pilot and bursts into XP
+## (SUPPLY_XP of a level) plus a SUPPLY_HEAL repair - a reward between the ever-longer level-ups.
+func _supply_drop() -> void:
+	var mech := world.get_node_or_null("Mech") as Mech
+	if mech == null or mech.dead:
+		return
+	var at := mech.global_position + Vector2.from_angle(randf() * TAU) * 90.0
+	Combat.shockwave(at, 120.0, Color(0.4, 1.0, 0.6), 0.4)
+	Combat.burst(at, Color(0.5, 1.0, 0.7), 360.0, 1.3)
+	Sfx.play(&"pickup", -2.0, 0.0)
+	Radio.say(&"supply", true)
+	Upgrades.supply_xp(at, SUPPLY_XP)
+	mech.heal(mech.max_hp * SUPPLY_HEAL)
+
+
+## Boss wave: the next boss in the run's order drops in (telegraphed).
 func _endless_boss(wave: int) -> void:
 	var k := wave / Game.ENDLESS_BOSS_EVERY
-	var info: Array = ENDLESS_BOSSES[(k - 1) % ENDLESS_BOSSES.size()]
 	zone.reserve()
 	var at := map_to_world(_layout.boss_spawn)
 	Combat.artillery(at, 240.0, 30.0 * zone.wave_damage_mult(), null, 2.0, "player")
 	Sfx.play(&"alarm", -4.0, 0.0)
-	get_tree().create_timer(2.0, false).timeout.connect(_drop_endless_boss.bind(k, info, at))
+	get_tree().create_timer(2.0, false).timeout.connect(_drop_endless_boss.bind(k, at))
 
 
-func _drop_endless_boss(k: int, info: Array, at: Vector2) -> void:
-	var b: Enemy = load("res://enemies/warden_boss.tscn").instantiate()
-	b.max_hp = ENDLESS_BOSS_HP * (1.0 + 0.5 * (k - 1)) * Game.diff("boss_hp")
+func _drop_endless_boss(k: int, at: Vector2) -> void:
+	if Game.endless_boss_order.is_empty():
+		Game.roll_endless_bosses()
+	var order := Game.endless_boss_order
+	var b: Enemy = load(order[(k - 1) % order.size()]).instantiate()
+	b.max_hp *= (ENDLESS_BOSS_HP_BASE + ENDLESS_BOSS_HP_STEP * (k - 1)) \
+		* (1.0 + ENDLESS_BOSS_HP_PER_LEVEL * (Upgrades.level - 1)) * Game.diff("boss_hp")
 	b.damage_mult = zone.wave_damage_mult()
-	b.set("boss_name", info[0] if k <= ENDLESS_BOSSES.size() else "%s  #%d" % [info[0], k])
-	b.set("accent", info[1])
+	var lap := (k - 1) / order.size()
+	if lap > 0:
+		b.set("boss_name", "%s MK-%s" % [b.get("boss_name"), MARKS[mini(lap - 1, MARKS.size() - 1)]])
 	b.position = at
 	world.add_child(b)
 	boss = b
 	zone.track(b)
-	Combat.explosion_fx(b.position, 260.0, info[1])
+	var accent: Color = b.get("accent")
+	Combat.explosion_fx(b.position, 260.0, accent)
 	Combat.shake(0.8)
 	b.connect("defeated", _on_endless_boss_defeated)
 	boss_started.emit(b)
 
 
-## Boss down: its escort goes with it, and the pilot gets patched up for the next stretch.
+## Boss down: its escort goes with it, the pilot gets patched up for the next stretch, and a free
+## upgrade pick (BOSS REWARD) comes on top of any level-ups.
 func _on_endless_boss_defeated() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e is Enemy and not e.dead and not e.is_in_group("boss"):
@@ -495,3 +595,7 @@ func _on_endless_boss_defeated() -> void:
 	if mech and not mech.dead:
 		mech.heal(mech.max_hp * 0.3)
 		mech.add_repair_charge()
+		# (a beat later, once the boss's death blast has played out)
+		get_tree().create_timer(1.6, false).timeout.connect(func() -> void:
+			if is_instance_valid(mech) and not mech.dead:
+				Upgrades.grant_bonus_pick())

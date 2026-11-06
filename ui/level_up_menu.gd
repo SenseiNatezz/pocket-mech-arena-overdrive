@@ -9,6 +9,9 @@ extends CanvasLayer
 ## a row open one after another. Cards ignore presses for a moment after appearing so a held fire
 ## button / thumb can't pick one by accident. Automated runs (Controls.ignore_real_input) pick the
 ## first card by themselves.
+## Under the cards: REROLL (fresh cards), BANISH (then pick a card: that upgrade is gone for the run)
+## and SKIP (no upgrade, a quick repair) - charges per run live in Upgrades. The VX-7 Standard chassis
+## deals 4 cards instead of 3 (Upgrades.card_count).
 
 signal closed
 
@@ -23,6 +26,8 @@ class UpgradeCard:
 	extends Button
 	var id := &""
 	var armed := false
+	## Banish mode: the card shows it would be removed for the run.
+	var banish := false
 	var _hl := 0.0
 	var _t := 0.0
 	var _desc: Label
@@ -66,7 +71,7 @@ class UpgradeCard:
 		queue_redraw()
 
 	func _draw() -> void:
-		var col := Upgrades.color(id)
+		var col := Upgrades.color(id) if not banish else Color(1.0, 0.3, 0.3)
 		var r := Rect2(Vector2.ZERO, size)
 		# Glow when highlighted.
 		if _hl > 0.01:
@@ -84,9 +89,32 @@ class UpgradeCard:
 		draw_circle(c, 31, Color(col, 0.12 + 0.08 * sin(_t * 3.0)))
 		draw_circle(c, 25, Color(0.02, 0.03, 0.07, 0.9))
 		draw_arc(c, 25, 0, TAU, 40, Color(col, 0.9), 2.0, true)
+		var font := ThemeDB.fallback_font
+		if banish:
+			# Big red X over the icon: picking this card banishes it.
+			var cx := Vector2(46, size.y / 2)
+			draw_line(cx + Vector2(-16, -16), cx + Vector2(16, 16), Color(1.0, 0.35, 0.35, 0.9), 4.0)
+			draw_line(cx + Vector2(16, -16), cx + Vector2(-16, 16), Color(1.0, 0.35, 0.35, 0.9), 4.0)
+			draw_string(font, Vector2(86, 28), Upgrades.display_name(id), HORIZONTAL_ALIGNMENT_LEFT, size.x - 94, 17,
+				Color(1, 0.85, 0.85))
+			draw_string(font, Vector2(86, 46), "BANISH FOR THIS RUN", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.45, 0.45))
+			return
+		if Upgrades.is_combo(id):
+			# COMBO: the two parent icons fused, a rotating gold ring, and "A + B" under the name.
+			var needs: Array = Upgrades.COMBOS[id]["needs"]
+			UpgradeIcons.draw(self, needs[0], c + Vector2(-8, -3), 10.0, Upgrades.color(needs[0]).lightened(0.25))
+			UpgradeIcons.draw(self, needs[1], c + Vector2(8, 4), 10.0, Upgrades.color(needs[1]).lightened(0.25))
+			draw_arc(c, 30, _t * 2.0, _t * 2.0 + PI * 1.2, 24, Color(col, 0.9), 2.5, true)
+			draw_string(font, Vector2(86, 28), Upgrades.display_name(id), HORIZONTAL_ALIGNMENT_LEFT, size.x - 94, 17, col.lightened(0.3))
+			var line := "COMBO: " + Upgrades.combo_parents(id)
+			var fs := 11
+			while fs > 7 and font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > size.x - 94:
+				fs -= 1
+			draw_string(font, Vector2(86, 46), line, HORIZONTAL_ALIGNMENT_LEFT, size.x - 94, fs,
+				Color(col, 0.75 + 0.25 * sin(_t * 6.0)))
+			return
 		UpgradeIcons.draw(self, id, c, 15.0, col.lightened(0.25))
 		# Name + NEW / level pips (right).
-		var font := ThemeDB.fallback_font
 		draw_string(font, Vector2(86, 28), Upgrades.display_name(id), HORIZONTAL_ALIGNMENT_LEFT, size.x - 94, 17,
 			Color.WHITE)
 		var have := Upgrades.level_of(id)
@@ -116,6 +144,11 @@ var _stacked := false
 var _cards: Array[UpgradeCard] = []
 var _arm_t := 0.0
 var _auto_t := -1.0
+var _reroll_btn: TitleButton
+var _banish_btn: TitleButton
+var _skip_btn: TitleButton
+var _hint: Label
+var _banish_mode := false
 
 
 func _ready() -> void:
@@ -146,13 +179,20 @@ func _ready() -> void:
 	_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_row.add_theme_constant_override("separation", 12)
 	_box.add_child(_row)
-	for i in 3:
+	for i in 4:
 		var card := UpgradeCard.new()
 		card.pressed.connect(_on_card_pressed.bind(card))
 		_row.add_child(card)
 		_cards.append(card)
-	var hint := _label("Click / tap a card   -   Arrows + Enter   -   D-pad + A", 11, Color(1, 1, 1, 0.5))
-	_box.add_child(hint)
+	var tools := HBoxContainer.new()
+	tools.alignment = BoxContainer.ALIGNMENT_CENTER
+	tools.add_theme_constant_override("separation", 10)
+	_box.add_child(tools)
+	_reroll_btn = _tool_btn(tools, _on_reroll)
+	_banish_btn = _tool_btn(tools, _on_banish)
+	_skip_btn = _tool_btn(tools, _on_skip)
+	_hint = _label("", 11, Color(1, 1, 1, 0.5))
+	_box.add_child(_hint)
 	Upgrades.level_up_ready.connect(open)
 	# Rotating the phone while the menu is up re-fits it (column vs row) and re-places it.
 	get_viewport().size_changed.connect(_on_screen_changed, CONNECT_DEFERRED)
@@ -175,6 +215,59 @@ func _label(text: String, size: int, color: Color) -> Label:
 	return l
 
 
+func _tool_btn(parent: Control, action: Callable) -> TitleButton:
+	var b := TitleButton.new("", Vector2(190, 36))
+	b.pressed.connect(func() -> void:
+		if _arm_t <= 0.0:
+			action.call())
+	parent.add_child(b)
+	return b
+
+
+## REROLL / BANISH / SKIP labels (with charges left), dimmed when empty; the hint line under them.
+func _refresh_tools() -> void:
+	_reroll_btn.label_text = "Reroll (%d)" % Upgrades.rerolls
+	_banish_btn.label_text = "Cancel banish" if _banish_mode else "Banish (%d)" % Upgrades.banishes
+	_skip_btn.label_text = "Skip (+%d HP)" % roundi(Upgrades.SKIP_REPAIR)
+	_reroll_btn.modulate.a = 1.0 if Upgrades.rerolls > 0 else 0.4
+	_banish_btn.modulate.a = 1.0 if Upgrades.banishes > 0 or _banish_mode else 0.4
+	for b in [_reroll_btn, _banish_btn, _skip_btn]:
+		b.queue_redraw()
+	for c in _cards:
+		c.banish = _banish_mode and c.id != Upgrades.FIELD_REPAIR
+		c.queue_redraw()
+	_hint.text = "BANISH: pick the upgrade you never want to see again this run" if _banish_mode \
+		else "Click / tap a card   -   Arrows + Enter   -   D-pad + A"
+	_hint.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5) if _banish_mode else Color(1, 1, 1, 0.5))
+
+
+func _on_reroll() -> void:
+	if Upgrades.use_reroll():
+		_banish_mode = false
+		Sfx.play(&"select", -6.0)
+		_deal()
+	else:
+		Sfx.play(&"deny", -8.0)
+
+
+func _on_banish() -> void:
+	if not _banish_mode and Upgrades.banishes <= 0:
+		Sfx.play(&"deny", -8.0)
+		return
+	_banish_mode = not _banish_mode
+	_refresh_tools()
+
+
+func _on_skip() -> void:
+	_banish_mode = false
+	Upgrades.skip()
+	Sfx.play(&"repair", -6.0)
+	if Upgrades.pending > 0:
+		_deal()
+	else:
+		close()
+
+
 func is_open() -> bool:
 	return visible
 
@@ -191,12 +284,22 @@ func open() -> void:
 	_deal()
 
 
-## Shows a fresh set of 3 cards (animated in).
+## Shows a fresh set of 3 (or 4) cards (animated in).
 func _deal() -> void:
-	var choices := Upgrades.roll_choices(3)
+	var choices := Upgrades.roll_choices(Upgrades.card_count())
+	for i in _cards.size():
+		_cards[i].visible = i < choices.size()
 	_fit_to_screen()
-	_sub.text = "LEVEL %d   -   choose an upgrade%s" % [Upgrades.level - Upgrades.pending + 1,
-		"   (%d more after this)" % (Upgrades.pending - 1) if Upgrades.pending > 1 else ""]
+	var more := "   (%d more after this)" % (Upgrades.pending - 1) if Upgrades.pending > 1 else ""
+	if Upgrades.bonus_picks > 0:
+		# Free pick (Hangar Head Start, Endless boss kill): not a level.
+		_title.text = Upgrades.bonus_title
+		_title.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))
+		_sub.text = "free upgrade   -   choose one%s" % more
+	else:
+		_title.text = "LEVEL UP!"
+		_title.add_theme_color_override("font_color", Color(0.45, 1.0, 0.8))
+		_sub.text = "LEVEL %d   -   choose an upgrade%s" % [Upgrades.level - Upgrades.pending + 1, more]
 	_arm_t = ARM_TIME
 	for i in _cards.size():
 		var card := _cards[i]
@@ -211,6 +314,7 @@ func _deal() -> void:
 		if not _stacked:  # (a stacked column owns the cards' y, so those only fade in)
 			tw.tween_property(card, "position:y", 0.0, 0.25).from(24.0).set_delay(i * 0.07) \
 				.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_refresh_tools()
 	_place()
 	_title.pivot_offset = _title.size / 2
 	_title.scale = Vector2(1.25, 1.25)
@@ -229,7 +333,10 @@ func _on_screen_changed() -> void:
 ## Landscape: 3 cards side by side. Portrait (or too narrow for 3 across): one column of wider cards.
 func _fit_to_screen() -> void:
 	var vp := get_viewport().get_visible_rect().size
-	_stacked = vp.x < vp.y or vp.x < CARD_SIZE.x * 3 + 24 + 32
+	var n := 0
+	for c in _cards:
+		n += 1 if c.visible else 0
+	_stacked = vp.x < vp.y or vp.x < CARD_SIZE.x * n + 12 * (n - 1) + 32
 	_row.vertical = _stacked
 	_row.add_theme_constant_override("separation", 10 if _stacked else 12)
 	var w := minf(460.0, vp.x - 48.0) if _stacked else CARD_SIZE.x
@@ -316,8 +423,15 @@ func _process(delta: float) -> void:
 
 
 func _on_card_pressed(card: UpgradeCard) -> void:
-	if card.armed:
-		pick(card.id)
+	if not card.armed:
+		return
+	if _banish_mode:
+		if Upgrades.banish(card.id):
+			_banish_mode = false
+			Sfx.play(&"explode", -12.0, 0.0)
+			_deal()
+		return
+	pick(card.id)
 
 
 ## Takes an upgrade, then deals the next set of cards or closes.
@@ -331,6 +445,7 @@ func pick(id: StringName) -> void:
 
 
 func close() -> void:
+	_banish_mode = false
 	visible = false
 	Upgrades.choosing = false
 	get_tree().paused = false

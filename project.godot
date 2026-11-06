@@ -25,6 +25,7 @@ Sfx="*res://autoload/sfx.gd"
 Game="*res://autoload/game.gd"
 Upgrades="*res://autoload/upgrades.gd"
 Music="*res://autoload/music.gd"
+Radio="*res://autoload/radio.gd"
 Debug="*res://tools/debug_runner.gd"
 
 [display]

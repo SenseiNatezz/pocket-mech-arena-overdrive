@@ -1,14 +1,18 @@
 class_name MeleeKit
 extends Node2D
-## Melee primary weapons: Beam Saber, Dual Beam Sabers, Beam Katana, Beam Spear, Energy Axe, Beam Scythe
-## and the Physical Greatsword. A child of the Mech; Mech._fire_primary() calls swing() at rate().
+## Melee primary weapons: Beam Saber, Dual Beam Sabers, Beam Katana, Beam Spear, Energy Axe, Beam Scythe,
+## the Physical Greatsword and the Energy Sword. A child of the Mech; Mech._fire_primary() calls swing()
+## at rate().
 ##
 ## Every weapon has a COMBO: swings that follow each other closely alternate sides, and the last hit of
 ## the combo is a FINISHER (dash slash, whirl, iaido dash-through, charge thrust, ground slam, reap,
-## overhead cleave). Upgrades still apply: `mult` (Power Core + overdrive), Target Lock (auto-face the
+## overhead cleave, and the Energy Sword's CRESCENT NOVA: a spinning cut all around that launches a
+## piercing crescent wave). Upgrades still apply: `mult` (Power Core + overdrive), Target Lock (auto-face the
 ## nearest enemy), Triple Shot (energy waves), Explosive Rounds, and energy blades cut enemy bullets.
 
 const RIG := preload("res://player/weapons/melee_rig.gd")
+## Energy Sword: seconds from the button press to the blade arriving (the swing's wind-up).
+const STRIKE_DELAY := 0.075
 
 ## id -> stats.  style: "arc" sweep, "thrust" stab, "spin" full circle.  `energy` blades parry bullets.
 ## (The Beam Saber keeps the original Beam Sword numbers: 2.6 swings/s, 44 dmg, 150 px, 1.15 rad.)
@@ -28,10 +32,17 @@ const WEAPONS := {
 		"style": "spin", "finisher": "reap", "color": Color(0.55, 1.0, 0.2), "tex": "scythe", "energy": true},
 	&"greatsword": {"rate": 0.95, "damage": 95.0, "reach": 205.0, "half": 1.3, "knock": 600.0, "combo": 3,
 		"style": "arc", "finisher": "cleave", "color": Color(0.9, 0.93, 1.0), "tex": "greatsword", "energy": false},
+	# `cel`: drawn with the hand-drawn smear / cross flash (player/weapons/energy_sword_fx.gd).
+	# style "energy": its own move set, a different move on every hit (see _energy_move).
+	&"energy_sword": {"rate": 2.8, "damage": 48.0, "reach": 170.0, "half": 1.2, "knock": 320.0, "combo": 4,
+		"style": "energy", "finisher": "nova", "color": Color(1.0, 0.28, 0.78), "tex": "energy_sword", "energy": true,
+		"cel": true},
 }
 
 var mech: Mech
 var combo := 0
+## Game-time clock for the combo window (real time would break combos during slow-mo / hit-stop).
+var _clock := 0.0
 var _last_swing := -10.0
 var _last_id := &""
 var _side := 1.0
@@ -55,6 +66,10 @@ func _ready() -> void:
 	add_child(rig)
 
 
+func _physics_process(delta: float) -> void:
+	_clock += delta
+
+
 func _texture(name: String) -> Texture2D:
 	if not _tex.has(name):
 		_tex[name] = load("res://assets/hq/weapons/%s.png" % name)
@@ -64,7 +79,7 @@ func _texture(name: String) -> Texture2D:
 ## One attack. Returns true if it was the combo finisher.
 func swing(id: StringName, mult: float) -> bool:
 	var w: Dictionary = WEAPONS[id]
-	var now := Time.get_ticks_msec() / 1000.0
+	var now := _clock
 	var chain_window: float = 1.0 / (w["rate"] * Upgrades.fire_rate_mult()) + 0.4
 	combo = combo + 1 if id == _last_id and now - _last_swing <= chain_window else 0
 	if combo >= w["combo"]:
@@ -93,6 +108,9 @@ func swing(id: StringName, mult: float) -> bool:
 func _basic(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 	var reach: float = w["reach"]
 	var p := mech.global_position
+	if w["style"] == "energy":
+		_energy_move(w, dir, dmg, col)
+		return
 	match w["style"]:
 		"thrust":
 			_hit_line(p, p + dir * reach, 44.0, dmg, w["knock"], col, w)
@@ -156,7 +174,65 @@ func _finisher(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 			Combat.burst(at, Color(1.0, 0.6, 0.3), 460.0, 1.5)
 			Combat.shake(0.6)
 			Sfx.play(&"slam", -1.0)
+		"nova":  # Energy Sword: CRESCENT NOVA - a spinning cut all around, then a fan of three crescent waves.
+			_blade(w, "spin", dir, reach, 0.34)
+			# Lands mid-spin (after the short wind-up), from wherever the mech is by then.
+			_after(0.1, func() -> void:
+				var at := mech.global_position
+				var hits := _hit_arc(at, dir, reach + 20.0, PI, dmg * 1.7, w["knock"] * 1.4, col, w)
+				Combat.shockwave(at, reach * 0.85, col, 0.3)
+				EnergySwordFx.crescent(mech, at + dir * 50.0, dir, dmg * 1.3, col)
+				for side in [-1.0, 1.0]:
+					var d2 := dir.rotated(0.38 * side)
+					EnergySwordFx.crescent(mech, at + d2 * 50.0, d2, dmg * 0.8, col)
+				Combat.shake(0.3)
+				if hits > 0:
+					Combat.hitstop(0.06))
 	_swing_sound(w, true)
+
+
+## Energy Sword: every hit of its combo is a different move (the finisher is CRESCENT NOVA).
+##   1 PIERCING LUNGE  a quick step forward and a straight stab that pierces a line
+##   2 X-CUT           two crossing diagonal cuts; the X hangs in the air, then bursts for a second hit
+##   3 RISING MOON     one huge sweeping arc (~200 deg) with the blade surging longer; knocks enemies away
+## The hits land when the blade arrives (after the swing's short wind-up, see melee_rig._cel_pose), from
+## wherever the mech is by then.
+func _energy_move(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
+	var reach: float = w["reach"]
+	match combo:
+		0:
+			_blade(w, "thrust", dir, reach * 0.9, 0.22)
+			_after(STRIKE_DELAY, func() -> void:
+				var step := 60.0
+				var at := mech.global_position
+				_dash(dir, step)
+				var hits := _hit_line(at, at + dir * (step + reach * 1.15), 36.0, dmg, w["knock"], col, w)
+				EnergySwordFx.lunge(at + dir * 30.0, dir, reach * 1.0 + step * 0.5, col)
+				if hits == 0:
+					mech.recoil(dir * 50.0))
+		1:
+			_blade(w, "xcut", dir, reach, 0.3)
+			# First cut, then the second cut leaves the X that bursts.
+			_after(0.06, func() -> void:
+				_hit_arc(mech.global_position, dir, reach, 1.0, dmg * 0.7, w["knock"] * 0.5, col, w)
+				mech.recoil(dir * 40.0))
+			_after(0.15, func() -> void:
+				EnergySwordFx.x_mark(mech, mech.global_position + dir * reach * 0.6, dir, reach * 0.36, dmg * 0.8, col)
+				Sfx.play(&"saber", -8.0, 0.15))
+		_:
+			_blade(w, "moon", dir, reach, 0.34)
+			_after(STRIKE_DELAY, func() -> void:
+				_hit_arc(mech.global_position, dir, reach * 1.1, 1.6, dmg * 1.3, w["knock"] * 1.3, col, w)
+				mech.recoil(dir * 60.0)
+				Combat.shake(0.1))
+	_swing_sound(w, false)
+
+
+## Runs `f` after `seconds` of game time (Energy Sword hits that land with the blade).
+func _after(seconds: float, f: Callable) -> void:
+	get_tree().create_timer(seconds, false).timeout.connect(func() -> void:
+		if is_instance_valid(mech) and not mech.dead:
+			f.call())
 
 
 ## Triple Shot: extra piercing energy waves along the swing (energy blades and the greatsword alike).
@@ -206,6 +282,9 @@ func _hit_line(from: Vector2, to: Vector2, width: float, dmg: float, knock: floa
 				n.take_hit(dmg, from)
 	if w["energy"]:
 		Combat.deflect_bullets(mid, half_len + width)
+	# Hit feel: blades bite - a tiny freeze when a swing connects (longer on heavy blows).
+	if hits > 0:
+		Combat.hitstop(0.055 if dmg >= 90.0 else 0.03)
 	return hits
 
 

@@ -1,7 +1,8 @@
 extends Node
 ## Sound effects (autoload Sfx). Usage: Sfx.play(&"shoot", -12.0)
 ## Every sound is a real recording from assets/audio/sfx/<name>.wav when one exists (Higgsfield
-## generated, trimmed + loudness-matched), otherwise a tiny built-in synth version - so the game never
+## generated, 44.1 kHz, shaped with a sharp attack, impacts layered with a crack + thump, loudness-
+## matched), otherwise a tiny built-in synth version - so the game never
 ## goes silent if a file is missing. All sounds play on the "SFX" bus (Settings > Sound FX volume).
 ## Rapid-fire sounds are capped to a few overlapping voices (the oldest one is restarted).
 
@@ -13,7 +14,8 @@ const FILE_GAIN_DB := 7.0
 ## Most copies of one sound playing at once (default MAX_VOICES).
 const MAX_VOICES := 4
 const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"pickup": 3, &"missile": 3,
-	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1}
+	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1,
+	&"scatter": 3, &"boost": 2, &"nova": 2, &"cone": 2, &"repair": 1, &"overdrive": 1, &"deny": 1}
 
 var _streams: Dictionary = {}
 var _from_file: Dictionary = {}
@@ -105,6 +107,14 @@ func _build() -> void:
 	# Cryo Reactor: crackling freeze and a soft snow impact.
 	_streams[&"freeze"] = _synth(0.4, 3200, 1600, 0.18, 0.35, 0.65, 0.9, 0.55, 1.1)
 	_streams[&"snow_hit"] = _synth(0.2, 320, 120, 0.12, 0.0, 0.75, 0.25, 0.08, 1.4)
+	# Dedicated ability sounds (each used to borrow one of the sounds above).
+	_streams[&"scatter"] = _synth(0.15, 260, 110, 0.3, 0.5, 0.75, 0.5, 0.2, 2.0)
+	_streams[&"boost"] = _synth(0.4, 160, 70, 0.25, 0.2, 0.85, 0.3, 0.08, 1.6)
+	_streams[&"nova"] = _synth(0.7, 80, 30, 0.6, 0.1, 0.9, 0.3, 0.03, 1.6)
+	_streams[&"cone"] = _synth(0.6, 140, 90, 0.2, 0.0, 0.95, 0.45, 0.15, 1.2, 0.03)
+	_streams[&"repair"] = _synth(0.4, 500, 1300, 0.35, 0.0, 0.15, 0.3, 0.3, 1.3)
+	_streams[&"overdrive"] = _synth(0.9, 120, 600, 0.45, 0.5, 0.4, 0.15, 0.4, 1.0, 0.02)
+	_streams[&"deny"] = _synth(0.12, 170, 150, 0.35, 0.8, 0.0, 0.0, 0.0, 0.6)
 	var notes: Array[AudioStreamWAV] = []
 	for f in [523.0, 659.0, 784.0, 1047.0]:
 		notes.append(_synth(0.09, f, f, 0.4, 0.25, 0.0, 0.0, 0.0, 0.8))

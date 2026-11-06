@@ -47,6 +47,11 @@ const ASSETS := {
 	"enemies4/coil.png": [304, 0.15],
 	"enemies4/bastion.png": [304, 0.15],
 	"enemies4/cinder.png": [256, 0.15],
+	# Volcanic Forge robots + boss (level 6; raw/enemies5 faces up, transparent).
+	"enemies5/magma_crawler.png": [240, 0.15],
+	"enemies5/anvil.png": [288, 0.15],
+	"enemies5/slagspitter.png": [288, 0.15],
+	"enemies5/vulcan.png": [520, 0.15],
 	# Armory weapons (card art + in-game swing sprites; all point up).
 	"weapons/beam_rifle.png": [256, 0.1],
 	"weapons/sniper.png": [256, 0.1],
@@ -60,6 +65,8 @@ const ASSETS := {
 	"weapons/greatsword.png": [256, 0.1],
 	"weapons/rocket_launcher.png": [256, 0.1],
 	"weapons/rocket.png": [96, 0.15],
+	# Energy Sword (unlocked by beating VULCAN); higher cutoff drops the faint glow halo.
+	"weapons/energy_sword.png": [256, 0.25],
 }
 
 
@@ -67,7 +74,7 @@ const ASSETS := {
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var only: String = args[0] if not args.is_empty() else ""
-	for d in ["enemies2", "enemies3", "enemies4", "weapons"]:
+	for d in ["enemies2", "enemies3", "enemies4", "enemies5", "weapons"]:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT + d))
 	for f: String in ASSETS:
 		if not f.begins_with(only):

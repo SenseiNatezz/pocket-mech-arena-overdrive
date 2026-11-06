@@ -9,11 +9,12 @@ extends WardenBoss
 
 const SERAPH_TEX := preload("res://assets/hq/enemies2/seraph.png")
 const FUNNEL_TEX := preload("res://assets/hq/enemies2/sword_funnel.png")
-const SERAPH_SCALE := 0.58
-const FUNNEL_SCALE := 0.6
+const SERAPH_SCALE := 0.81
+const FUNNEL_SCALE := 0.66
 const LANCER := preload("res://enemies/lancer.tscn")
 const COUNT := 6
-const ORBIT_RADIUS := 150.0
+## (just outside the bigger body art, so the funnels read as separate blades)
+const ORBIT_RADIUS := 205.0
 const CAGE_RADIUS := 270.0
 const CAGE_TIME := 1.4
 
@@ -115,7 +116,7 @@ func _think(delta: float) -> void:
 		&"summon":
 			for i in 2:
 				var e: Enemy = LANCER.instantiate()
-				e.position = position + Vector2.from_angle(randf() * TAU) * 140.0
+				e.position = position + Vector2.from_angle(randf() * TAU) * 190.0
 				e.damage_mult = damage_mult
 				get_parent().add_child(e)
 			Sfx.play(&"alarm", -10.0, 0.0)
@@ -229,16 +230,16 @@ func _draw() -> void:
 	var s := Vector2.ONE * (SERAPH_SCALE + hover)
 	var half := SERAPH_TEX.get_size() / 2
 	# Floats: a soft, offset shadow far below.
-	draw_set_transform(shake + Vector2(24, 40), rot, s * 0.9)
+	draw_set_transform(shake + Vector2(34, 56), rot, s * 0.9)
 	draw_texture(SERAPH_TEX, -half, Color(0, 0, 0, 0.3))
 	draw_set_transform(shake, rot, s)
 	draw_texture(SERAPH_TEX, -half, tint(Color.WHITE))
 	draw_set_transform(shake)
 	var pulse := 0.5 + 0.5 * sin(_t * (3.0 + phase * 2.5))
-	draw_circle(Vector2.ZERO, 22 + pulse * 10, Color(accent, 0.2 + 0.12 * pulse))
-	draw_circle(Vector2.ZERO, 8 + pulse * 3, Color(accent.lightened(0.6), 0.6))
+	draw_circle(Vector2.ZERO, 31 + pulse * 14, Color(accent, 0.2 + 0.12 * pulse))
+	draw_circle(Vector2.ZERO, 11 + pulse * 4, Color(accent.lightened(0.6), 0.6))
 	if _state == &"halo":
-		draw_arc(Vector2.ZERO, 90.0, 0.0, TAU, 40, Color(accent, 0.35 + 0.2 * pulse), 4.0, true)
+		draw_arc(Vector2.ZERO, 126.0, 0.0, TAU, 48, Color(accent, 0.35 + 0.2 * pulse), 5.0, true)
 	draw_set_transform(Vector2.ZERO)
 	if _dying > 0.0:
 		return
@@ -255,7 +256,7 @@ func _draw() -> void:
 			draw_line(p, to_local(_cage_center), Color(1.0, 0.3, 0.6, 0.6 * blink), 3.0)
 		elif mode == F.DIVE or mode == F.STAB:
 			draw_line(p, p - _f_dir[i] * 90.0, Color(accent, 0.35), 14.0)
-		draw_circle(p, 26.0, Color(accent, 0.18))
+		draw_circle(p, 29.0, Color(accent, 0.18))
 		draw_set_transform(p, _f_dir[i].angle() + PI / 2, Vector2.ONE * FUNNEL_SCALE)
 		draw_texture(FUNNEL_TEX, -fhalf, Color.WHITE)
 		draw_set_transform(Vector2.ZERO)

@@ -4,11 +4,13 @@ extends Enemy
 ## shoulder missile pods. It steers like a tank (turns its whole hull slowly, drives forward/reverse),
 ## shrugs off knockback and flattens cover, crates and barrels it drives into.
 ## ARMOR: an armor bar above its HP soaks damage first (2x or 3x the hits of its HP; 3x tanks are
-## tinted steel-blue - see Enemy.set_armor).
+## tinted steel-blue - see Enemy.set_armor). Early waves field thinner armor (Enemy.armor_fraction).
+## WEAK SPOT: the glowing reactor vent on its back. Hits from behind (within REAR_ARC) do REAR_MULT
+## damage (armor included), so flanking it - boost around it while it turns - is the way to crack one fast.
 ##   Twin cannon   with line of sight at mid range: barrels glow + an aim line for 0.7 s, then two big
 ##                 slow shells, one per barrel
 ##   Missile pods  every few seconds lobs telegraphed artillery at where you're heading, even without
-##                 line of sight (red circles ~1 s before impact)
+##                 line of sight, but only from within MISSILE_RANGE (so never from far off-screen)
 
 const TEX := preload("res://assets/hq/enemies3/heavy_tank.png")
 const SPRITE_SCALE := 0.62
@@ -19,13 +21,21 @@ const POD_L := Vector2(-85, -49)
 const POD_R := Vector2(85, -49)
 const CANNON := Color(1.0, 0.55, 0.2)
 const AIM_TIME := 0.7
+## Reactor vent (weak spot) in sprite space, and how rear hits are judged / multiplied.
+const VENT := Vector2(0, 78)
+const VENT_GLOW := Color(0.35, 0.9, 1.0)
+const REAR_ARC := 1.05
+const REAR_MULT := 2.5
+const MISSILE_RANGE := 760.0
 
 @export var preferred_range := Vector2(300, 620)
 @export var turn_rate := 1.1
-@export var cannon_damage := 16.0
+@export var cannon_damage := 13.0
 @export var cannon_cooldown := 3.0
-@export var missile_damage := 18.0
-@export var missile_cooldown := 4.2
+@export var missile_damage := 15.0
+@export var missile_cooldown := 4.6
+
+var _vent_flash := 0.0
 
 var _cannon_cd := 1.5
 var _missile_cd := 2.5
@@ -45,6 +55,16 @@ func _ready() -> void:
 ## Armor: barely moved by hits and explosions.
 func knock(impulse: Vector2) -> void:
 	_knock += impulse * 0.08
+
+
+## Weak spot: hits from behind do REAR_MULT damage.
+func take_damage(amount: float, from_pos: Vector2, source: Node = null) -> void:
+	var off := from_pos - global_position
+	if not dead and off.length() > 4.0 and absf((-facing).angle_to(off)) < REAR_ARC:
+		amount *= REAR_MULT
+		_vent_flash = 1.0
+		Combat.spark(_to_world(VENT), VENT_GLOW, 1.1)
+	super.take_damage(amount, from_pos, source)
 
 
 func _think(delta: float) -> void:
@@ -84,7 +104,7 @@ func _think(delta: float) -> void:
 
 	# Missile pods (indirect fire).
 	_missile_cd -= delta
-	if _missile_cd <= 0.0 and d < 950.0:
+	if _missile_cd <= 0.0 and d < MISSILE_RANGE:
 		_missile_cd = missile_cooldown
 		_pod_flash = 1.0
 		for i in 2:
@@ -115,6 +135,7 @@ func _to_world(sprite_pos: Vector2) -> Vector2:
 func _process(delta: float) -> void:
 	_recoil = move_toward(_recoil, 0.0, delta * 4.0)
 	_pod_flash = move_toward(_pod_flash, 0.0, delta * 3.0)
+	_vent_flash = move_toward(_vent_flash, 0.0, delta * 4.0)
 
 
 func _draw() -> void:
@@ -136,6 +157,12 @@ func _draw() -> void:
 	if _pod_flash > 0.0:
 		for p in [POD_L, POD_R]:
 			draw_circle(p, 26.0 * _pod_flash + 6.0, Color(1.0, 0.5, 0.2, 0.6 * _pod_flash))
+	# Weak spot: the reactor vent on its back pulses cyan (flares when hit).
+	var pulse := 0.5 + 0.5 * sin(_t * 5.0)
+	draw_circle(VENT, 30.0 + 6.0 * pulse + 14.0 * _vent_flash, Color(VENT_GLOW, 0.18 + 0.12 * pulse + 0.3 * _vent_flash))
+	draw_circle(VENT, 17.0 + 3.0 * pulse, Color(VENT_GLOW, 0.55 + 0.25 * pulse))
+	draw_circle(VENT, 9.0, Color(0.85, 1.0, 1.0, 0.9))
+	draw_arc(VENT, 24.0, 0.0, TAU, 24, Color(VENT_GLOW, 0.7), 3.0, true)
 	draw_set_transform(Vector2.ZERO)
 	if _aim > 0.0:
 		var k := 1.0 - _aim / AIM_TIME

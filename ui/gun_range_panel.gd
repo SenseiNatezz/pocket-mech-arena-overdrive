@@ -16,8 +16,9 @@ const GOLD := Color(1.0, 0.82, 0.3)
 const CYAN := Color(0.35, 0.75, 1.0)
 const SLOT := Vector2(62, 88)
 const SLOT_GAP := 6
-## Touch: the thumb-stick zones (from ui/touch_controls.tscn) the weapon bar must fit between, and the
-## height kept clear above the bottom edge for the pause button.
+## Touch: the space the weapon bar must fit between (right of the move stick, left of the FIRE button +
+## ability arc laid out in ui/touch_controls.gd, which ends ~481 px from the right edge), and the height
+## kept clear above the bottom edge for the pause button.
 const TOUCH_LEFT_STICK_RIGHT := 290.0
 const TOUCH_RIGHT_STICK_LEFT := 490.0
 const TOUCH_PAUSE_CLEAR := 70.0
@@ -247,7 +248,7 @@ func _slot(id: StringName, index: int) -> Button:
 	icon.offset_bottom = -5
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(icon)
-	var key := _label(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-"][index] if index < 11 else "", 13, GOLD)
+	var key := _label(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="][index] if index < 12 else "", 13, GOLD)
 	key.position = Vector2(5, 1)
 	b.add_child(key)
 	_keys.append(key)

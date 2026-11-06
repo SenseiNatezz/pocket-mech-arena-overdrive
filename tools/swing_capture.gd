@@ -52,7 +52,7 @@ func _run() -> void:
 		var combo: int = MeleeKit.WEAPONS[id]["combo"]
 		mech.melee._last_id = id
 		mech.melee.combo = combo - 2
-		mech.melee._last_swing = Time.get_ticks_msec() / 1000.0
+		mech.melee._last_swing = mech.melee._clock
 		mech.global_position = center + Vector2(260, 0)
 		await _frames(2)
 		var fin: Array[Image] = []

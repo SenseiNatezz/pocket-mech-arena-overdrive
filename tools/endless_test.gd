@@ -58,6 +58,13 @@ func _run() -> void:
 	var chaser_hp := {}
 	var boss_seen := false
 	var boss_hp := 0.0
+	var boss_path := ""
+	var banners: Array[String] = []
+	arena.banner.connect(func(t: String, _c: Color) -> void: banners.append(t))
+	var bonus_seen := [false]
+	Upgrades.level_up_ready.connect(func() -> void:
+		if Upgrades.bonus_picks > 0:
+			bonus_seen[0] = true)
 	for w in range(1, 7):
 		var started := await _wait_until(func() -> bool: return arena.zone.wave >= w, 25.0)
 		if not started:
@@ -69,12 +76,14 @@ func _run() -> void:
 		sizes[w] = arena.zone._alive.size()
 		for e in _enemies():
 			if e is Chaser:
-				chaser_hp[w] = e.max_hp
+				# (base toughness: twists like SWARM / GOLD RUSH and elites scale HP on top)
+				chaser_hp[w] = e.max_hp / Game.twist_value("enemy_hp") / (2.0 if e.elite else 1.0)
 				break
 		var boss := get_tree().get_first_node_in_group("boss") as Enemy
 		if boss and not boss.dead:
 			boss_seen = true
 			boss_hp = boss.max_hp
+			boss_path = boss.scene_file_path
 		# Wipe the wave out (bosses too: several heavy hits to push through their phases).
 		var cleared := await _wait_until(func() -> bool:
 			for e in _enemies():
@@ -85,9 +94,27 @@ func _run() -> void:
 			return arena.zone.wave > w or Game.endless_wave >= w, 30.0)
 		_check("wave %d (%d enemies) cleared" % [w, sizes[w]], cleared)
 		if w == 5:
-			_check("wave 5 is a boss wave (boss HP %.0f)" % boss_hp, boss_seen and boss_hp >= 1500.0)
+			_check("wave 5 is a boss wave (boss HP %.0f)" % boss_hp, boss_seen and boss_hp >= 2600.0 * 1.1)
+			_check("the first boss is this run's first in order (%s)" % boss_path.get_file(),
+				boss_path == Game.endless_boss_order[0])
+			# The free BOSS REWARD pick arrives a beat after the boss dies.
+			await _wait_until(func() -> bool: return bonus_seen[0], 5.0)
 
 	_check("waves grow (%s)" % str(sizes), sizes.get(4, 0) > sizes.get(1, 0) and sizes.get(6, 0) > sizes.get(4, 0))
+	_check("wave 3 brings a supply drop", banners.any(func(t: String) -> bool: return "WAVE 3" in t and "SUPPLY DROP" in t))
+	_check("killing the boss grants a free BOSS REWARD pick", bonus_seen[0])
+	# Boss order: every boss, reshuffled every run, never opening with last run's first boss.
+	var orders_ok := true
+	var firsts := {}
+	for i in 12:
+		var prev: String = Game.endless_boss_order[0]
+		Game.roll_endless_bosses()
+		var o := Game.endless_boss_order
+		orders_ok = orders_ok and o.size() == Game.ENDLESS_BOSS_SCENES.size() and o[0] != prev \
+			and Game.ENDLESS_BOSS_SCENES.all(func(s: String) -> bool: return o.has(s))
+		firsts[o[0]] = true
+	_check("Endless boss order: all %d bosses, reshuffled per run, new opener each time (%d different openers)" % [Game.ENDLESS_BOSS_SCENES.size(), firsts.size()],
+		orders_ok and firsts.size() >= 2)
 	_check("enemies get tougher (chaser HP %s)" % str(chaser_hp),
 		chaser_hp.has(1) and chaser_hp.has(6) and chaser_hp[6] > chaser_hp[1] * 1.4)
 	_check("best wave saved (%d)" % Game.endless_best, Game.endless_best >= 6)
@@ -95,8 +122,13 @@ func _run() -> void:
 	_check("leveled up along the way (level %d, %d upgrades)" % [Upgrades.level, Upgrades.stacks.size()],
 		Upgrades.level >= 3 and not Upgrades.stacks.is_empty())
 	await _new_robots()
+	await _twists_and_overlap()
 
 	# Stuck-wave safety nets. Let the next wave warp in, then keep one enemy alive.
+	# (overlapping waves would start the next wave around the lone robot, so they're off for this part)
+	arena.zone.overlap_enabled = false
+	# (and no twist: CRYSTAL STORM lightning could kill the robot this part watches)
+	Game.endless_twist = &""
 	await _wait_until(func() -> bool: return arena.zone._pending == 0 and not arena.zone._alive.is_empty(), 20.0)
 	await _frames(5)
 	var keep: Enemy = null
@@ -114,6 +146,8 @@ func _run() -> void:
 			c += p
 		keep.global_position = arena.map_to_world(c / poly.size())
 		keep.move_speed = 0.0
+		# (fully frozen: some robots move by their own attacks - Coil lunges, Tidebreaker charges)
+		keep.set_physics_process(false)
 		await _frames(45)
 		var lp: Vector2 = keep.global_position / arena._k
 		_check("enemy wedged inside an obstacle is rescued", not Geometry2D.is_point_in_polygon(lp, poly))
@@ -124,10 +158,12 @@ func _run() -> void:
 			if p.distance_to(mech.global_position) > far.distance_to(mech.global_position):
 				far = p
 		keep.global_position = far
-		var warped := await _wait_until(func() -> bool: return keep.global_position.distance_to(far) > 50.0, 36.0)
-		var d := keep.global_position.distance_to(mech.global_position)
+		var warped := await _wait_until(func() -> bool: return not is_instance_valid(keep) or keep.global_position.distance_to(far) > 50.0, 36.0)
+		var d := keep.global_position.distance_to(mech.global_position) if is_instance_valid(keep) else -1.0
 		_check("stuck last enemy warps in near the mech (%.0f px away)" % d, warped and d > 250.0 and d < 900.0)
-		keep.die()
+		if is_instance_valid(keep):
+			keep.die()
+	arena.zone.overlap_enabled = true
 
 	# Death -> Endless results.
 	await _wait_until(func() -> bool: return not Upgrades.choosing, 10.0)
@@ -141,6 +177,53 @@ func _run() -> void:
 
 	print("ENDLESS TEST %s (%d failed)" % ["OK" if _fails == 0 else "FAILED", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+## Twists (rolled from wave 6), late-game elites on Normal, and overlapping waves.
+func _twists_and_overlap() -> void:
+	var zone: EncounterZone = arena.zone
+	_check("a twist is active after wave 6 (%s)" % Game.endless_twist, Game.TWISTS.has(Game.endless_twist))
+	var keep := Game.endless_twist
+	Game.endless_twist = &""
+	var plain := zone.endless_wave(12).size()
+	Game.endless_twist = &"swarm"
+	var swarm := zone.endless_wave(12).size()
+	_check("SWARM packs more robots in (%d vs %d)" % [swarm, plain], swarm > plain)
+	Game.endless_twist = &"gold"
+	Game.scrap_enabled = true
+	var before := Game.run_scrap
+	Game.earn_scrap(10.0)
+	_check("GOLD RUSH doubles scrap (+%.0f)" % (Game.run_scrap - before), is_equal_approx(Game.run_scrap - before, 20.0 * Game.diff("scrap")))
+	Game.endless_twist = &""
+	var w := zone.wave
+	zone.wave = 10
+	var early := zone.elite_chance()
+	zone.wave = 20
+	var late := zone.elite_chance()
+	zone.wave = w
+	_check("Normal: no elites at wave 10, some by wave 20 (%.0f%% -> %.0f%%)" % [early * 100.0, late * 100.0], early == 0.0 and late > 0.05)
+	Game.endless_twist = keep
+	# Overlap: let the next wave warp in, cut it down to 2, and the wave after starts with them alive.
+	var ready_wave := func() -> bool:
+		return zone._pending == 0 and zone._alive.size() >= 4 and not zone.is_boss_wave(zone.wave)
+	await _wait_until(ready_wave, 30.0)
+	if zone.is_boss_wave(zone.wave) or zone._alive.size() < 4:
+		_check("overlap scenario set up", false)
+		return
+	var start_wave := zone.wave
+	var survivors: Array[Enemy] = []
+	for e in _enemies():
+		if survivors.size() < 2 and not e.is_in_group("boss"):
+			survivors.append(e)
+			e.move_speed = 0.0
+		else:
+			e.die()
+	var moved := await _wait_until(func() -> bool: return zone.wave > start_wave, 8.0)
+	_check("down to 2 robots, the next wave starts anyway (wave %d -> %d, overlapped %s)" % [start_wave, zone.wave, zone.last_overlapped],
+		moved and zone.last_overlapped and survivors.all(func(e: Enemy) -> bool: return is_instance_valid(e) and not e.dead))
+	for e in _enemies():
+		e.die()
+	await _frames(5)
 
 
 ## The Endless-only robots: late mixes bring them in (elites capped), early ones don't, and all six

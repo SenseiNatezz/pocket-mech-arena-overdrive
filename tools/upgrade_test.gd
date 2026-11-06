@@ -108,7 +108,8 @@ func _run() -> void:
 	Upgrades.add_xp(Upgrades.xp_to_next() - Upgrades.xp + 0.01)
 	await _frames(1)
 	_check("level-up opens the menu + pauses", menu.visible and get_tree().paused and Upgrades.choosing)
-	_check("menu offers 3 different upgrades", _distinct_cards(menu) == 3)
+	_check("menu offers %d different upgrades (VX-7 Standard: 4)" % Upgrades.card_count(),
+		_distinct_cards(menu) == Upgrades.card_count() and Upgrades.card_count() == (4 if Game.chassis == &"standard" else 3))
 	_check("pause menu can't open over the level-up menu", not hud._pause_panel.visible)
 	await _wait_until(func() -> bool: return not Upgrades.choosing, 3.0)
 	_check("pick applied + game resumes (level %d, %d upgrade)" % [Upgrades.level, Upgrades.stacks.size()],
@@ -386,14 +387,211 @@ func _run() -> void:
 	for t in tanks.values():
 		t.queue_free()
 
+	await _new_upgrade_checks()
+	await _chassis_checks()
+	_combo_checks()
+	_hangar_checks()
 	print("UPGRADE TEST %s (%d failed)" % ["OK" if _fails == 0 else "FAILED", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
+
+
+## Level-up menu charges (reroll / banish / skip) and the newer upgrades' effects.
+func _new_upgrade_checks() -> void:
+	Upgrades.reset()
+	await _clear_enemies()
+	mech.global_position = Vector2(-200, -560)
+	mech.hp = mech.max_hp
+	_check("a run starts with 2 rerolls + 1 banish", Upgrades.rerolls == Upgrades.BASE_REROLLS and Upgrades.banishes == Upgrades.BASE_BANISHES)
+	_check("reroll spends a charge", Upgrades.use_reroll() and Upgrades.rerolls == Upgrades.BASE_REROLLS - 1)
+	var banished_ok := Upgrades.banish(&"power") and Upgrades.banishes == 0 and not Upgrades.banish(&"rapid")
+	var seen_power := false
+	for i in 40:
+		seen_power = seen_power or Upgrades.roll_choices(4).has(&"power")
+	_check("banish removes the upgrade for the run (and needs a charge)", banished_ok and not seen_power)
+	Upgrades.pending = 1
+	mech.hp = 50.0
+	Upgrades.skip()
+	_check("skip uses the pick and repairs (%.0f HP)" % mech.hp, Upgrades.pending == 0 and mech.hp > 50.0)
+	Upgrades.next_arena_bonus()
+	_check("next arena adds a reroll", Upgrades.rerolls == Upgrades.BASE_REROLLS)
+	Upgrades.reset()
+	_check("a new run clears banishes", Upgrades.banished.is_empty() and Upgrades.banishes == Upgrades.BASE_BANISHES)
+	mech.hp = mech.max_hp
+
+	# Critical Targeting: hits sometimes land double.
+	var crit_t := _target(mech.global_position + Vector2(500, 300), 100000.0)
+	await _frames(35)
+	_set_level(&"crit", 3)
+	for i in 200:
+		crit_t.take_damage(10.0, crit_t.global_position, mech)
+	var dealt := crit_t.max_hp - crit_t.hp
+	_check("critical targeting: some hits deal double (%.0f from 200 x 10)" % dealt, dealt > 2150.0 and dealt < 3200.0)
+	# Executioner: crits finish off robots under 25% HP.
+	_set_level(&"redline", 1)
+	_set_level(&"executioner", 1)
+	var weak := _target(mech.global_position + Vector2(500, -300), 1000.0)
+	await _frames(35)
+	weak.hp = 200.0
+	for i in 40:
+		if weak.dead:
+			break
+		weak.take_damage(1.0, weak.global_position, mech)
+	_check("executioner: a crit destroys a robot under 25% HP", weak.dead)
+	Upgrades.reset()
+
+	# Cryo Rounds: chilled robots are slowed and tinted.
+	_set_level(&"cryo", 3)
+	var chilled := false
+	for i in 30:
+		mech._on_damage_dealt(10.0, mech, crit_t)
+		chilled = chilled or crit_t.chill_t > 0.0
+	_check("cryo rounds chill robots", chilled and crit_t.tint(Color.WHITE) != Color.WHITE)
+	Upgrades.reset()
+
+	# Arc Emitter: lightning jumps to the next robot.
+	var near := _target(crit_t.global_position + Vector2(120, 0), 1000.0)
+	await _frames(35)
+	mech.arc_from(crit_t, 100.0, 1)
+	_check("arc emitter: lightning hits a nearby robot (%.0f)" % (near.max_hp - near.hp),
+		is_equal_approx(near.max_hp - near.hp, 100.0 * Mech.ARC_SHARE))
+	await _clear_enemies()
+
+	# Bit Drones fire on their own; Impulse Burst and Reactive Armor hit what's around the mech.
+	var drone_t := _target(mech.global_position + Vector2(300, 0), 5000.0)
+	await _frames(35)
+	_set_level(&"drones", 2)
+	_check("bit drones shoot nearby robots", await _wait_until(func() -> bool: return drone_t.hp < drone_t.max_hp, 3.0))
+	Upgrades.reset()
+	_kill_bullets()
+	await _clear_enemies()
+	var ring := _target(mech.global_position + Vector2(90, 0), 5000.0)
+	await _frames(35)
+	_set_level(&"boost_burst", 1)
+	mech.boost_cooldown_left = 0.0
+	mech._try_boost(Vector2.LEFT)
+	_check("impulse burst: boosting damages robots around you", ring.hp < ring.max_hp)
+	await _frames(20)
+	Upgrades.reset()
+	ring.global_position = mech.global_position + Vector2(90, 0)  # (the boost carried the mech away)
+	var before_hp := ring.hp
+	_set_level(&"reactive", 1)
+	mech._invuln = 0.0
+	mech.shield_charges = 0
+	mech.take_damage(5.0, ring.global_position, ring)
+	await _frames(2)
+	_check("reactive armor: getting hit blasts robots nearby", ring.hp < before_hp)
+	mech.hp = mech.max_hp
+	Upgrades.reset()
+	await _clear_enemies()
+
+	# Thermal Amplifier / Reactor Overcharge change the mech's own numbers (the HUD follows them).
+	var nova_before := mech.nova_cost
+	var od_before := mech.overdrive_time
+	Upgrades.apply(&"thermal")
+	Upgrades.apply(&"od_core")
+	_check("thermal amplifier: cheaper Nova (%.0f -> %.0f)" % [nova_before, mech.nova_cost], mech.nova_cost < nova_before)
+	_check("reactor overcharge: longer overdrive (%.0f -> %.0f s)" % [od_before, mech.overdrive_time], mech.overdrive_time == od_before + 2.0)
+	Upgrades.reset()
+	mech._refresh_upgrade_stats()
+	_check("every new upgrade has a description", Upgrades.CATALOG.keys().all(func(id: StringName) -> bool:
+		return Upgrades.describe(id) != ""))
+
+
+## Chassis tricks: Bulwark SIEGE MODE (braced = harder hitting + tougher), Striker kills recharge the boost.
+func _chassis_checks() -> void:
+	var saved: Dictionary = mech._chassis
+	mech._chassis = Game.chassis_info(&"bulwark")
+	for i in 20:
+		mech._update_siege(0.1, Vector2.ZERO)
+	_check("bulwark braces when standing still", is_equal_approx(mech.siege_k, 1.0))
+	mech.hp = mech.max_hp
+	mech._invuln = 0.0
+	mech.shield_charges = 0
+	var hp0 := mech.hp
+	mech.take_damage(10.0, mech.global_position, null)
+	var taken := hp0 - mech.hp
+	_check("siege mode: takes less damage (%.1f from 10)" % taken, taken < 10.0 * float(mech._chassis["taken"]) - 0.5)
+	mech._update_siege(0.1, Vector2.RIGHT)
+	mech._update_siege(0.1, Vector2.RIGHT)
+	_check("moving unbraces", mech.siege_k < 1.0)
+	mech.siege_k = 0.0
+	mech._chassis = Game.chassis_info(&"striker")
+	mech.boost_cooldown_left = 0.5
+	mech._on_enemy_killed(null)
+	_check("striker: kills recharge the boost (%.1f s left)" % mech.boost_cooldown_left, mech.boost_cooldown_left < 0.5)
+	mech._chassis = saved
+	mech.boost_cooldown_left = 0.0
+	mech.hp = mech.max_hp
+	await _frames(2)
+
+
+## Upgrade combos: two invested upgrades unlock a gold combo card that always takes a slot, once.
+func _combo_checks() -> void:
+	Upgrades.stacks.clear()
+	_check("no combos without the upgrades", Upgrades.available_combos().is_empty())
+	_set_level(&"target_lock", 1)
+	_set_level(&"explosive", 1)
+	_check("Target Lock 1 + Explosive 1 isn't enough yet", not Upgrades.available_combos().has(&"cluster"))
+	_set_level(&"explosive", 2)
+	_check("Target Lock + Explosive (3 levels) unlocks Cluster Missiles", Upgrades.available_combos().has(&"cluster"))
+	var roll := Upgrades.roll_choices(3)
+	_check("an unlocked combo takes a card slot (%s)" % str(roll), roll.has(&"cluster") and roll.size() == 3)
+	Upgrades.pending = 1
+	Upgrades.apply(&"cluster")
+	_check("a taken combo isn't offered again", Upgrades.level_of(&"cluster") == 1 and not Upgrades.available_combos().has(&"cluster"))
+	_check("combo cards have a name, gold colour and a description", Upgrades.display_name(&"cluster") == "Cluster Missiles"
+		and Upgrades.color(&"cluster") == Upgrades.COMBO_GOLD and Upgrades.describe(&"cluster") != "")
+	Game.weapon = &"sniper"
+	_set_level(&"pierce", 2)
+	_set_level(&"power", 2)
+	_check("Railgun isn't offered for the Sniper", not Upgrades.available_combos().has(&"railgun"))
+	Game.weapon = &"blaster"
+	_check("...but is for the Beam Rifle", Upgrades.available_combos().has(&"railgun"))
+	Upgrades.stacks.clear()
+
+
+## Hangar: scrap buys escalating permanent upgrades and chassis; bonuses reach the run.
+func _hangar_checks() -> void:
+	Game.scrap = 1000
+	Game.hangar.clear()
+	var c1 := Game.hangar_cost(&"frame")
+	_check("buying an upgrade spends scrap and levels it", Game.buy_hangar(&"frame") and Game.scrap == 1000 - c1
+		and Game.hangar_level(&"frame") == 1)
+	_check("the next level costs more", Game.hangar_cost(&"frame") > c1)
+	Game.hangar[&"last_stand"] = 1
+	_check("maxed upgrades can't be bought", Game.hangar_cost(&"last_stand") == -1 and not Game.buy_hangar(&"last_stand"))
+	var before := Upgrades.damage_mult()
+	Game.hangar[&"calibration"] = 2
+	_check("Weapon Calibration raises damage (x%.2f)" % (Upgrades.damage_mult() / before), is_equal_approx(Upgrades.damage_mult() / before, 1.1))
+	Game.scrap = 100
+	_check("can't buy a chassis without the scrap", not Game.pick_chassis(&"bulwark") and Game.chassis == &"standard")
+	Game.scrap = 1000
+	_check("buying a chassis selects it", Game.pick_chassis(&"striker") and Game.chassis == &"striker" and Game.owns_chassis(&"striker"))
+	_check("the Striker is faster (x%.2f move)" % Upgrades.move_mult(), Upgrades.move_mult() > 1.1)
+	Game.pick_chassis(&"standard")
+	Game.hangar[&"head_start"] = 1
+	Upgrades.reset()
+	Upgrades.grant_head_start()
+	_check("Head Start: a free pick waits at the start of a run", Upgrades.pending == 1 and Upgrades.bonus_picks == 1
+		and Upgrades.bonus_title == "HEAD START")
+	Upgrades.reset()
+	# Scrap: earned only in real runs, banked once.
+	Game.scrap_enabled = true
+	Game.run_scrap = 0.0
+	Game.earn_scrap(10.0)
+	var banked := Game.bank_scrap()
+	_check("run scrap banks into the Hangar once (%d)" % banked, banked == 10 and Game.bank_scrap() == 0)
+	Game.scrap_enabled = false
+	Game.earn_scrap(10.0)
+	_check("no scrap outside real runs", Game.run_scrap == 0.0)
+	Game.hangar.clear()
 
 
 func _distinct_cards(menu: Node) -> int:
 	var ids := {}
 	for c in menu._cards:
-		ids[c.id] = true
+		if c.visible:
+			ids[c.id] = true
 	return ids.size()
 
 

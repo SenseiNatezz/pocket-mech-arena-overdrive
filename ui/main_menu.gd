@@ -9,7 +9,8 @@ extends Control
 ## always stands clear of the menu column.
 ## Pages: 0 main, 1 continue (arena select), 2 settings, 3 armory (ui/armory_page.gd: weapon cards, unlock
 ## progress, equip), 4 difficulty picker (New Game / Endless Mode go through it first), 5 first-run tutorial
-## offer, 6 loadout (starting-weapon picker after the difficulty; ArmoryPage in start mode).
+## offer, 6 loadout (starting-weapon picker after the difficulty; ArmoryPage in start mode), 7 hangar,
+## 8 controls (key rebinding, from Settings).
 ## Works with mouse, touch (taps) and keyboard/gamepad (focus + ui_accept, ui_cancel = back).
 
 const SHINE := preload("res://ui/logo_shine.gdshader")
@@ -25,6 +26,10 @@ const DIFFICULTY_PAGE := 4
 const TUTORIAL_PAGE := 5
 ## Loadout: choose the starting weapon before every New Game / Endless run (after the difficulty).
 const LOADOUT_PAGE := 6
+## Hangar: spend scrap on chassis and permanent upgrades (ui/hangar_page.gd).
+const HANGAR_PAGE := 7
+## Settings > Controls: key rebinding (ui/controls_page.gd).
+const CONTROLS_PAGE := 8
 
 var _scene: TitleScene
 var _logo: TextureRect
@@ -41,6 +46,13 @@ var _music_btn: TitleButton
 var _sfx_btn: TitleButton
 var _armory: ArmoryPage
 var _loadout: ArmoryPage
+var _hangar: HangarPage
+var _radio_btn: TitleButton
+var _zoom_btn: TitleButton
+var _full_btn: TitleButton
+var _autofire_btn: TitleButton
+var _layout_btn: TitleButton
+var _controls: ControlsPage
 var _diff_btn: TitleButton
 var _diff_btns: Array[TitleButton] = []
 var _diff_info: Label
@@ -92,8 +104,8 @@ func _ready() -> void:
 	grid.add_theme_constant_override("v_separation", 8)
 	main.add_child(grid)
 	var small := Vector2((COL_W - 12.0) / 2.0, 42)
-	for entry in [["Armory", _show.bind(ARMORY_PAGE)], ["Weapon Range", Game.to_gun_range],
-			["Customize", Game.to_customize], ["Settings", _show.bind(2)]]:
+	for entry in [["Armory", _show.bind(ARMORY_PAGE)], ["Hangar", _show.bind(HANGAR_PAGE)],
+			["Weapon Range", Game.to_gun_range], ["Customize", Game.to_customize], ["Settings", _show.bind(2)]]:
 		var b := TitleButton.new(entry[0], small)
 		b.pressed.connect(entry[1])
 		grid.add_child(b)
@@ -121,29 +133,50 @@ func _ready() -> void:
 		_btn(cont, "Arena %d: %s%s" % [i + 1, Game.ARENAS[i]["name"], tag], Game.start_arena.bind(i), Vector2(COL_W, 50))
 	_btn(cont, "Back", _show.bind(0), Vector2(COL_W, 50))
 
-	# Settings.
-	var settings := _page_box(col, 6)
+	# Settings: a 2-column grid of toggles / cycles (touch options only where there's a touch screen,
+	# Fullscreen and Controls only where there's a keyboard).
+	var settings := _page_box(col, 8)
 	_diff_btn = _btn(settings, "", func() -> void:
 		Game.set_difficulty((Game.difficulty + 1) % Game.DIFFICULTIES.size())
-		_refresh(), Vector2(COL_W, 42))
-	_shake_btn = _btn(settings, "", func() -> void:
-		Game.set_screen_shake(not Game.screen_shake)
-		_refresh(), Vector2(COL_W, 42))
-	_vol_btn = _btn(settings, "", func() -> void:
-		Game.set_volume(Game.master_volume + 0.2 if Game.master_volume < 0.99 else 0.0)
-		_refresh(), Vector2(COL_W, 42))
-	_music_btn = _btn(settings, "", func() -> void:
-		Game.set_music_volume(Game.music_volume + 0.1 if Game.music_volume < 0.99 else 0.0)
-		_refresh(), Vector2(COL_W, 42))
-	_sfx_btn = _btn(settings, "", func() -> void:
+		_refresh(), Vector2(COL_W, 38))
+	var sgrid := GridContainer.new()
+	sgrid.columns = 2
+	sgrid.add_theme_constant_override("h_separation", 12)
+	sgrid.add_theme_constant_override("v_separation", 8)
+	settings.add_child(sgrid)
+	var cell := Vector2((COL_W - 12.0) / 2.0, 38)
+	_shake_btn = _grid_btn(sgrid, func() -> void: Game.set_screen_shake(not Game.screen_shake), cell)
+	_vol_btn = _grid_btn(sgrid, func() -> void:
+		Game.set_volume(Game.master_volume + 0.2 if Game.master_volume < 0.99 else 0.0), cell)
+	_music_btn = _grid_btn(sgrid, func() -> void:
+		Game.set_music_volume(Game.music_volume + 0.1 if Game.music_volume < 0.99 else 0.0), cell)
+	_sfx_btn = _grid_btn(sgrid, func() -> void:
 		Game.set_sfx_volume(Game.sfx_volume + 0.1 if Game.sfx_volume < 0.99 else 0.0)
-		Sfx.play(&"pickup", -6.0)
-		_refresh(), Vector2(COL_W, 42))
-	_btn(settings, "Tutorial", Game.to_tutorial, Vector2(COL_W, 42))
-	var help := _heading(settings, "Keyboard/Mouse, gamepad and touch supported.\nPause in-game (Esc / Start / II) to see controls.")
-	help.add_theme_font_size_override("font_size", 14)
+		Sfx.play(&"pickup", -6.0), cell)
+	_radio_btn = _grid_btn(sgrid, func() -> void:
+		Game.radio_voice = not Game.radio_voice
+		Game.save(), cell)
+	_zoom_btn = _grid_btn(sgrid, func() -> void: Game.set_camera_zoom((Game.camera_zoom + 1) % Game.CAMERA_ZOOMS.size()), cell)
+	if Game.can_fullscreen():
+		_full_btn = _grid_btn(sgrid, func() -> void: Game.set_fullscreen(not Game.is_fullscreen()), cell)
+	if Controls.touch_active:
+		_autofire_btn = _grid_btn(sgrid, func() -> void:
+			Game.auto_fire = not Game.auto_fire
+			Game.save(), cell)
+		_layout_btn = _grid_btn(sgrid, func() -> void:
+			Game.touch_simple = not Game.touch_simple
+			Game.save(), cell)
+	if not OS.has_feature("mobile"):
+		var keys := TitleButton.new("Controls", cell)
+		keys.pressed.connect(_show.bind(CONTROLS_PAGE))
+		sgrid.add_child(keys)
+	var tut_btn := TitleButton.new("Tutorial", cell)
+	tut_btn.pressed.connect(Game.to_tutorial)
+	sgrid.add_child(tut_btn)
+	var help := _heading(settings, "F11: fullscreen.  Pause in-game (Esc / Start / II) to see the controls.")
+	help.add_theme_font_size_override("font_size", 13)
 	help.add_theme_color_override("font_color", Color(0.75, 0.85, 1.0, 0.75))
-	_btn(settings, "Back", _show.bind(0), Vector2(COL_W, 42))
+	_btn(settings, "Back", _show.bind(0), Vector2(COL_W, 38))
 
 	# Armory: full-screen weapon cards (ui/armory_page.gd).
 	_armory = ArmoryPage.new()
@@ -187,6 +220,18 @@ func _ready() -> void:
 			_diff_then.call())
 	add_child(_loadout)
 	_pages.append(_loadout)
+	# Hangar: full-screen scrap shop (chassis + permanent upgrades).
+	_hangar = HangarPage.new()
+	_hangar.back_pressed.connect(func() -> void:
+		_refresh()
+		_show(0))
+	add_child(_hangar)
+	_pages.append(_hangar)
+	# Controls: key rebinding (back to Settings).
+	_controls = ControlsPage.new()
+	_controls.back_pressed.connect(_show.bind(2))
+	add_child(_controls)
+	_pages.append(_controls)
 
 	Layout.changed.connect(_apply_layout)
 	_apply_layout(Layout.portrait)
@@ -239,6 +284,16 @@ func _btn(page: VBoxContainer, label: String, action: Callable, min_size := Vect
 	return b
 
 
+## Settings grid cell: runs `action`, then refreshes every label (they show the current values).
+func _grid_btn(grid: GridContainer, action: Callable, min_size: Vector2) -> TitleButton:
+	var b := TitleButton.new("", min_size)
+	b.pressed.connect(func() -> void:
+		action.call()
+		_refresh())
+	grid.add_child(b)
+	return b
+
+
 func _heading(page: VBoxContainer, txt: String) -> Label:
 	var l := Label.new()
 	l.text = txt
@@ -255,14 +310,22 @@ func _show(which: int) -> void:
 	for i in _pages.size():
 		_pages[i].visible = i == which
 	_footer.visible = which == 0
-	_logo.visible = which != ARMORY_PAGE and which != LOADOUT_PAGE
+	_logo.visible = which != ARMORY_PAGE and which != LOADOUT_PAGE and which != HANGAR_PAGE and which != CONTROLS_PAGE
 	var focus: Control = null
 	if which == 1:
 		focus = _pages[1].get_child(mini(Game.continue_index(), Game.ARENAS.size() - 1))
+	elif which == 2:
+		_refresh()
+		focus = _diff_btn
+	elif which == CONTROLS_PAGE:
+		_controls.focus_default()
 	elif which == ARMORY_PAGE:
 		_armory.focus_equipped()
 	elif which == LOADOUT_PAGE:
 		_loadout.focus_equipped()
+	elif which == HANGAR_PAGE:
+		_hangar.refresh()
+		_hangar.focus_default()
 	elif which == DIFFICULTY_PAGE:
 		focus = _diff_btns[Game.difficulty]
 		_show_difficulty_info(Game.difficulty)
@@ -280,17 +343,26 @@ func _refresh() -> void:
 	for w in Game.WEAPONS:
 		if Game.is_unlocked(w["id"]):
 			got += 1
-	_footer.text = "BEST ENDLESS WAVE %d   //   WEAPONS %d / %d   //   %s" % [Game.endless_best, got,
-		Game.WEAPONS.size(), Game.difficulty_name().to_upper()]
+	_footer.text = "BEST ENDLESS WAVE %d   //   WEAPONS %d / %d   //   SCRAP %d   //   %s" % [Game.endless_best, got,
+		Game.WEAPONS.size(), Game.scrap, Game.difficulty_name().to_upper()]
+	_radio_btn.label_text = "Radio Voice: %s" % ("On" if Game.radio_voice else "Off")
 	_shake_btn.label_text = "Screen Shake: %s" % ("On" if Game.screen_shake else "Off")
-	_vol_btn.label_text = "Master Volume: %d%%" % roundi(Game.master_volume * 100.0)
+	_vol_btn.label_text = "Volume: %d%%" % roundi(Game.master_volume * 100.0)
 	_music_btn.label_text = "Music: %d%%" % roundi(Game.music_volume * 100.0)
 	_sfx_btn.label_text = "Sound FX: %d%%" % roundi(Game.sfx_volume * 100.0)
 	_diff_btn.label_text = "Difficulty: %s" % Game.difficulty_name()
+	_zoom_btn.label_text = "Camera: %s" % Game.CAMERA_ZOOMS[Game.camera_zoom]["name"]
+	if _full_btn:
+		_full_btn.label_text = "Fullscreen: %s" % ("On" if Game.is_fullscreen() else "Off")
+	if _autofire_btn:
+		_autofire_btn.label_text = "Auto-Fire: %s" % ("On" if Game.auto_fire else "Off")
+		_layout_btn.label_text = "Touch: %s" % ("Simple" if Game.touch_simple else "Full")
 	_continue_btn.label_text = "Continue" + ("  (Arena %d, %s)" % [Game.continue_index() + 1, Game.difficulty_name()] if Game.has_progress() else "")
 	_endless_btn.label_text = "Endless Mode" + ("  (Best: wave %d)" % Game.endless_best if Game.endless_best > 0 else "")
-	for b in [_diff_btn, _shake_btn, _vol_btn, _music_btn, _sfx_btn, _continue_btn, _endless_btn]:
-		b.queue_redraw()
+	for b in [_diff_btn, _shake_btn, _vol_btn, _music_btn, _sfx_btn, _radio_btn, _zoom_btn, _full_btn, _autofire_btn,
+			_layout_btn, _continue_btn, _endless_btn]:
+		if b:
+			b.queue_redraw()
 
 
 func _unhandled_input(event: InputEvent) -> void:

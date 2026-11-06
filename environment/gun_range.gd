@@ -3,7 +3,7 @@ extends Node2D
 ## (painted Higgsfield map, assets/hq/training_base.png, traced in
 ## environment/arenas/layouts/training_base_layout.gd) with EVERY weapon usable, locked or not, plus
 ## live enemies and bosses on demand.
-##   1-9, 0, - / mouse wheel / Tab (Shift+Tab back) / the weapon bar   switch weapon
+##   1-9, 0, -, = / mouse wheel / Tab (Shift+Tab back) / the weapon bar   switch weapon
 ##   Spawn panel (right)                                            drop in any enemy type or a boss
 ##                                                                  (one at a time); CLEAR removes all
 ## Map: open deck in the middle (the mech starts on the landing circle = world 0,0), 4 firing lanes
@@ -26,12 +26,15 @@ const ENEMY_KINDS := [
 	# Endless-mode robots.
 	["hornet", "Hornet"], ["coil", "Coil"], ["widow", "Widow"], ["cinder", "Cinder"], ["bastion", "Bastion"],
 	["tidebreaker", "Tidebreaker"],
+	# Volcanic Forge robots (level 6).
+	["magma_crawler", "Magma Crawler"], ["anvil", "Anvil"], ["slagspitter", "Slagspitter"],
 ]
 ## [scene path under res://enemies, display name, accent]
 const BOSS_KINDS := [
 	["warden_boss", "Warden", Color(1.0, 0.25, 0.2)],
 	["bosses/ronin_boss", "Ronin", Color(1.0, 0.45, 0.15)],
 	["bosses/seraph_boss", "Seraph", Color(0.75, 0.35, 1.0)],
+	["bosses/vulcan_boss", "Vulcan", Color(1.0, 0.45, 0.1)],
 ]
 ## Range bosses have less HP than in the campaign so every phase is quick to reach.
 const BOSS_HP := 1800.0
@@ -101,6 +104,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_select_index(9)
 		elif k == KEY_MINUS:
 			_select_index(10)
+		elif k == KEY_EQUAL:
+			_select_index(11)
 		elif k == KEY_TAB:
 			cycle_weapon(-1 if event.shift_pressed else 1)
 		else:
@@ -151,18 +156,27 @@ func spawn_boss(path: String) -> void:
 			hud.show_banner("BOSS DESTROYED", Color(0.4, 1.0, 0.6)))
 
 
-## Removes every enemy (spawned ones, a boss and anything it summoned) and any Widow mines left lying
-## around.
+## Removes every enemy (spawned ones, a boss and anything it summoned), any Widow mines left lying
+## around and any lava pools.
 func clear_enemies() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if e is Enemy and is_instance_valid(e):
 			Combat.shockwave(e.global_position, 60.0, Color(0.5, 0.9, 1.0), 0.3)
 			e.queue_free()
-	for n in get_tree().get_nodes_in_group("damageable"):
-		if n is Widow.Mine and is_instance_valid(n):
-			n.queue_free()
+	_clear_mines()
+	# A Widow can still lay a mine later this frame (before it's freed): sweep again at the end of it.
+	_clear_mines.call_deferred()
 	_spawned.clear()
 	Combat.clear_enemy_bullets()
+
+
+func _clear_mines() -> void:
+	for n in get_tree().get_nodes_in_group("damageable"):
+		if n is Widow.Mine and is_instance_valid(n) and not n.is_queued_for_deletion():
+			n.queue_free()
+	# Lava left by the Volcanic Forge robots.
+	for n in get_tree().get_nodes_in_group("lava_pools"):
+		n.queue_free()
 
 
 func _physics_process(_delta: float) -> void:

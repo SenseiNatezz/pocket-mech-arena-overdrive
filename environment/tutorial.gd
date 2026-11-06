@@ -23,7 +23,7 @@ const STEPS := [
 		"Move your mech with the  LEFT STICK.", "Drag the  LEFT thumb stick  to move."],
 	[&"attack", "AIM & ATTACK", "Aim with the  MOUSE  and hold  LEFT CLICK  to attack. Destroy the 3 target drones.",
 		"Aim with the  RIGHT STICK  and hold  RT  to attack. Destroy the 3 target drones.",
-		"Push the  RIGHT stick  toward a target to aim and attack. Destroy the 3 target drones."],
+		"Hold the big  FIRE  button to attack - you aim at the nearest enemy automatically. Destroy the 3 target drones."],
 	[&"boost", "BOOST DASH", "Press  SPACE  to dash. You can't be hit while dashing - dash twice.",
 		"Press  LB  to dash. You can't be hit while dashing - dash twice.",
 		"Tap  BOOST  to dash. You can't be hit while dashing - dash twice."],

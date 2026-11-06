@@ -29,6 +29,10 @@ const ENEMIES := {
 	"cinder": preload("res://enemies/cinder.tscn"),
 	"bastion": preload("res://enemies/bastion.tscn"),
 	"tidebreaker": preload("res://enemies/tidebreaker.tscn"),
+	# Volcanic Forge robots (level 6; also join Endless, see endless_wave).
+	"crawler": preload("res://enemies/magma_crawler.tscn"),
+	"anvil": preload("res://enemies/anvil.tscn"),
+	"spitter": preload("res://enemies/slagspitter.tscn"),
 }
 
 @export var waves: PackedStringArray = [
@@ -51,6 +55,8 @@ const ENEMIES := {
 @export var damage_ramp := 0.0
 ## Endless: most enemies spawned in one wave (after that, waves only get tougher, not bigger).
 const MAX_ENDLESS_ENEMIES := 22
+const MAX_ENDLESS_ABSOLUTE := 36
+const MAX_ENDLESS_ABSOLUTE_MOBILE := 26
 const MAX_DAMAGE_RAMP := 2.5
 
 var barriers: Array[Node] = []
@@ -66,6 +72,22 @@ var _bombard_t := 0.0
 const STALL_TIME := 20.0
 const STALL_MAX_LEFT := 3
 var _stall_t := 0.0
+## OVERLAPPING WAVES: once a fully spawned wave is down to its last OVERLAP_LEFT robots for OVERLAP_DELAY
+## seconds, it counts as beaten and the next wave warps in while those stragglers are still around
+## (they simply join it), so the action never stalls on hunting the last robot. Never out of a boss
+## wave, the campaign's final wave, or while a boss lives - those have to be finished.
+## `last_overlapped` tells wave_cleared listeners which kind of clear it was.
+const OVERLAP_LEFT := 2
+const OVERLAP_DELAY := 2.5
+## (tests can switch it off to exercise the stall guard)
+var overlap_enabled := true
+var last_overlapped := false
+var _overlap_t := 0.0
+## The next wave is already on its way (cleared or overlapped; _next_wave resets it).
+var _advancing := false
+## Late Endless elites (see elite_chance).
+const LATE_ELITE_WAVE := 15
+const LATE_ELITE_WAVE_EASY := 25
 
 
 func _ready() -> void:
@@ -115,9 +137,11 @@ func wave_damage_mult() -> float:
 ## blade strikers at 4, lancers at 6, aegis guardians at 8 - and all of them get more common later.
 ## The Endless-only robots join too: Hornet drones at 3 (in pairs), Coils at 5, Widows at 7, Cinders at 9,
 ## Bastions at 11 and the Tidebreaker mini-boss at 12 (those last two are capped per wave).
+## The Volcanic Forge robots too: Magma Crawlers at 4, Slagspitters at 6, Anvils at 10 (capped).
 ## Boss waves bring a few escorts instead of a full wave.
 func endless_wave(n: int) -> Array[String]:
-	var count := mini(4 + int(n * 1.4), MAX_ENDLESS_ENEMIES)
+	# (the SWARM twist packs more robots in; see Game.TWISTS)
+	var count := mini(roundi((4 + int(n * 1.4)) * Game.twist_value("count")), roundi(MAX_ENDLESS_ENEMIES * Game.twist_value("count")))
 	if is_boss_wave(n):
 		count = mini(2 + n / Game.ENDLESS_BOSS_EVERY, 8)
 	var kinds: Array = [["chaser", 1.0]]
@@ -144,8 +168,14 @@ func endless_wave(n: int) -> Array[String]:
 		kinds.append(["bastion", 0.12])
 	if n >= 12:
 		kinds.append(["tidebreaker", 0.06 + minf(n * 0.002, 0.06)])
+	if n >= 4:
+		kinds.append(["crawler", 0.25 + minf(n * 0.01, 0.15)])
+	if n >= 6:
+		kinds.append(["spitter", 0.15 + minf(n * 0.008, 0.12)])
+	if n >= 10:
+		kinds.append(["anvil", 0.12 + minf(n * 0.005, 0.08)])
 	# Per-wave caps for the elites (one more of each every 10 waves).
-	var caps := {"bastion": 1 + n / 10, "tidebreaker": 1 + n / 20}
+	var caps := {"bastion": 1 + n / 10, "tidebreaker": 1 + n / 20, "anvil": 2 + n / 10}
 	var total := 0.0
 	for k in kinds:
 		total += k[1]
@@ -167,6 +197,8 @@ func endless_wave(n: int) -> Array[String]:
 
 
 func _next_wave() -> void:
+	_advancing = false
+	_overlap_t = 0.0
 	wave += 1
 	wave_started.emit(wave, total_waves())
 	var list: Array[String] = []
@@ -189,7 +221,11 @@ func _next_wave() -> void:
 func _scale_for_difficulty(list: Array[String]) -> Array[String]:
 	var want := maxi(roundi(list.size() * Game.diff("count")), mini(2, list.size()))
 	if endless:
-		want = mini(want, roundi(MAX_ENDLESS_ENEMIES * minf(Game.diff("count"), 1.4)))
+		want = mini(want, roundi(MAX_ENDLESS_ENEMIES * minf(Game.diff("count"), 1.4) * Game.twist_value("count")))
+		# (hard ceiling, so a SWARM on Hard / Extreme stays smooth: 40 robots cost ~6 ms of CPU a frame on
+		# a desktop, so the web / phone builds keep it lower)
+		var ceiling := MAX_ENDLESS_ABSOLUTE_MOBILE if OS.has_feature("web") or OS.has_feature("mobile") else MAX_ENDLESS_ABSOLUTE
+		want = mini(want, ceiling)
 	var out := list.duplicate()
 	out.shuffle()
 	while out.size() > want:
@@ -233,12 +269,18 @@ func _spawn(kind: String, pos: Vector2) -> void:
 		return
 	var e: Enemy = ENEMIES[kind].instantiate()
 	e.position = pos
-	e.max_hp *= hp_mult * (1.0 + hp_ramp * (wave - 1)) * Game.diff("hp")
-	e.move_speed *= Game.diff("speed")
+	e.max_hp *= hp_mult * (1.0 + hp_ramp * (wave - 1)) * Game.diff("hp") * Game.twist_value("enemy_hp")
+	e.move_speed *= Game.diff("speed") * Game.twist_value("enemy_speed")
 	e.damage_mult = wave_damage_mult()
-	# Tank-type enemies: armor tier by wave - triple armor gets likelier the further in you are.
+	# Tank-type enemies: armor tier by wave - triple armor gets likelier the further in you are - and
+	# early waves field thinner armor (35% of HP on the first waves, full by ~wave 9 / later arenas).
 	if e is HeavyTank or e is Tidebreaker:
 		e.armor_tier = 3 if randf() < triple_armor_chance() else 2
+		e.armor_fraction = armor_fraction()
+	# ELITES (gold aura, x2 HP, faster, harder-hitting): Extreme from the start, every difficulty late in
+	# Endless (see elite_chance).
+	if randf() < elite_chance():
+		e.make_elite()
 	e.died.connect(_on_enemy_died)
 	_alive.append(e)
 	(enemy_parent if enemy_parent else get_parent()).add_child(e)
@@ -259,6 +301,9 @@ func _pick_spawn_point() -> Vector2:
 func _on_enemy_died(e: Enemy) -> void:
 	_alive.erase(e)
 	_stall_t = 0.0
+	# Hit feel: the wave's last robot goes down in a short slow-motion beat.
+	if is_running and alive_count() == 0 and not e.is_in_group("boss"):
+		Combat.slowmo(0.35, 0.7)
 	_check_clear()
 
 
@@ -300,12 +345,21 @@ func _check_stall(delta: float) -> void:
 
 
 func _check_clear() -> void:
-	if not is_running or _pending > 0 or not _alive.is_empty():
+	if not is_running or _advancing or _pending > 0 or not _alive.is_empty():
 		return
+	_advance(false)
+
+
+## The current wave is beaten: wiped out, or (`overlapped`) down to its last stragglers - see OVERLAP_LEFT.
+func _advance(overlapped: bool) -> void:
+	_advancing = true
+	last_overlapped = overlapped
 	Upgrades.vacuum()
 	Game.record_wave_cleared()
 	wave_cleared.emit(wave, total_waves())
-	if endless:
+	if overlapped:
+		get_tree().create_timer(1.0, false).timeout.connect(_next_wave)
+	elif endless:
 		get_tree().create_timer(3.5 if is_boss_wave(wave) else 2.2, false).timeout.connect(_next_wave)
 	elif wave >= waves.size():
 		is_running = false
@@ -319,6 +373,7 @@ func _check_clear() -> void:
 
 func _physics_process(delta: float) -> void:
 	_check_stall(delta)
+	_check_overlap(delta)
 	if not is_running or wave < bombard_from_wave:
 		return
 	_bombard_t -= delta
@@ -334,3 +389,44 @@ func _physics_process(delta: float) -> void:
 ## Chance a tank rolls TRIPLE armor on the current wave (20% on wave 1, +12% per wave, max 80%).
 func triple_armor_chance() -> float:
 	return clampf(0.2 + 0.12 * (wave - 1), 0.2, 0.8)
+
+
+## Armor size (fraction of HP) for tank-type robots on the current wave: 35% early, +8% a wave, full
+## from ~wave 9. Campaign arenas add 15% per arena, so the later arenas field full armor from the start.
+func armor_fraction() -> float:
+	var campaign := 0.0 if endless else 0.15 * Game.arena_index
+	return clampf(0.35 + 0.08 * (wave - 1) + campaign, 0.35, 1.0)
+
+
+## Chance a robot spawns as an ELITE: only on difficulties with an "elite" rate (Extreme), rising 1% a
+## wave (max 30%).
+## Overlapping waves: see OVERLAP_LEFT.
+func _check_overlap(delta: float) -> void:
+	var can := overlap_enabled and is_running and not _advancing and _pending == 0 and not _alive.is_empty() \
+		and _alive.size() <= OVERLAP_LEFT and not is_boss_wave(wave) and (endless or wave < waves.size())
+	if can:
+		for e in _alive:
+			if is_instance_valid(e) and e.is_in_group("boss"):
+				can = false
+	if not can:
+		_overlap_t = 0.0
+		return
+	_overlap_t += delta
+	if _overlap_t >= OVERLAP_DELAY:
+		_overlap_t = 0.0
+		_advance(true)
+
+
+## LATE-GAME PRESSURE: Endless brings elites on every difficulty from wave LATE_ELITE_WAVE (Easy from
+## LATE_ELITE_WAVE_EASY), starting at 5% and +1.5% a wave, so strong builds keep meeting real threats.
+## The ELITE SURGE twist adds +25% on top. Max 40%.
+func elite_chance() -> float:
+	var c := 0.0
+	if Game.diff("elite") > 0.0:
+		c = Game.diff("elite") + 0.01 * (wave - 1)
+	if endless:
+		var from := LATE_ELITE_WAVE_EASY if Game.difficulty == 0 else LATE_ELITE_WAVE
+		if wave >= from:
+			c = maxf(c, 0.05 + 0.015 * (wave - from))
+	c += Game.twist_value("elite_add", 0.0)
+	return clampf(c, 0.0, 0.4)

@@ -13,6 +13,8 @@ signal start_pressed
 
 const CYAN := Color(0.35, 0.75, 1.0)
 const GOLD := Color(1.0, 0.82, 0.3)
+## Boss of each Game.ARENAS level (same order; for "or defeat VULCAN" on boss-unlock weapon cards).
+const ARENA_BOSSES: Array[String] = ["WARDEN", "RONIN", "SERAPH", "WARDEN MK-II", "SHOGUN", "VULCAN"]
 const COLS := 6
 ## Portrait (phones held upright): cards per row.
 const PORTRAIT_COLS := 5
@@ -360,7 +362,13 @@ class Card extends Button:
 		if not unlocked:
 			var need := int(info["waves"])
 			var f := clampf(Game.waves_beaten / float(need), 0.0, 1.0)
-			draw_rect(Rect2(14, 236, size.x - 28, 6), Color(0.15, 0.2, 0.3, 0.9))
-			draw_rect(Rect2(14, 236, (size.x - 28) * f, 6), GOLD)
-			draw_string(font, Vector2(0, 256), "%d / %d waves" % [mini(Game.waves_beaten, need), need],
+			# Boss-unlock weapons (beat_arena) also say which boss drops them, on a second line.
+			var boss := ArmoryPage.ARENA_BOSSES[int(info["beat_arena"])] if info.has("beat_arena") else ""
+			var by := 230.0 if boss != "" else 236.0
+			draw_rect(Rect2(14, by, size.x - 28, 6), Color(0.15, 0.2, 0.3, 0.9))
+			draw_rect(Rect2(14, by, (size.x - 28) * f, 6), GOLD)
+			draw_string(font, Vector2(0, by + 18), "%d / %d waves" % [mini(Game.waves_beaten, need), need],
 				HORIZONTAL_ALIGNMENT_CENTER, size.x, 11, Color(1.0, 0.8, 0.5))
+			if boss != "":
+				draw_string(font, Vector2(0, by + 30), "or defeat %s" % boss, HORIZONTAL_ALIGNMENT_CENTER, size.x, 10,
+					Color(1.0, 0.62, 0.4))
