@@ -297,7 +297,8 @@ func _run() -> void:
 	var enemy_bullet := Combat.fire(mech.global_position + Vector2(90, 30), Vector2.LEFT * 50.0, 5.0, false, null)
 	mech.aim_dir = Vector2.RIGHT
 	mech._fire_primary(1.0)
-	await _frames(1)
+	# (the slash connects as the blade sweeps through, a few frames into the swing)
+	await _frames(5)
 	_check("sword slash hits the enemy in front (%.0f -> %.0f, %.0f px away)" % [front.max_hp, front.hp,
 		front.global_position.distance_to(mech.global_position)], is_equal_approx(front.hp, front.max_hp - MeleeKit.WEAPONS[&"sword"]["damage"]))
 	_check("sword slash misses the enemy behind", behind.hp == behind.max_hp)

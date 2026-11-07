@@ -1,11 +1,29 @@
 extends Node2D
 ## Melee weapon held in the mech's hand (created by MeleeKit, drawn in world space).
+##   HAND     the hilt never leaves the fist: every pose puts the weapon's grip (GRIP_AT) on the fist of
+##            the sprite's current frame (HeldWeapon.fist(), carried by the Body: the walk / boost / bank /
+##            dash frames, the torso turn and twist, the thrust lunge and the chassis size). The rig draws
+##            BELOW the mech, so the fist closes over the handle. Swings get their motion from the blade
+##            turning in the fist and the torso twisting into the cut (Mech.swing_twist; spins whirl the
+##            whole mech round); thrusts lunge the body forward while the blade surges past its length.
 ##   REST     while a melee weapon is equipped the blade is always in hand, angled out to the front-right
-##            of the aim (Dual Sabers: one blade per hand) and follows the aim smoothly.
-##   SWING    swing() plays an attack from wherever the blade is: a quick wind-up to the start of the
-##            arc, a fast ease-out strike, a small overshoot and a settle, then it eases back to rest.
-##            Styles: "arc" sweeps (twin = a crossing X), "thrust" stabs out and draws back, "spin" whirls;
-##            the Energy Sword adds "xcut" (two crossing diagonal cuts) and "moon" (a huge surging arc).
+##            of the aim (Dual Sabers: one blade per fist) and follows the aim smoothly.
+##   SWING    swing() plays an attack from wherever the blade is, then it eases back to its rest pose.
+##            Every weapon moves its own way (MeleeKit "anim" / "rest"):
+##              arc     Beam Saber: snappy forehand / backhand slashes with a small step in.
+##              flurry  Dual Sabers: the right hand cuts, then the left, then both cross in an X.
+##              draw    Katana: held low behind; a lightning draw cut across the front and a long held
+##                      follow-through; "iaido" keeps it low through the dash, then one blinding cut.
+##              jab     Spear: levelled forward; lunging stabs, every other one twirled on the way back;
+##                      "charge" braces the point through the whole dash.
+##              chop    Axe (and the slam / cleave finishers): back over the shoulder, then over the top
+##                      and down in front, foreshortened while raised (shorter, wider).
+##              heavy   Greatsword: off the shoulder, an accelerating sweep whose weight carries the body
+##                      round in a long follow-through.
+##              spin    Scythe (held across the back) / Dual Sabers' whirl: a wind-up, then the whole
+##                      mech whirls round with the blade.
+##            The Energy Sword has its own set (_cel_pose): "thrust" lunge, "xcut", "moon", "spin".
+##            swing() returns when the blow lands (LAND), so MeleeKit hits as the blade gets there.
 ##   TRAIL    the blade tip leaves a continuous ribbon (Higgsfield trail textures in assets/hq/fx,
 ##            tinted with the weapon colour, additive) built from the blade's real recent positions,
 ##            sub-sampled so fast arcs stay smooth. Thrusts draw a piercing streak instead.
@@ -20,13 +38,27 @@ const TRAIL_HEAVY := preload("res://assets/hq/fx/slash_trail_heavy.png")
 const TRAIL_THRUST := preload("res://assets/hq/fx/slash_trail_thrust.png")
 const IMPACT := preload("res://assets/hq/fx/slash_impact.png")
 
-## Hilt position at rest in Body space (the sprite faces up; +x = the mech's right hand).
-const HAND := Vector2(22, -24)
 ## Rest pose: blade angled this far to the right of the aim, drawn at this fraction of its length.
 const REST_ANGLE := 0.45
 const REST_SCALE := 0.8
-## Swing pivot -> hilt distance (the arm).
+## Thrust streaks start this far in front of the mech.
 const ARM := 18.0
+## Torso twist per radian of blade-off-aim while swinging (capped), so the body turns into the cut and
+## carries the fist with it. Not for the Dual Sabers' crossing cuts (both fists stay square).
+const TWIST := 0.35
+const TWIST_MAX := 0.6
+## Thrusts: how far the body lunges into the stab (the fist goes with it), and how much longer the blade
+## surges at full extension.
+const LUNGE := 10.0
+const THRUST_SURGE := 0.25
+## Thrust-type swings (no swept ribbon; a piercing streak instead).
+const THRUSTS := ["thrust", "jab", "charge"]
+## Heavier swings take longer than the attack's designed life (x).
+const SLOW := {"chop": 1.15, "heavy": 1.1}
+## When the blow lands, as a fraction of the swing: as the blade sweeps through the target (the chops and
+## heavy sweeps well into their swing, after the wind-up), so the hit-pause catches the blade on contact.
+const LAND := {"arc": 0.18, "flurry": 0.18, "draw": 0.13, "thrust": 0.2, "jab": 0.2, "spin": 0.15, "chop": 0.55,
+	"heavy": 0.42, "iaido": 0.6}
 const TRAIL_LIFE := 0.12
 const TRAIL_SUBSTEPS := 4
 ## Where along the blade the ribbon starts (fraction of blade length from the hilt).
@@ -34,9 +66,11 @@ const TRAIL_INNER := 0.28
 ## Impact flashes per swing, and how long the blade holds its finishing pose before easing back.
 const MAX_FLASHES := 3
 const HOLD := 0.22
-## Middle of each weapon's handle / grip area, as a fraction of its art height from the bottom
-## (measured from assets/hq/weapons/*.png). Long-hafted weapons are held a way up the shaft.
-const GRIP_AT := {"beam_saber": 0.15, "katana": 0.12, "spear": 0.28, "axe": 0.22, "scythe": 0.3, "greatsword": 0.14,
+## Where the fist closes on each weapon, as a fraction of its art height from the bottom (measured from
+## assets/hq/weapons/*.png): swords at the top of the grip just under the guard / emitter, so the blade
+## comes straight out of the fist (the rest of the grip and the pommel stick out behind the hand);
+## long-hafted weapons a way up the shaft.
+const GRIP_AT := {"beam_saber": 0.2, "katana": 0.19, "spear": 0.28, "axe": 0.22, "scythe": 0.3, "greatsword": 0.23,
 	"energy_sword": 0.13}
 ## Cel smears: recorded only during the strike, gone again quickly.
 const CEL_TRAIL_LIFE := 0.12
@@ -45,12 +79,9 @@ const CEL_TRAIL_LIFE := 0.12
 const CEL_HILT := 0.25
 ## Sparks drifting off the Energy Sword while it's equipped (per second).
 const MOTE_RATE := 16.0
-## Energy Sword swings are animated like a held sword (see _cel_pose): the hand travels on an arc around
-## the right shoulder (CEL_SHOULDER in Body space, arm length CEL_ARM) and the torso twists with the
-## blade (Mech.swing_twist). Phases as fractions of the swing: anticipation (wind back), STRIKE (fast;
-## the only part that leaves a smear), follow-through hold, then recovery to the rest pose.
-const CEL_SHOULDER := Vector2(12, -2)
-const CEL_ARM := 26.0
+## Energy Sword swings are animated like a held sword (see _cel_pose): the hilt stays in the fist and the
+## torso twists with the blade (Mech.swing_twist). Phases as fractions of the swing: anticipation (wind
+## back), STRIKE (fast; the only part that leaves a smear), follow-through hold, then recovery to rest.
 const CEL_ANTIC := 0.22
 const CEL_STRIKE_END := 0.5
 const CEL_FOLLOW_END := 0.78
@@ -69,6 +100,8 @@ var _hitstop := 0.0
 var _angle := [0.0, PI]
 var _grip := [Vector2.ZERO, Vector2.ZERO]
 var _ext := [REST_SCALE, REST_SCALE]
+## Width multiplier per blade (a chop's raised blade is foreshortened: shorter and wider).
+var _wide := [1.0, 1.0]
 # Active swing.
 var _sw := {}
 var _t := 0.0
@@ -93,6 +126,9 @@ var _mote_t := 0.0
 var _striking := false
 var _twist := 0.0
 var _twist_target := 0.0
+## Twist kept through a non-cel swing's finishing hold; the thrust lunge (Body offset) this frame.
+var _hold_twist := 0.0
+var _lunge := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -107,23 +143,27 @@ func _ready() -> void:
 	add_child(_smear)
 
 
-## Plays one attack. `life` is the visual length the attack was designed for.
+## Plays one attack. `life` is the visual length the attack was designed for. Returns the seconds until the
+## blow lands (LAND; 0 = at once). opts: "hand" (Dual Sabers: 0 right, 1 left, -1 both), "big" (finisher
+## chop).
 func swing(w: Dictionary, mode: String, dir: Vector2, length: float, life: float, side: float, turns := 1.0,
-		twin := false) -> void:
+		twin := false, opts := {}) -> float:
 	_setup(w)
 	_length = length
-	_sw = {"mode": mode, "dir": dir, "half": minf(w["half"], 1.5), "side": side, "turns": turns, "twin": twin}
+	_sw = {"mode": mode, "dir": dir, "half": minf(w["half"], 1.5), "side": side, "turns": turns, "twin": twin,
+		"hand": int(opts.get("hand", -1)), "big": bool(opts.get("big", false))}
 	var interval := 1.0 / (float(w["rate"]) * Upgrades.fire_rate_mult())
-	_dur = clampf(minf(life * 1.15, interval * 0.95), 0.12, 0.45)
+	_dur = clampf(minf(life * 1.15 * float(SLOW.get(mode, 1.0)), interval * 0.95), 0.12, 0.5)
 	_t = 0.0
 	_start = [_angle[0], _angle[1]]
 	_flashes = 0
 	# (cel swings animate their own follow-through and recovery)
 	_hold = 0.0 if w.get("cel", false) else HOLD
 	# (cel weapons draw their own lunge streak, EnergySwordFx.lunge)
-	if mode == "thrust" and not w.get("cel", false):
+	if mode in THRUSTS and not w.get("cel", false):
 		_streak = {"from": mech.global_position + dir * ARM, "dir": dir, "t": 0.0, "len": length * 1.25,
 			"life": clampf(_dur * 1.4, 0.22, 0.4)}
+	return _dur * float(LAND.get(mode, 0.0))
 
 
 ## Hit feedback: an X-cut flash on the target and a short freeze of the swing.
@@ -160,6 +200,7 @@ func _process(delta: float) -> void:
 	_smear.visible = show
 	if not show and is_instance_valid(mech):
 		mech.swing_twist = 0.0
+		mech.body.position = Vector2.ZERO
 		_twist = 0.0
 	if not show:
 		_sw = {}
@@ -169,17 +210,21 @@ func _process(delta: float) -> void:
 		return
 	if id != _id:
 		_equip(id)
-	# Hit-pause: the blade (and its trail) hold still for a moment.
+	var blades := 2 if _twin() else 1
+	# Hit-pause: the blade (and its trail) hold still for a moment - still in the fist.
 	if _hitstop > 0.0:
 		_hitstop -= delta
+		_to_fists(blades)
 		queue_redraw()
 		_fx.queue_redraw()
 		_smear.queue_redraw()
 		return
 	_time += delta
-	var blades := 2 if _twin() else 1
 	_striking = false
 	_twist_target = 0.0
+	_lunge = Vector2.ZERO
+	_wide[0] = 1.0
+	_wide[1] = 1.0
 	if not _sw.is_empty():
 		_t += delta
 		var k := clampf(_t / _dur, 0.0, 1.0)
@@ -187,12 +232,17 @@ func _process(delta: float) -> void:
 			_cel_pose(k)
 		else:
 			for b in blades:
-				_swing_pose(b, k)
+				if _moves(b):
+					_swing_pose(b, k)
+				else:
+					_rest_pose(b, delta)
 		if _t >= _dur:
 			_sw = {}
+			_hold_twist = _twist_target
 	elif _hold > 0.0:
-		# Hold the finishing pose for a beat (combos chain on from here).
+		# Hold the finishing pose (and the torso's turn) for a beat (combos chain on from here).
 		_hold -= delta
+		_twist_target = _hold_twist
 	else:
 		for b in blades:
 			_rest_pose(b, delta)
@@ -200,14 +250,16 @@ func _process(delta: float) -> void:
 		_started = true
 		for b in blades:
 			_rest_pose(b, 1.0)
-	# Energy Sword: the torso twists with the swing.
-	_twist = wrapf(lerp_angle(_twist, _twist_target, 1.0 - exp(-25.0 * delta)), -PI, PI) if _cel else 0.0
+	# The torso twists into the swing and lunges into thrusts; whatever the pose, the hilt is in the fist.
+	_twist = wrapf(lerp_angle(_twist, _twist_target, 1.0 - exp(-25.0 * delta)), -PI, PI)
 	mech.swing_twist = _twist
+	mech.body.position = mech.body.position.lerp(_lunge, 1.0 - exp(-30.0 * delta))
+	_to_fists(blades)
 	# Record the trail while the blade is moving through an attack (and let it fade after). Cel swings
 	# only smear during the fast strike, never the wind-up or recovery.
 	for b in blades:
 		var tr: Array = _trail[b]
-		if not _sw.is_empty() and _sw["mode"] != "thrust" and (not _cel or _striking):
+		if not _sw.is_empty() and _sw["mode"] not in THRUSTS and (not _cel or _striking):
 			tr.append([_time, _grip[b], _angle[b], _ext[b]])
 		while not tr.is_empty() and _time - tr[0][0] > (CEL_TRAIL_LIFE if _cel else TRAIL_LIFE):
 			tr.pop_front()
@@ -264,41 +316,192 @@ func _equip(id: StringName) -> void:
 	_started = false
 
 
-## Rest: hilt in the hand, blade out to the front-right (the off-hand blade mirrored), easing there.
+## Puts each blade's hilt in its fist.
+func _to_fists(blades: int) -> void:
+	for b in blades:
+		_grip[b] = _fist(b)
+
+
+## The fist holding blade `b` this frame, in world space: the right fist (the left one for the Dual
+## Sabers' off-hand blade) of the sprite's current frame, carried by the Body's turn, twist, lunge and scale.
+func _fist(b: int) -> Vector2:
+	return mech.body.to_global(HeldWeapon.fist(mech, 1.0 if b == 0 else -1.0))
+
+
+## Rest: the weapon where it's held between attacks (MeleeKit "rest": out front, levelled, at the side, low
+## behind, on the shoulder, across the back; the off-hand blade mirrored), easing there.
 func _rest_pose(b: int, delta: float) -> void:
-	var body_rot: float = mech.body.rotation
-	var aim := mech.aim_dir.angle()
 	var sgn := 1.0 if b == 0 else -1.0
-	var want_angle := aim + REST_ANGLE * sgn
-	var want_grip: Vector2 = mech.global_position + Vector2(HAND.x * sgn, HAND.y).rotated(body_rot)
-	if _cel:
-		# Same shoulder + arm model as the swings, so a swing starts exactly where the rest pose is.
-		want_grip = _shoulder() + Vector2.from_angle(want_angle) * CEL_ARM
 	var t := 1.0 - exp(-9.0 * delta)
-	_angle[b] = lerp_angle(_angle[b], want_angle, t)
-	_grip[b] = _grip[b].lerp(want_grip, t) if delta < 1.0 else want_grip
-	_ext[b] = lerpf(_ext[b], REST_SCALE, t)
+	_angle[b] = lerp_angle(_angle[b], mech.aim_dir.angle() + _rest_angle() * sgn, t)
+	_ext[b] = lerpf(_ext[b], _rest_ext(), t)
 
 
-## Attack pose at progress k (0..1) of the current swing.
+## Where the current weapon is held between attacks (radians to the right of the aim), and how much of it
+## shows there.
+func _rest_angle() -> float:
+	return float(MeleeKit.WEAPONS[_id].get("rest", REST_ANGLE))
+
+
+func _rest_ext() -> float:
+	return float(MeleeKit.WEAPONS[_id].get("rest_ext", REST_SCALE))
+
+
+## Whether blade `b` takes part in the current swing (the Dual Sabers' flurry: one hand at a time, or both).
+func _moves(b: int) -> bool:
+	var hand: int = _sw.get("hand", -1)
+	return hand < 0 or hand == b
+
+
+## Attack pose at progress k (0..1) of the current swing: the blade's angle, length and width, the torso
+## twist and the lunge (the hilt stays in the fist, see _to_fists). Angles are worked out around the swing
+## direction d ("rel" = radians to the mech's right of it).
 func _swing_pose(b: int, k: float) -> void:
 	var dir: Vector2 = _sw["dir"]
 	var d := dir.angle()
 	var side: float = _sw["side"]
-	var p := mech.global_position
 	match _sw["mode"]:
-		"thrust":
-			# Draw back a touch, then punch out past full reach and ease back.
-			var ext := 0.0
+		"thrust", "jab":
+			# Draw back a touch, then lunge into the stab with the blade surging past its full length, and
+			# ease back. Spear jabs: every other one spins the spear round in the fist on the way back.
+			var push := 0.0
 			if k < 0.12:
-				ext = lerpf(0.0, -0.18, k / 0.12)
+				push = lerpf(0.0, -0.3, k / 0.12)
 			elif k < 0.42:
-				ext = lerpf(-0.18, 0.55, _ease_out((k - 0.12) / 0.3))
+				push = lerpf(-0.3, 1.0, _ease_out((k - 0.12) / 0.3))
 			else:
-				ext = lerpf(0.55, 0.1, smoothstep(0.42, 1.0, k))
+				push = lerpf(1.0, 0.0, smoothstep(0.42, 1.0, k))
 			_angle[b] = d
-			_grip[b] = p + dir * (ARM + ext * _length * 0.6)
+			_ext[b] = 1.0 + THRUST_SURGE * maxf(push, 0.0)
+			if _sw["mode"] == "jab" and side > 0.0 and k > 0.45:
+				var u := _ease_in_out((k - 0.45) / 0.55)
+				_angle[b] = d + TAU * u
+				_ext[b] = lerpf(_ext[b], 0.8, sin(u * PI))
+			_lunge = dir * push * LUNGE
+		"charge":
+			# Spear CHARGE: a quick draw back, then braced - the point levelled at the target through the
+			# whole dash - and back.
+			var push := 1.0
+			if k < 0.1:
+				push = lerpf(0.0, -0.4, k / 0.1)
+			elif k < 0.2:
+				push = lerpf(-0.4, 1.0, _ease_out((k - 0.1) / 0.1))
+			elif k > 0.75:
+				push = lerpf(1.0, 0.0, smoothstep(0.75, 1.0, k))
+			_angle[b] = d
+			_ext[b] = 1.0 + THRUST_SURGE * 1.3 * maxf(push, 0.0)
+			_lunge = dir * push * LUNGE * 1.3
+		"draw":
+			# Katana: a lightning draw cut from wherever the blade is (low behind on the right at rest) across
+			# the front to the far side, a long held follow-through (zanshin), then back low. It cuts away
+			# from the side the blade is on, so chained cuts go back and forth across the front.
+			var rel0 := angle_difference(d, _start[b])
+			var to := -1.0 if rel0 > -0.2 else 1.0
+			var rel := 1.45 * to
+			if k < 0.08:
+				rel = rel0 - 0.18 * to * (k / 0.08)
+			elif k < 0.3:
+				rel = lerpf(rel0 - 0.18 * to, 1.57 * to, _ease_out4((k - 0.08) / 0.22))
+			else:
+				rel = lerpf(1.57 * to, 1.45 * to, smoothstep(0.3, 0.6, k))
+			_angle[b] = d + rel
+			_ext[b] = lerpf(_rest_ext(), 1.08, smoothstep(0.04, 0.2, k)) - 0.08 * smoothstep(0.3, 0.6, k)
+			_twist_target = clampf(rel * 0.5, -0.75, 0.75)
+			_lunge = dir * 7.0 * sin(clampf((k - 0.08) / 0.45, 0.0, 1.0) * PI)
+		"iaido":
+			# Katana IAIDO: the blade stays low behind through the dash, then one blinding cut across the
+			# front (the blow lands with it) and a long hold.
+			var low := _rest_angle()
+			var rel := low
+			if k < 0.55:
+				_angle[b] = lerp_angle(_start[b], d + low, smoothstep(0.0, 0.3, k))
+				_ext[b] = 0.7
+				_twist_target = 0.3
+				return
+			elif k < 0.68:
+				rel = lerpf(low, -1.75, _ease_out4((k - 0.55) / 0.13))
+			else:
+				rel = lerpf(-1.75, -1.6, smoothstep(0.68, 0.9, k))
+			_angle[b] = d + rel
+			_ext[b] = 1.12
+			_twist_target = clampf(rel * 0.5, -0.8, 0.8)
+		"chop":
+			# Axe / the slam and cleave finishers ("big"): an overhead chop. Wind-up: the blade goes back over
+			# the right shoulder, raised (seen from above: shorter and wider) as the torso turns away; then
+			# it comes over the top, accelerating, slams down in front (the blow lands here), bites, holds.
+			var big: bool = _sw["big"]
+			var back := 2.6
+			var a := d
+			var ext := 1.05
+			var wide := 1.0
+			var tw := -0.25
+			var push := 1.0
+			if k < 0.4:
+				var u := _ease_in_out(k / 0.4)
+				a = lerp_angle(_start[b], d + back, u)
+				ext = lerpf(_rest_ext(), 0.62, u)
+				wide = 1.0 + 0.25 * u
+				tw = 0.32 * u
+				push = -0.4 * u
+			elif k < 0.55:
+				var e := pow((k - 0.4) / 0.15, 2.0)
+				a = d + back * (1.0 - e)
+				ext = lerpf(0.62, 1.05, e) - 0.5 * sin(e * PI)
+				wide = lerpf(1.25, 1.0, e) + 0.3 * sin(e * PI)
+				tw = lerpf(0.32, -0.25, e)
+				push = lerpf(-0.4, 1.0, e)
+			else:
+				var u := clampf((k - 0.55) / 0.45, 0.0, 1.0)
+				a = d - 0.06 * sin(minf(u * 3.0, 1.0) * PI)
+				ext = lerpf(1.05, 1.0, u)
+				tw = lerpf(-0.25, -0.12, u)
+				push = lerpf(1.0, 0.5, u)
+			var heavy := 1.25 if big else 1.0
+			_angle[b] = a
+			_ext[b] = ext * (1.08 if big else 1.0)
+			_wide[b] = wide
+			_twist_target = tw * heavy
+			_lunge = dir * push * LUNGE * heavy
+		"heavy":
+			# Greatsword: a momentum sweep. Off the shoulder into a wind-up on the side the blade is on, an
+			# accelerating sweep across the front (the blow lands mid-sweep), and its weight carries the
+			# body on round in a long follow-through. Chained sweeps come back the other way.
+			var rel0 := angle_difference(d, _start[b])
+			var s0 := 1.0 if rel0 >= -0.3 else -1.0
+			var rel := -1.9 * s0
+			var tw := -0.75 * s0
+			var push := 0.3
+			if k < 0.3:
+				var u := _ease_in_out(k / 0.3)
+				rel = angle_difference(d, lerp_angle(_start[b], d + 1.85 * s0, u))
+				tw = 0.35 * s0 * u
+				push = -0.35 * u
+			elif k < 0.55:
+				var e := _ease_in_out((k - 0.3) / 0.25)
+				rel = lerpf(1.85 * s0, -1.45 * s0, e)
+				tw = lerpf(0.35 * s0, -0.6 * s0, e)
+				push = lerpf(-0.35, 0.8, e)
+			elif k < 0.8:
+				var e := _ease_out((k - 0.55) / 0.25)
+				rel = lerpf(-1.45 * s0, -1.9 * s0, e)
+				tw = lerpf(-0.6 * s0, -0.75 * s0, e)
+				push = lerpf(0.8, 0.3, e)
+			_angle[b] = d + rel
+			_ext[b] = lerpf(_rest_ext(), 1.0, smoothstep(0.0, 0.3, k))
+			_twist_target = tw
+			_lunge = dir * push * LUNGE
+		"flurry":
+			# Dual Sabers: one hand cuts inward across the front while the other blade stays ready, or both
+			# cross in an X (hand -1).
+			if int(_sw["hand"]) < 0:
+				_arc_pose(b, k, dir)
+				return
+			var sgn := 1.0 if b == 0 else -1.0
+			var a := _arc(k, _start[b], d + 1.05 * sgn, d - 1.05 * sgn, -0.2 * sgn)
+			_angle[b] = a
 			_ext[b] = 1.0
+			_twist_target = clampf(angle_difference(mech.aim_dir.angle(), a) * TWIST, -TWIST_MAX, TWIST_MAX)
+			_lunge = dir * 4.0 * sin(clampf((k - 0.1) / 0.45, 0.0, 1.0) * PI)
 		"xcut":
 			# Energy Sword X-CUT: two fast diagonal cuts, one after the other, crossing in front.
 			var hx := 0.95
@@ -310,7 +513,6 @@ func _swing_pose(b: int, k: float) -> void:
 			else:
 				a = lerpf(d + hx * side, d - hx * 0.75 * side, _ease_out((k - 0.5) / 0.5))
 			_angle[b] = a
-			_grip[b] = p + dir * 14.0 + Vector2.from_angle(a) * ARM
 			_ext[b] = 1.0
 		"moon":
 			# Energy Sword RISING MOON: one huge sweep from behind the shoulder round to the far side; the
@@ -326,40 +528,50 @@ func _swing_pose(b: int, k: float) -> void:
 			else:
 				a = lerpf(a1 + 0.15 * side, a1, smoothstep(0.6, 0.9, k))
 			_angle[b] = a
-			_grip[b] = p + dir * 4.0 + Vector2.from_angle(a) * ARM
 			_ext[b] = 1.0 + 0.35 * sin(strike * PI)
 		"spin":
-			# The off-hand blade (Dual Sabers) whirls opposite the main one.
+			# Scythe (from across the back) / Dual Sabers' whirl: a short wind-up the other way, then the whole
+			# mech whirls round with the blade, which surges out mid-whirl; the off-hand blade points opposite.
 			var turns: float = _sw["turns"]
-			_angle[b] = _start[0] + side * TAU * turns * _ease_in_out(k) if b == 0 else _angle[0] + PI
-			_grip[b] = p + Vector2.from_angle(_angle[b]) * ARM
-			_ext[b] = 1.0
+			var a: float = _start[0] - 0.6 * side * _ease_in_out(minf(k / 0.15, 1.0))
+			if k >= 0.15:
+				a = _start[0] - 0.6 * side + side * (TAU * turns + 0.6) * _ease_in_out((k - 0.15) / 0.85)
+			_angle[b] = a if b == 0 else _angle[0] + PI
+			_ext[b] = 1.0 + 0.15 * sin(clampf((k - 0.15) / 0.85, 0.0, 1.0) * PI)
+			if b == 0:
+				_twist_target = angle_difference(mech.aim_dir.angle() + _rest_angle(), _angle[0])
 		_:
-			# Arc: wind up to the start of the arc, strike through it, overshoot, settle.
-			var half: float = _sw["half"]
-			var a0 := d - half * side
-			var a1 := d + half * side
-			var over := 0.2 * side
-			var a := a1
-			if k < 0.1:
-				a = lerp_angle(_start[0], a0, k / 0.1)
-			elif k < 0.55:
-				a = lerpf(a0, a1 + over, _ease_out((k - 0.1) / 0.45))
-			else:
-				a = lerpf(a1 + over, a1, smoothstep(0.55, 0.85, k))
-			# The off-hand blade (Dual Sabers) mirrors across the aim: the two cuts cross in an X.
-			_angle[b] = a if b == 0 else 2.0 * d - a
-			_grip[b] = p + dir * 8.0 + Vector2.from_angle(_angle[b]) * ARM
-			_ext[b] = 1.0
+			_arc_pose(b, k, dir)
 
 
-## The sword shoulder in world space (follows the torso, so the hand moves with the body's twist).
-func _shoulder() -> Vector2:
-	return mech.global_position + CEL_SHOULDER.rotated(mech.body.rotation)
+## The quick arc (Beam Saber slashes, the Dual Sabers' X): wind up to the start of the arc, strike through
+## it, overshoot, settle, with a small step into the cut. The off-hand blade (Dual Sabers) mirrors across
+## the aim, so the two cuts cross in an X; a single blade turns the torso into the cut.
+func _arc_pose(b: int, k: float, dir: Vector2) -> void:
+	var d := dir.angle()
+	var side: float = _sw["side"]
+	var half: float = _sw["half"]
+	var a := _arc(k, _start[0], d - half * side, d + half * side, 0.2 * side)
+	_angle[b] = a if b == 0 else 2.0 * d - a
+	_ext[b] = 1.0
+	if b == 0:
+		_lunge = dir * 5.0 * sin(clampf((k - 0.1) / 0.45, 0.0, 1.0) * PI)
+		if not _twin():
+			_twist_target = clampf(angle_difference(mech.aim_dir.angle(), a) * TWIST, -TWIST_MAX, TWIST_MAX)
 
 
-## Energy Sword swing pose at progress k: anticipation -> strike -> follow-through -> recovery, the
-## hand on an arc around the shoulder and the torso twisting with the blade.
+## Arc angle at progress k: a snap of wind-up from `from` to a0, an ease-out strike to a1 overshooting by
+## `over`, and a settle back to a1.
+static func _arc(k: float, from: float, a0: float, a1: float, over: float) -> float:
+	if k < 0.1:
+		return lerp_angle(from, a0, k / 0.1)
+	if k < 0.55:
+		return lerpf(a0, a1 + over, _ease_out((k - 0.1) / 0.45))
+	return lerpf(a1 + over, a1, smoothstep(0.55, 0.85, k))
+
+
+## Energy Sword swing pose at progress k: anticipation -> strike -> follow-through -> recovery, the blade
+## turning in the fist and the torso twisting with it (thrusts lunge the body instead).
 func _cel_pose(k: float) -> void:
 	var dir: Vector2 = _sw["dir"]
 	var d := dir.angle()
@@ -384,8 +596,8 @@ func _cel_pose(k: float) -> void:
 			else:
 				push = lerpf(0.55, 0.0, _ease_in_out((k - 0.75) / 0.25))
 			_angle[0] = lerp_angle(_start[0], d, minf(k / 0.2, 1.0))
-			_grip[0] = _shoulder() + Vector2.from_angle(_angle[0]) * (CEL_ARM + push * _length * 0.4)
-			_ext[0] = 1.0
+			_ext[0] = 1.0 + THRUST_SURGE * maxf(push, 0.0) / 0.55
+			_lunge = dir * push / 0.55 * LUNGE
 			return
 		"spin":
 			var a0 := d - 0.5 * side
@@ -397,7 +609,6 @@ func _cel_pose(k: float) -> void:
 			else:
 				a = lerp_angle(a0, rest_a, _ease_in_out((k - 0.75) / 0.25))
 			_angle[0] = a
-			_grip[0] = _shoulder() + Vector2.from_angle(a) * CEL_ARM
 			_ext[0] = 1.0
 			# The whole mech turns with the blade.
 			_twist_target = angle_difference(aim, a) if k < 0.75 else 0.0
@@ -437,7 +648,6 @@ func _cel_pose(k: float) -> void:
 			else:
 				a = lerp_angle(a_f + 0.05 * side, rest_a, _ease_in_out((k - CEL_FOLLOW_END) / (1.0 - CEL_FOLLOW_END)))
 	_angle[0] = a
-	_grip[0] = _shoulder() + Vector2.from_angle(a) * CEL_ARM
 	_ext[0] = ext
 	_twist_target = clampf(angle_difference(aim, a) * CEL_TWIST, -0.75, 0.75)
 
@@ -467,14 +677,14 @@ func _draw() -> void:
 		draw_circle(at, 30.0 + 4.0 * pulse, Color(_color, 0.08 + 0.05 * pulse))
 		draw_arc(at, 46.0 + 7.0 * pulse, 0, TAU, 40, Color(_color.lightened(0.3), 0.25 + 0.15 * pulse), 2.0, true)
 	for b in (2 if _twin() else 1):
-		_draw_blade(_grip[b], _angle[b], _length * _ext[b])
+		_draw_blade(_grip[b], _angle[b], _length * _ext[b], _wide[b])
 
 
 ## `length` = how far the weapon reaches beyond the fist. The art is scaled so that part matches, and
 ## drawn so the fist (`grip`) sits on the middle of the handle (_grip_at), with the pommel / shaft end
 ## behind the hand. The rig draws BELOW the mech, so the mech's fist covers the handle it holds.
 ## Cel weapons (Energy Sword) draw only the hilt from the art; the blade is drawn in code with a real point.
-func _draw_blade(grip: Vector2, angle: float, length: float) -> void:
+func _draw_blade(grip: Vector2, angle: float, length: float, wide := 1.0) -> void:
 	var size := _tex.get_size()
 	var s := length / (size.y * (1.0 - _grip_at))
 	var at := Vector2(-size.x / 2, -size.y * (1.0 - _grip_at))
@@ -494,10 +704,10 @@ func _draw_blade(grip: Vector2, angle: float, length: float) -> void:
 		draw_texture_rect_region(_tex, hilt, src)
 		draw_set_transform(Vector2.ZERO)
 		return
-	# Soft ground shadow, then the weapon (art points up, handle at the bottom).
-	draw_set_transform(grip + Vector2(6, 9), angle + PI / 2, Vector2(s, s))
+	# Soft ground shadow, then the weapon (art points up, handle at the bottom; `wide` widens it).
+	draw_set_transform(grip + Vector2(6, 9), angle + PI / 2, Vector2(s * wide, s))
 	draw_texture(_tex, at, Color(0, 0, 0, 0.3))
-	draw_set_transform(grip, angle + PI / 2, Vector2(s, s))
+	draw_set_transform(grip, angle + PI / 2, Vector2(s * wide, s))
 	draw_texture(_tex, at)
 	draw_set_transform(Vector2.ZERO)
 

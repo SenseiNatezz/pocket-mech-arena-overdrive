@@ -94,16 +94,26 @@ func _run() -> void:
 	await _key(KEY_TAB, true)
 	_check("Shift+Tab goes back", mech.weapon == Game.WEAPONS[Game.WEAPONS.size() - 1]["id"])
 
-	# Big guns in hand: the gatling/rocket art shows and the muzzle moves to its barrel, then resets.
-	var rifle_muzzle := Vector2(34, -48)
-	for id: StringName in [&"gatling", &"rockets"]:
+	# Big guns in hand: the gun art shows with its grip in the fist and the muzzle out at its barrel tip,
+	# then the muzzle goes back to the painted rifle's tip; melee weapons fire the Beam Cannon from the fist.
+	for id: StringName in [&"gatling", &"rockets", &"sniper"]:
 		gr.select_weapon(id)
 		await _frames(3)
-		_check("%s is drawn in the gun hand (muzzle %s)" % [id, mech.muzzle.position],
-			mech.held.visible and mech.muzzle.position.y < rifle_muzzle.y - 30.0)
+		var fist := HeldWeapon.fist(mech)
+		_check("%s is drawn in the gun hand (fist %s, muzzle %s)" % [id, fist, mech.muzzle.position],
+			mech.held.visible and fist.distance_to(Vector2(23, -10)) < 8.0 and mech.muzzle.position.y < fist.y - 50.0)
 	gr.select_weapon(&"blaster")
 	await _frames(3)
-	_check("switching back restores the rifle muzzle", not mech.held.visible and mech.muzzle.position == rifle_muzzle)
+	var rifle_tip := HeldWeapon.frame_point(mech, HeldWeapon.RIFLE_TIP)
+	_check("switching back puts the muzzle on the painted rifle's tip (%s)" % mech.muzzle.position,
+		not mech.held.visible and mech.muzzle.position.distance_to(rifle_tip) < 1.0
+		and mech.muzzle.position.distance_to(Vector2(34, -48)) < 12.0)
+	gr.select_weapon(&"sword")
+	await _frames(3)
+	_check("melee: the muzzle is at the fist (%s)" % mech.muzzle.position,
+		mech.muzzle.position.distance_to(HeldWeapon.fist(mech)) < 14.0)
+	gr.select_weapon(&"blaster")
+	await _frames(2)
 
 	# Rocket splash: one rocket into the drone cluster also damages the drones next to the one it hits.
 	gr.select_weapon(&"rockets")
