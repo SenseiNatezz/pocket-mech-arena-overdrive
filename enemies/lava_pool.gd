@@ -62,7 +62,8 @@ func _process(delta: float) -> void:
 	if _tick <= 0.0 and _hot() > 0.5:
 		_tick = TICK
 		var mech := get_tree().get_first_node_in_group("player") as Node2D
-		if mech and not mech.get("dead") and mech.global_position.distance_to(global_position) < radius * _size() + 10.0:
+		# (PARTS HOVER: the Hover Skirt floats over it)
+		if mech and not mech.get("dead") and not Parts.hovers(mech) and mech.global_position.distance_to(global_position) < radius * _size() + 10.0:
 			mech.take_damage(dps * TICK * _mult, global_position, source if is_instance_valid(source) else null)
 	if _age >= life:
 		queue_free()

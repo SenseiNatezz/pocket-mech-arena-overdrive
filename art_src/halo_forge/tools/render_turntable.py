@@ -26,7 +26,7 @@ DECIMATE = float(argv[argv.index('--decimate') + 1]) if '--decimate' in argv els
 ELEV = math.radians(10)
 
 s = bpy.context.scene
-rig = bpy.data.objects['Gundam_Rig']; hf = bpy.data.objects['HaloForge']; rifle = bpy.data.objects['Rifle']
+rig = bpy.data.objects['Gundam_Rig']; hf = bpy.data.objects[s.get('mech_body', 'HaloForge')]; rifle = bpy.data.objects['Rifle']
 root = bpy.data.objects['SpriteRoot']; cam = bpy.data.objects['SpriteCamera']
 act = bpy.data.actions['Hover_Idle']; rig.animation_data.action = act
 if act.slots: rig.animation_data.action_slot = act.slots[0]

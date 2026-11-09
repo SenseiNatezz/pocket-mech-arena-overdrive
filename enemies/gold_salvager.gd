@@ -20,7 +20,8 @@ extends Enemy
 const GOLD := Color(1.0, 0.8, 0.28)
 const LIGHT := Color(1.0, 0.95, 0.7)
 const DARK := Color(0.42, 0.27, 0.05)
-const LIFETIME := 11.0
+## (Was 11 s / 180 HP / 235 speed with a wide weave: in capture runs a player with pistols could not catch it.)
+const LIFETIME := 14.0
 const MINI_LIFETIME := 9.0
 ## [prize, weight]
 const PRIZES := [[&"frenzy", 40.0], [&"lucky", 30.0], [&"xp", 15.0], [&"overdrive", 10.0], [&"jackpot", 5.0]]
@@ -44,8 +45,8 @@ var _trail_t := 0.0
 
 
 func _init() -> void:
-	max_hp = 180.0
-	move_speed = 235.0
+	max_hp = 140.0
+	move_speed = 215.0
 	acceleration = 900.0
 	contact_damage = 0.0
 	hit_radius = 26.0
@@ -85,7 +86,7 @@ func _think(delta: float) -> void:
 		_goal_t = randf_range(0.9, 1.6)
 		_goal = _pick_goal()
 	steer_to(_goal)
-	desired_velocity = desired_velocity.rotated(sin(_t * 3.3) * 0.45)
+	desired_velocity = desired_velocity.rotated(sin(_t * 3.3) * 0.3)
 	if desired_velocity.length() > 1.0:
 		facing = desired_velocity.normalized()
 

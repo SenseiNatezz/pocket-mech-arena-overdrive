@@ -109,8 +109,7 @@ func _draw() -> void:
 	if _state == State.WINDUP:
 		var k := 1.0 - _st / WINDUP
 		var reach := _dash_dir * dash_speed * DASH_TIME
-		draw_line(Vector2.ZERO, reach, Color(BLADE, 0.12 + 0.2 * k), 30.0)
-		draw_line(Vector2.ZERO, reach, Color(BLADE, 0.6 + 0.4 * k), 2.0)
+		DangerLane.draw(self, Vector2.ZERO, reach, 15.0, k, _t, BLADE)
 		draw_circle(Vector2.ZERO, hit_radius * (1.6 - 0.5 * k), Color(BLADE, 0.15 + 0.15 * k))
 	if _slash_fx > 0.0:
 		var a := facing.angle()

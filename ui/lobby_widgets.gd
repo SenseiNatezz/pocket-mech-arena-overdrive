@@ -8,7 +8,7 @@ extends RefCounted
 ##   Upgrade     the "next Hangar upgrade" strip: scrap progress toward the cheapest upgrade
 ##   IconButton  small square icon button (settings, exit) that shows its name when focused
 ##   Chips       the resource chips in the top-right corner (scrap, best wave, weapons)
-##   Unit        the mech's name plate: UNIT 07 / HALO FORGE, chassis, equipped weapon + mastery
+##   Unit        the mech's name plate: MOBILE UNIT / NIMBUS-07, chassis, equipped weapon + mastery
 ##   Frame       the glass console behind a sub-page (title header + back hint)
 ## Buttons light up on focus and hovering grabs focus, so mouse, touch and keyboard / gamepad all work.
 ## Everything slides in on entrance: `slide` 1 = shifted by `slide_from` and invisible, 0 = in place.
@@ -399,10 +399,13 @@ class Chips extends Control:
 		LobbyKit.text(self, LobbyKit.COND_XB, Vector2(tx, 36.0), it["value"], 22, Color.WHITE.lerp(col, 0.25))
 
 
-## The mech's name plate (bottom left in landscape): UNIT 07 / HALO FORGE, the chassis, and the equipped
+## The mech's name plate (bottom left in landscape): MOBILE UNIT / the selected frame's name (`mech_name`), its
+## role on the tag (`chassis`, e.g. STANDARD FRAME), and the equipped
 ## weapon's art, name and mastery bar.
 class Unit extends Control:
 	var chassis := ""
+	## The mech's display name (the selected chassis' "name": NIMBUS-07, ARROWHEAD...).
+	var mech_name := "NIMBUS-07"
 	var chassis_color := LobbyKit.CYAN
 	var weapon := ""
 	var weapon_art: Texture2D
@@ -429,7 +432,7 @@ class Unit extends Control:
 		var r := Rect2(Vector2.ZERO, size)
 		LobbyKit.panel(self, r, 14.0)
 		draw_rect(Rect2(0, 14, 3, 40), LobbyKit.GOLD)
-		LobbyKit.text(self, LobbyKit.tracked(LobbyKit.COND_B, 3), Vector2(16, 23), "UNIT 07", 13, LobbyKit.CYAN)
+		LobbyKit.text(self, LobbyKit.tracked(LobbyKit.COND_B, 3), Vector2(16, 23), "MOBILE UNIT", 13, LobbyKit.CYAN)
 		# chassis tag (top right)
 		var cfs := 13
 		var cw := LobbyKit.width_of(LobbyKit.COND_B, chassis, cfs) + 14.0
@@ -438,7 +441,8 @@ class Unit extends Control:
 		draw_rect(tag, Color(chassis_color, 0.8), false, 1.0)
 		LobbyKit.text(self, LobbyKit.COND_B, Vector2(tag.position.x, tag.end.y - 5.0), chassis, cfs, chassis_color.lightened(0.25),
 			HORIZONTAL_ALIGNMENT_CENTER, tag.size.x)
-		LobbyKit.text(self, LobbyKit.HEAD, Vector2(15, 54), "HALO FORGE", 28, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1, 3)
+		LobbyKit.text(self, LobbyKit.HEAD, Vector2(15, 54), mech_name, LobbyKit.fit(LobbyKit.HEAD, mech_name, 28, size.x - 40.0, 18),
+			Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1, 3)
 		draw_line(Vector2(16, 64), Vector2(size.x - 16, 64), Color(LobbyKit.CYAN, 0.25), 1.0)
 		# equipped weapon: art lying flat (muzzle / tip to the right), name, mastery
 		var wy := 64.0 + (size.y - 64.0) / 2.0

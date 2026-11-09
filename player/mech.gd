@@ -103,6 +103,27 @@ const SIEGE_DAMAGE := 1.3
 const SIEGE_TAKEN := 0.7
 ## Striker: boost cooldown refunded per kill (seconds).
 const STRIKER_KILL_REFUND := 0.3
+## TEMPEST SALVO: seconds between volleys, rockets per volley, damage each, and the reach it looks for robots.
+const SALVO_INTERVAL := 4.0
+const SALVO_ROCKETS := 4
+const SALVO_DAMAGE := 34.0
+const SALVO_RANGE := 700.0
+## ONIBI IAIDO: melee / gun damage, overdrive gain on melee hits, HP per melee kill.
+const IAIDO_MELEE := 1.3
+const IAIDO_GUNS := 0.8
+const IAIDO_OD := 1.5
+const IAIDO_HEAL := 3.0
+## SOLSTICE BARRIER: recharge time without the Defense Shield upgrade, recharge speed-up, blast on a break.
+const BARRIER_RECHARGE := 10.0
+const BARRIER_FASTER := 0.75
+const BARRIER_BLAST := 40.0
+## CORVID FEATHER SWARM: chance a kill fires feathers, and how many.
+const FEATHER_CHANCE := 0.35
+const FEATHERS := 2
+## VESPER PHASE BLINK: blink distance, and the critical window after a blink.
+const BLINK_DIST := 230.0
+const BLINK_CRIT_TIME := 1.5
+const BLINK_CRIT := 2.0
 ## Touch SIMPLE layout: Self-repair kicks in below this HP fraction (with a kit to spare).
 const AUTO_REPAIR_HP := 0.35
 
@@ -147,7 +168,14 @@ var _base_max_hp := 100.0
 ## Chassis (Game.CHASSIS entry) and its body scale; robots already hit by the current boost
 ## (Striker afterburner / Bulwark ram hit each robot once per boost); Last Stand (Hangar) used up.
 var _chassis := {}
+var _chassis_id := &"standard"
 var _body_scale := 1.0
+## This chassis's sprite frames (with / without the painted Beam Rifle), see Game.chassis_frames.
+var _frames_gun: SpriteFrames
+var _frames_nogun: SpriteFrames
+## TEMPEST salvo timer; VESPER crit window after a blink.
+var _salvo_t := 1.5
+var _crit_t := 0.0
 var _boost_hits: Array[int] = []
 var _last_stand_used := false
 ## Combos: Railgun shot counter; seconds since the mech last took damage (Nano Repair).
@@ -162,6 +190,9 @@ var _still_t := 0.0
 var _missile_t := 1.0
 var _reactive_cd := 0.0
 var _arcing := false
+## PARTS DOUBLE DASH (Twin Booster): spare boosts ready on top of the usual one, and how many it holds.
+var _boost_spare := 0
+var _boost_spares_max := 0
 ## Base values the Reactor Overcharge / Thermal Amplifier upgrades scale.
 var _base_od_time := 8.0
 var _base_nova_cost := 40.0
@@ -187,6 +218,9 @@ func _ready() -> void:
 	weapon = Game.weapon
 	# Chassis (Hangar): HP / boost / damage-taken multipliers and size. Speed is in Upgrades.move_mult().
 	_chassis = Game.chassis_info()
+	_chassis_id = _chassis.get("id", &"standard")
+	_frames_gun = Game.chassis_frames(_chassis_id, true)
+	_frames_nogun = Game.chassis_frames(_chassis_id, false)
 	_body_scale = float(_chassis["scale"])
 	body.scale = Vector2.ONE * _body_scale
 	hit_radius *= _body_scale
@@ -197,7 +231,7 @@ func _ready() -> void:
 	hp = max_hp
 	repair_charges_max += Game.hangar_level(&"kits")
 	repair_charges = repair_charges_max
-	shield_charges = Upgrades.shield_max()
+	shield_charges = _shield_max()
 	Combat.damage_dealt.connect(_on_damage_dealt)
 	Combat.enemy_killed.connect(_on_enemy_killed)
 	Upgrades.upgrade_applied.connect(_on_upgrade)
@@ -223,9 +257,12 @@ func _ready() -> void:
 	# Gundam Customization: armor paint (shader), energy (shots + muzzle), booster (thrusters).
 	sprite.material = (sprite.material as ShaderMaterial).duplicate()
 	Game.apply_armor(sprite.material)
+	# A chassis whose own design isn't rendered yet flies NIMBUS-07's art tinted in its colour.
+	sprite.self_modulate = Game.chassis_tint(_chassis_id)
 	muzzle_flash.modulate = Game.energy_color()
 	for t in thrusters:
 		t.modulate = Game.booster_color().lightened(0.25)
+	_apply_parts()
 	beam = BeamCannon.new()
 	beam.mech = self
 	add_child(beam)
@@ -284,6 +321,8 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	if _boost_left > 0.0:
 		_boost_contact()
+	else:
+		_keep_off_bosses()
 
 	_update_siege(delta, move)
 
@@ -291,7 +330,7 @@ func _physics_process(delta: float) -> void:
 	var od := overdrive_left > 0.0
 	var redline := hp < max_hp * REDLINE_HP
 	var dmg := Upgrades.damage_mult() * (1.5 if od else 1.0) * lerpf(1.0, SIEGE_DAMAGE, siege_k) \
-		* (1.0 + (Upgrades.redline_damage() if redline else 0.0))
+		* (1.0 + (Upgrades.redline_damage() if redline else 0.0)) * _chassis_damage_mult()
 	if Controls.is_firing() and _fire_cd <= 0.0 and _boost_left <= 0.0 and not beam.is_busy():
 		_fire_cd = 1.0 / (_weapon_rate() * Upgrades.fire_rate_mult() * (2.0 if od else 1.0) * _overclock()
 			* (1.0 + (Upgrades.redline_rate() if redline else 0.0)))
@@ -307,6 +346,10 @@ func _physics_process(delta: float) -> void:
 
 func _tick_timers(delta: float) -> void:
 	boost_cooldown_left = maxf(boost_cooldown_left - delta, 0.0)
+	# PARTS DOUBLE DASH: a finished cooldown tops up a spare boost first (and recharges on for the next).
+	if boost_cooldown_left <= 0.0 and _boost_spare < _boost_spares_max:
+		_boost_spare += 1
+		boost_cooldown_left = _boost_cd() * (0.6 if overdrive_left > 0.0 else 1.0)
 	_boost_left = maxf(_boost_left - delta, 0.0)
 	_fire_cd -= delta
 	_secondary_cd -= delta
@@ -322,20 +365,27 @@ func _tick_timers(delta: float) -> void:
 			Combat.spark(global_position + Vector2(randf_range(-18, 18), randf_range(-18, 18)), Color(0.4, 1.0, 0.55), 0.6)
 			stats_changed.emit()
 	# Defense Shield: recharge one charge at a time.
-	if shield_charges < Upgrades.shield_max():
+	if shield_charges < _shield_max():
 		_shield_t -= delta
 		if _shield_t <= 0.0:
-			_shield_t = Upgrades.shield_recharge()
+			_shield_t = _shield_recharge()
 			shield_charges += 1
 			Combat.shockwave(global_position, 60.0, Color(0.45, 0.85, 1.0), 0.3)
 			stats_changed.emit()
 	else:
-		_shield_t = Upgrades.shield_recharge()
+		_shield_t = _shield_recharge()
 	if overdrive_left > 0.0:
 		overdrive_left = maxf(overdrive_left - delta, 0.0)
 		if overdrive_left == 0.0:
 			stats_changed.emit()
 	_reactive_cd -= delta
+	_crit_t = maxf(_crit_t - delta, 0.0)
+	# TEMPEST SALVO: the shoulder pods fire whenever a robot is in reach and the volley is ready.
+	if _chassis_id == &"artillery":
+		_salvo_t -= delta
+		if _salvo_t <= 0.0 and Combat.nearest_enemy(global_position, SALVO_RANGE):
+			_salvo_t = SALVO_INTERVAL
+			_fire_salvo()
 	# MICRO-MISSILE POD: a volley of homing missiles whenever a robot is near.
 	if Upgrades.level_of(&"missile_pod") > 0:
 		_missile_t -= delta
@@ -389,7 +439,12 @@ func _assist_target(reach: float) -> Node2D:
 	return Combat.nearest_enemy(global_position, reach, aim_dir, deg_to_rad(deg))
 
 
+## Attacks per second: the weapon's own rate, times the PARTS ARMS (guns and melee swings separately).
 func _weapon_rate() -> float:
+	return _base_weapon_rate() * Parts.mult("rate") * Parts.mult("melee_rate" if MeleeKit.has_weapon(weapon) else "fire_rate")
+
+
+func _base_weapon_rate() -> float:
 	if MeleeKit.has_weapon(weapon):
 		return MeleeKit.rate(weapon)
 	match weapon:
@@ -592,13 +647,19 @@ func _fire_secondary(mult: float) -> void:
 
 
 func _try_boost(move: Vector2) -> void:
-	if boost_cooldown_left > 0.0 or _boost_left > 0.0:
+	if _boost_left > 0.0 or (boost_cooldown_left > 0.0 and _boost_spare <= 0):
 		return
 	_boost_dir = move.normalized() if move.length() > 0.2 else aim_dir
 	_boost_left = boost_time
-	boost_cooldown_left = _boost_cd() * (0.6 if overdrive_left > 0.0 else 1.0)
+	# PARTS DOUBLE DASH (Twin Booster): while the cooldown runs, a boost spends a spare instead.
+	if boost_cooldown_left > 0.0:
+		_boost_spare -= 1
+	else:
+		boost_cooldown_left = _boost_cd() * (0.6 if overdrive_left > 0.0 else 1.0)
 	_invuln = boost_time + 0.08
 	_boost_hits.clear()
+	if _chassis_id == &"phantom":
+		_blink()
 	Sfx.play(&"boost", -6.0)
 	# IMPULSE BURST: the boost kicks off a shockwave.
 	var burst := Upgrades.boost_burst_damage()
@@ -610,11 +671,101 @@ func _try_boost(move: Vector2) -> void:
 	stats_changed.emit()
 
 
+## VESPER PHASE BLINK: the boost jumps the mech up to BLINK_DIST at once (stopping at walls and never
+## into a pit), leaves a trail of afterimages, and opens the critical window.
+func _blink() -> void:
+	var from := global_position
+	var dist := BLINK_DIST
+	while dist > 20.0:
+		if not _over_pit(from + _boost_dir * dist) and not test_move(global_transform, _boost_dir * dist):
+			break
+		dist -= 30.0
+	if dist > 20.0:
+		global_position = from + _boost_dir * dist
+	else:
+		move_and_collide(_boost_dir * BLINK_DIST)
+	for i in 5:
+		var ghost_at := from.lerp(global_position, i / 5.0)
+		_spawn_afterimage_at(ghost_at, Color(_chassis["color"], 0.55 - i * 0.07))
+	_boost_left = 0.06
+	_crit_t = BLINK_CRIT_TIME
+	Combat.shockwave(from, 50.0, _chassis["color"], 0.2)
+	Combat.shockwave(global_position, 60.0, _chassis["color"], 0.25)
+
+
+func _over_pit(p: Vector2) -> bool:
+	for pit: Node2D in get_tree().get_nodes_in_group("pits"):
+		if Rect2(pit.global_position - pit.size / 2, pit.size).grow(20.0).has_point(p):
+			return true
+	return false
+
+
+## Chassis damage on every attack: ONIBI's IAIDO (melee up, guns down) and VESPER's post-blink criticals.
+func _chassis_damage_mult() -> float:
+	var m := 1.0
+	if _chassis_id == &"duelist":
+		m = IAIDO_MELEE if Game.is_melee(weapon) else IAIDO_GUNS
+	if _crit_t > 0.0:
+		m *= BLINK_CRIT
+	return m
+
+
+## TEMPEST SALVO: heavy homing rockets out of both shoulder pods, every one exploding on impact.
+func _fire_salvo() -> void:
+	var col: Color = _chassis["color"]
+	for i in SALVO_ROCKETS:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var dir := aim_dir.rotated(side * (0.5 + 0.25 * float(i >> 1)) + randf_range(-0.1, 0.1))
+		var from := global_position + aim_dir.orthogonal() * side * 16.0 * _body_scale
+		var b := Combat.fire(from, dir * 420.0, SALVO_DAMAGE * Upgrades.damage_mult(), true, self,
+			Color(1.0, 0.45, 0.3), 1.15, 2.2)
+		b.homing = 6.0
+		b.explosive = 1.0
+	Combat.shockwave(global_position, 40.0, col, 0.2)
+	Sfx.play(&"missile", -8.0, 0.1)
+
+
+## SOLSTICE BARRIER: one more Defense Shield charge, recharging faster (and even without the upgrade).
+func _shield_max() -> int:
+	return Upgrades.shield_max() + (1 if _chassis_id == &"guardian" else 0)
+
+
+func _shield_recharge() -> float:
+	if _chassis_id != &"guardian":
+		return Upgrades.shield_recharge()
+	var base := Upgrades.shield_recharge() if Upgrades.level_of(&"shield") > 0 else BARRIER_RECHARGE
+	return base * BARRIER_FASTER
+
+
+## Robots never block the mech (its mask is walls + scenery only), and a boss's art is far bigger than
+## its body, so a melee mech used to walk right on top of VULCAN / Ronin / Shogun. Outside a boost the
+## mech is now held at the boss's edge (its `keep_out`, else BOSS_EDGE x its hit radius); boosting
+## (and melee dash steps) still pass through.
+const BOSS_EDGE := 0.8
+
+
+func _keep_off_bosses() -> void:
+	for b in get_tree().get_nodes_in_group("boss"):
+		var boss := b as Node2D
+		if boss == null or not boss.is_inside_tree() or boss.get("dead") == true:
+			continue
+		var r = boss.get("hit_radius")
+		var ko = boss.get("keep_out")
+		var edge := float(ko) if ko != null and float(ko) > 0.0 else (float(r) if r != null else 60.0) * BOSS_EDGE
+		var min_d := edge + hit_radius * 0.6
+		var off := global_position - boss.global_position
+		var d := off.length()
+		if d >= min_d:
+			continue
+		var out := off / d if d > 0.5 else -aim_dir
+		move_and_collide(out * (min_d - d))
+
+
 ## Chassis boost tricks: the Striker's AFTERBURNER slices every robot it boosts through; the Bulwark's
 ## SHOULDER RAM smashes them aside. Each robot is hit once per boost.
 func _boost_contact() -> void:
 	var id: StringName = _chassis.get("id", &"standard")
-	if id == &"standard":
+	if id != &"striker" and id != &"bulwark":
 		return
 	var col: Color = _chassis["color"]
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -782,7 +933,8 @@ func _on_damage_dealt(amount: float, source: Node, target: Node) -> void:
 	var gain := Upgrades.heat_mult()
 	heat = minf(heat + amount * heat_per_damage * gain, heat_max)
 	if overdrive_left <= 0.0:
-		overdrive_meter = minf(overdrive_meter + amount * overdrive_per_damage * gain * Upgrades.od_gain(), 100.0)
+		var iaido := IAIDO_OD if _chassis_id == &"duelist" and Game.is_melee(weapon) else 1.0
+		overdrive_meter = minf(overdrive_meter + amount * overdrive_per_damage * gain * Upgrades.od_gain() * iaido, 100.0)
 	if not _arcing and randf() < Upgrades.chain_chance():
 		arc_from(target, amount, Upgrades.level_of(&"chain"))
 	if randf() < Upgrades.cryo_chance() and target.has_method("chill"):
@@ -799,6 +951,12 @@ func _on_enemy_killed(e: Node) -> void:
 		stats_changed.emit()
 	if _chassis.get("id") == &"striker" and boost_cooldown_left > 0.0:
 		boost_cooldown_left = maxf(boost_cooldown_left - STRIKER_KILL_REFUND, 0.0)
+	# ONIBI IAIDO: melee kills patch the armor; CORVID FEATHER SWARM: kills may loose homing feathers.
+	if _chassis_id == &"duelist" and Game.is_melee(weapon) and not dead and hp < max_hp:
+		hp = minf(hp + IAIDO_HEAL * Game.diff("heal"), max_hp)
+		stats_changed.emit()
+	if _chassis_id == &"carrier" and e is Node2D and not dead and randf() < FEATHER_CHANCE:
+		_fire_feathers.call_deferred((e as Node2D).global_position)
 	if Upgrades.level_of(&"shatter") > 0 and e is Enemy and (e as Enemy).chill_t > 0.0 and not dead:
 		var at: Vector2 = (e as Enemy).global_position
 		var dmg := 60.0 * Upgrades.damage_mult()
@@ -812,6 +970,29 @@ func _on_enemy_killed(e: Node) -> void:
 			Sfx.play(&"freeze", -10.0, 0.1)).call_deferred()
 
 
+## CORVID FEATHER SWARM: homing feather blades from the backpack toward the robots near a kill.
+func _fire_feathers(at: Vector2) -> void:
+	if dead:
+		return
+	var col: Color = _chassis["color"]
+	for i in FEATHERS:
+		var target := Combat.nearest_enemy(at, 420.0) as Node2D
+		var aim := (target.global_position - global_position).normalized() if target else aim_dir
+		var dir := aim.rotated(randf_range(-0.6, 0.6))
+		var b := Combat.fire(global_position - aim_dir * 10.0, dir * 520.0, 16.0 * Upgrades.damage_mult(), true, self,
+			col, 0.8, 1.4)
+		b.homing = 9.0
+	Sfx.play(&"missile", -16.0, 0.15)
+
+
+## SOLSTICE BARRIER: a breaking shield charge blasts the robots around the mech back.
+func _barrier_blast() -> void:
+	var col: Color = _chassis["color"]
+	Combat.area_damage(global_position, 150.0, BARRIER_BLAST * Upgrades.damage_mult(), self, false, Vector2.ZERO, PI, 620.0)
+	Combat.shockwave(global_position, 150.0, col, 0.35)
+	Combat.shockwave(global_position, 90.0, Color(1, 1, 1, 0.8), 0.2)
+
+
 ## A level-up pick was made: apply the one-off parts (the rest is read live from Upgrades).
 func _on_upgrade(id: StringName) -> void:
 	match id:
@@ -819,7 +1000,7 @@ func _on_upgrade(id: StringName) -> void:
 			max_hp = _base_max_hp + Upgrades.max_hp_bonus()
 			heal(25.0)
 		&"shield":
-			shield_charges = mini(shield_charges + 1, Upgrades.shield_max())
+			shield_charges = mini(shield_charges + 1, _shield_max())
 		&"field_repair":
 			heal(40.0)
 			add_repair_charge()
@@ -841,9 +1022,11 @@ func take_damage(amount: float, _from_pos: Vector2, _source: Node = null) -> voi
 	# Defense Shield: a charge soaks the whole hit.
 	if shield_charges > 0:
 		shield_charges -= 1
-		_shield_t = Upgrades.shield_recharge()
+		_shield_t = _shield_recharge()
 		_invuln = 0.5
 		_shield_fx.pop()
+		if _chassis_id == &"guardian":
+			_barrier_blast.call_deferred()
 		Combat.shockwave(global_position, 80.0, Color(0.5, 0.9, 1.0), 0.3)
 		Sfx.play(&"shield", -4.0, 0.0)
 		stats_changed.emit()
@@ -976,7 +1159,8 @@ func knock(_impulse: Vector2) -> void:
 
 ## The Gundam's own weapon recoil (scatter shot, beam cannon) - not caused by taking damage.
 func recoil(impulse: Vector2) -> void:
-	_knockback += impulse
+	if not Parts.has_perk(&"steady"):  # PARTS STEADY (Gunner Arms): no recoil
+		_knockback += impulse
 
 
 # --- interaction ---------------------------------------------------------------------------------
@@ -1014,7 +1198,7 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 		anim = &"fire"
 	# The sprite's painted rifle only shows with the Beam Rifle; every other weapon is drawn in the fist
 	# (HeldWeapon for guns, the melee rig for blades) on the rifle-free frames.
-	var frames: SpriteFrames = FRAMES_RIFLE if weapon == &"blaster" else FRAMES_NO_GUN
+	var frames: SpriteFrames = _frames_gun if weapon == &"blaster" else _frames_nogun
 	if sprite.sprite_frames != frames:
 		var f := sprite.frame
 		var p := sprite.frame_progress
@@ -1043,12 +1227,16 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 
 
 func _spawn_afterimage() -> void:
+	_spawn_afterimage_at(sprite.global_position, Color(Game.booster_color(), 0.5))
+
+
+func _spawn_afterimage_at(at: Vector2, col: Color) -> void:
 	var ghost := Sprite2D.new()
 	ghost.texture = sprite.sprite_frames.get_frame_texture(sprite.animation, sprite.frame)
-	ghost.global_position = sprite.global_position
+	ghost.global_position = at
 	ghost.rotation = body.rotation
-	ghost.scale = sprite.scale
-	ghost.modulate = Color(Game.booster_color(), 0.5)
+	ghost.scale = sprite.scale * _body_scale
+	ghost.modulate = col
 	get_parent().add_child(ghost)
 	var tw := ghost.create_tween()
 	tw.tween_property(ghost, "modulate:a", 0.0, 0.2)
@@ -1057,9 +1245,29 @@ func _spawn_afterimage() -> void:
 
 ## Fraction of the boost cooldown that has recharged (1 = ready). Used by the ring + HUD.
 func boost_ready_fraction() -> float:
+	if _boost_spare > 0:  # (PARTS DOUBLE DASH: a spare boost is ready)
+		return 1.0
 	return 1.0 - boost_cooldown_left / maxf(_boost_cd(), 0.01)
 
 
 ## Boost cooldown after the Thrusters upgrade and the chassis.
 func _boost_cd() -> float:
 	return boost_cooldown * Upgrades.boost_cd_mult() * float(_chassis.get("boost_cd", 1.0)) * Game.twist_value("boost_cd")
+
+
+## PARTS (autoload/parts.gd, Hangar > PARTS): what the mech takes from its parts once, at spawn - HP, dash,
+## handling and DOUBLE DASH's spare boost - and the BACKPACK's thruster flames (colour + size). Speed, fire
+## rate, damage, crit, heat and pickup radius are read live (Upgrades / _weapon_rate).
+func _apply_parts() -> void:
+	_base_max_hp *= Parts.mult("hp")
+	max_hp = _base_max_hp + Upgrades.max_hp_bonus()
+	hp = max_hp
+	boost_speed *= Parts.mult("dash")
+	acceleration *= Parts.mult("accel")
+	_boost_spares_max = Parts.extra_boosts()
+	_boost_spare = _boost_spares_max
+	var f := Parts.flame()
+	if not f.is_empty():
+		for t in thrusters:
+			t.modulate = Game.booster_color().lerp(f["color"], 0.65).lightened(0.25)
+			t.scale = Vector2.ONE * float(f["scale"])

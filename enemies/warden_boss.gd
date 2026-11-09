@@ -20,6 +20,12 @@ const SPRITE_SCALE := 0.78
 @export var accent := Color(1.0, 0.25, 0.2)
 ## Radius of the body collider (walls, cover, other enemies) and the nav agent. 0 = Enemy default.
 @export var body_radius := 0.0
+## How close the mech's centre may come (it is held at this edge outside a boost, Mech._keep_off_bosses),
+## sized to the drawn art so a melee mech never stands on top of the boss. 0 = 0.8 x hit_radius.
+@export var keep_out := 0.0
+
+## Ram: the lane stops tracking the mech this many seconds before the charge (wind-up is 0.75 s).
+const CHARGE_LOCK := 0.4
 
 var phase := 1
 var _state := &"idle"
@@ -150,7 +156,10 @@ func _think(delta: float) -> void:
 				_end_attack()
 		&"charge_windup":
 			desired_velocity = Vector2.ZERO
-			_charge_dir = dir_to_target()
+			# The lane follows the mech for the first part of the wind-up, then LOCKS for the last
+			# CHARGE_LOCK seconds, so a sidestep out of the red lane visibly dodges the ram.
+			if _state_t > CHARGE_LOCK:
+				_charge_dir = dir_to_target()
 			if _state_t <= 0.0:
 				_state = &"charge"
 				_state_t = 0.55
@@ -239,5 +248,6 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, 13 + pulse * 4, Color(accent.lightened(0.5), 0.55))
 	draw_set_transform(Vector2.ZERO)
 	if _state == &"charge_windup":
-		draw_line(Vector2.ZERO, _charge_dir * 600.0, Color(1.0, 0.15, 0.1, 0.2 + 0.25 * sin(_t * 30.0)), hit_radius * 1.2)
-		draw_line(Vector2.ZERO, _charge_dir * 600.0, Color(1.0, 0.3, 0.2, 0.9), 2.0)
+		# Ram warning: lane edges + marching chevrons + timing sweep (fx/danger_lane.gd), ~where it will run.
+		DangerLane.draw(self, _charge_dir * hit_radius * 0.8, _charge_dir * 560.0, hit_radius * 0.6,
+			clampf(1.0 - _state_t / 0.75, 0.0, 1.0), _t, Color(1.0, 0.28, 0.18))

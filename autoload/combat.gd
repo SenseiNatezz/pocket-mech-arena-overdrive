@@ -390,9 +390,11 @@ func damage_number(pos: Vector2, amount: float, color := Color(1, 0.85, 0.6), ta
 		key = "%d:%s" % [target.get_instance_id(), color.to_html()]
 		var e: Dictionary = _merged.get(key, {})
 		if not e.is_empty() and is_instance_valid(e["label"]) and e["label"].visible:
-			e["total"] += amount
-			_show_number(e["label"], e["total"], color, true)
-			return
+			if Time.get_ticks_msec() - int(e["start"]) < int(MERGE_WINDOW * 1000.0) and e["total"] + amount <= MERGE_CAP:
+				e["total"] += amount
+				_show_number(e["label"], e["total"], color, true)
+				return
+			_retire_number(e["label"])
 	var shown := 0
 	for x in _labels:
 		if x.visible:
@@ -416,31 +418,102 @@ func damage_number(pos: Vector2, amount: float, color := Color(1, 0.85, 0.6), ta
 		_container.add_child(l)
 		_labels.append(l)
 	l.set_meta("rise", 0.0)
+	l.set_meta("stack_vis", 0.0)
+	l.set_meta("born", Time.get_ticks_msec())
 	l.set_meta("jitter", randf_range(-10.0, 10.0))
 	l.set_meta("anchor", pos)
 	l.set_meta("target", weakref(target) if target else null)
 	if key != "":
-		_merged[key] = {"label": l, "total": amount}
+		_merged[key] = {"label": l, "total": amount, "start": Time.get_ticks_msec()}
 		l.set_meta("key", key)
 	else:
 		l.set_meta("key", "")
 	_show_number(l, amount, color, false)
 
 
-const MAX_NUMBERS := 28
+const MAX_NUMBERS := 20
 const NUMBER_W := 120.0
+## A merged number starts over (the old one floats off) after MERGE_WINDOW seconds or past MERGE_CAP, so a
+## long combo on a boss reads as a run of numbers instead of one total climbing into the thousands.
+const MERGE_WINDOW := 0.9
+const MERGE_CAP := 999.0
+## Numbers never print on top of each other: up to NUMBER_ROWS rows, NUMBER_ROW_H px apart (_layout_numbers).
+const NUMBER_ROWS := 3
+const NUMBER_ROW_H := 24.0
 var _merged := {}
+
+
+## Ends a merged number early: it lets go of its key, floats up a little and fades out quickly.
+func _retire_number(l: Label) -> void:
+	var key: String = l.get_meta("key", "")
+	if key != "" and _merged.get(key, {}).get("label") == l:
+		_merged.erase(key)
+	l.set_meta("key", "")
+	l.set_meta("retiring", true)
+	var old: Tween = l.get_meta("tween") if l.has_meta("tween") else null
+	if old:
+		old.kill()
+	var tw := l.create_tween()
+	l.set_meta("tween", tw)
+	tw.tween_method(func(v: float) -> void: l.set_meta("rise", v), float(l.get_meta("rise")), float(l.get_meta("rise")) + 16.0, 0.2)
+	tw.parallel().tween_property(l, "modulate:a", 0.0, 0.2)
+	tw.tween_callback(l.hide)
+
+
+## Rough on-screen width of a number's text.
+func _number_w(l: Label) -> float:
+	return float(l.text.length()) * float(l.get_theme_font_size("font_size")) * 0.62
+
+
+## Lays the numbers out every frame (two side by side used to read as one, e.g. "172" + "142" = "172142",
+## and merged totals grow wider as they count up): older numbers keep their row, a newer one takes the
+## lowest of NUMBER_ROWS rows where it overlaps nothing already placed, and one with no room fades out.
+func _layout_numbers(delta: float) -> void:
+	var live: Array[Label] = []
+	for l in _labels:
+		if is_instance_valid(l) and l.visible:
+			live.append(l)
+	live.sort_custom(func(a: Label, b: Label) -> bool: return int(a.get_meta("born", 0)) < int(b.get_meta("born", 0)))
+	var placed: Array = []   # [centre x, row y, half width] of the numbers laid out so far
+	for l in live:
+		_place_number(l)
+		var solid: bool = not l.get_meta("retiring", false) and l.modulate.a >= 0.35
+		var hw := _number_w(l) * 0.5
+		var cx := l.position.x + NUMBER_W / 2.0
+		# Where it sits without its rise / row offset (rows are compared as if every number had risen alike).
+		var base_y := l.position.y + float(l.get_meta("rise")) + float(l.get_meta("stack_vis", 0.0))
+		var row := -1
+		for r in NUMBER_ROWS:
+			var y := base_y - r * NUMBER_ROW_H
+			var free := true
+			for q: Array in placed:
+				if absf(float(q[0]) - cx) < float(q[2]) + hw + 6.0 and absf(float(q[1]) - y) < NUMBER_ROW_H - 2.0:
+					free = false
+					break
+			if free:
+				row = r
+				break
+		if row < 0:
+			if solid:
+				_retire_number(l)  # covered by others anyway
+			continue
+		var want := row * NUMBER_ROW_H
+		l.set_meta("stack_vis", lerpf(float(l.get_meta("stack_vis", 0.0)), want, 1.0 - exp(-20.0 * delta)))
+		_place_number(l)
+		if solid:
+			placed.append([cx, base_y - want, hw])
 
 
 ## (Re)starts a number's pop + hold + fade. Merged hits restart the hold so it stays while you keep hitting.
 func _show_number(l: Label, total: float, color: Color, bump: bool) -> void:
 	l.text = str(roundi(total))
-	var fs := 20 + int(clampf(total / 60.0, 0.0, 1.0) * 14.0)
+	var fs := 20 + int(clampf(total / 300.0, 0.0, 1.0) * 10.0)
 	l.add_theme_font_size_override("font_size", fs)
 	l.add_theme_color_override("font_color", color if total < 150.0 else color.lerp(Color(1.0, 0.65, 0.2), 0.6))
 	l.pivot_offset = Vector2(NUMBER_W / 2, 17)
 	l.modulate.a = 1.0
 	l.visible = true
+	l.set_meta("retiring", false)
 	_place_number(l)
 	var old: Tween = l.get_meta("tween") if l.has_meta("tween") else null
 	if old:
@@ -470,13 +543,11 @@ func _place_number(l: Label) -> void:
 		var r = t.get("hit_radius")
 		if r != null:
 			lift = 18.0 + float(r)
-	l.position = anchor + Vector2(-NUMBER_W / 2 + l.get_meta("jitter"), -lift - 17.0 - l.get_meta("rise"))
+	l.position = anchor + Vector2(-NUMBER_W / 2 + l.get_meta("jitter"), -lift - 17.0 - l.get_meta("rise") - l.get_meta("stack_vis", 0.0))
 
 
-func _process(_delta: float) -> void:
-	for l in _labels:
-		if is_instance_valid(l) and l.visible:
-			_place_number(l)
+func _process(delta: float) -> void:
+	_layout_numbers(delta)
 
 
 # --- hit feel ------------------------------------------------------------------------------------------

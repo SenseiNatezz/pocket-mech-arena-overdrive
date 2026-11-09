@@ -121,7 +121,7 @@ func _draw() -> void:
 		draw_circle(tip, 5.0 + 5.0 * k, Color(RAIL, 0.6))
 	elif _state == State.LOCK:
 		var blink := 0.55 + 0.45 * signf(sin(_t * 45.0))
-		draw_line(tip, to_local(_sight_to), Color(LOCK, 0.25 * blink), 16.0)
+		draw_line(tip, to_local(_sight_to), Color(LOCK, 0.2 * blink), 6.0)
 		draw_line(tip, to_local(_sight_to), Color(LOCK, blink), 3.0)
 		draw_circle(tip, 12.0, Color(RAIL, 0.8))
 	if _rail_fx > 0.0:

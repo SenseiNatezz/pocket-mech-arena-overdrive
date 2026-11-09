@@ -48,7 +48,7 @@ func _physics_process(delta: float) -> void:
 		if _tick_t <= 0.0:
 			_tick_t = tick
 			for b in get_overlapping_bodies():
-				if b.has_method("take_damage") and not (b.get("dead") == true):
+				if b.has_method("take_damage") and not (b.get("dead") == true) and not Parts.hovers(b):  # (PARTS HOVER)
 					b.take_damage(damage_per_tick, b.global_position + Vector2(0, 1), self)
 					Combat.spark(b.global_position, Color(0.5, 0.9, 1.0), 1.2)
 	if state != State.OFF and (Engine.get_physics_frames() % 3 == 0):

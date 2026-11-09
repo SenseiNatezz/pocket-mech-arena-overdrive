@@ -41,7 +41,7 @@ func _ready() -> void:
 			Game.to_gun_range.call_deferred()
 		elif a.begins_with("--shot="):
 			_shot(a.trim_prefix("--shot="), _arg_float("--shot-time=", 1.5))
-	set_process(_args.has("--smoke-test") or _args.has("--arena-test") or _args.has("--upgrade-test") or _args.has("--incremental-test") or _args.has("--goals-test") or _args.has("--goals-arena-test") or _args.has("--endless-test") or _args.has("--gun-range-test") or "--swing-capture=" in " ".join(_args) or _args.has("--tutorial-test") or _args.has("--difficulty-test") or _args.has("--boss-retry-test") or "--upgrades=" in " ".join(_args) or "--level-up=" in " ".join(_args) or _args.has("--autoplay") or "--attach=" in " ".join(_args) or _args.has("--playtest-report") or _args.has("--boss") or _args.has("--beam-demo") or "--showcase=" in " ".join(_args) or _args.has("--prop-probe") or "--goto-map" in " ".join(_args))
+	set_process(_args.has("--smoke-test") or _args.has("--arena-test") or _args.has("--upgrade-test") or _args.has("--incremental-test") or _args.has("--goals-test") or _args.has("--goals-arena-test") or _args.has("--parts-test") or _args.has("--endless-test") or _args.has("--gun-range-test") or "--swing-capture=" in " ".join(_args) or _args.has("--tutorial-test") or _args.has("--difficulty-test") or _args.has("--boss-retry-test") or "--upgrades=" in " ".join(_args) or "--level-up=" in " ".join(_args) or _args.has("--autoplay") or "--attach=" in " ".join(_args) or _args.has("--playtest-report") or _args.has("--boss") or _args.has("--beam-demo") or "--showcase=" in " ".join(_args) or _args.has("--prop-probe") or "--goto-map" in " ".join(_args))
 
 
 func _process(_delta: float) -> void:
@@ -60,6 +60,8 @@ func _process(_delta: float) -> void:
 		_attach(scene, "res://tools/goals_test.gd")
 	if _args.has("--goals-arena-test") and is_arena:
 		_attach(scene, "res://tools/goals_arena_test.gd")
+	if _args.has("--parts-test") and scene.name == "TestRange":
+		_attach(scene, "res://tools/parts_test.gd")
 	if _args.has("--endless-test") and is_arena and Game.is_endless():
 		_attach(scene, "res://tools/endless_test.gd")
 	if _args.has("--tutorial-test") and scene.name == "Tutorial":

@@ -13,6 +13,9 @@ extends Node2D
 
 const GLOW := preload("res://assets/fx/glow.tres")
 const LIFE := 0.6
+## Set by the arena on very bright floors (Frozen Outpost ice): scorch marks become cool grey soot, since
+## black blotches on white ice read as ink splats.
+static var pale_floor := false
 
 var radius := 40.0
 var _t := 0.0
@@ -148,11 +151,15 @@ class Scorch:
 
 	func _draw() -> void:
 		var a := clampf((LIFE - _t) / FADE, 0.0, 1.0) * minf(_t / 0.1, 1.0)
-		draw_texture_rect(BlastFx.GLOW, Rect2(Vector2.ONE * -radius * 1.3, Vector2.ONE * radius * 2.6), false, Color(0, 0, 0, 0.55 * a))
-		draw_texture_rect(BlastFx.GLOW, Rect2(Vector2.ONE * -radius * 0.7, Vector2.ONE * radius * 1.4), false, Color(0.05, 0.03, 0.02, 0.5 * a))
+		var pale := BlastFx.pale_floor
+		var outer := Color(0.2, 0.25, 0.33, 0.34) if pale else Color(0, 0, 0, 0.55)
+		var inner := Color(0.16, 0.17, 0.2, 0.32) if pale else Color(0.05, 0.03, 0.02, 0.5)
+		var soot := Color(0.18, 0.2, 0.26, 0.14) if pale else Color(0.04, 0.03, 0.03, 0.2)
+		draw_texture_rect(BlastFx.GLOW, Rect2(Vector2.ONE * -radius * 1.3, Vector2.ONE * radius * 2.6), false, Color(outer, outer.a * a))
+		draw_texture_rect(BlastFx.GLOW, Rect2(Vector2.ONE * -radius * 0.7, Vector2.ONE * radius * 1.4), false, Color(inner, inner.a * a))
 		for s: Array in _streaks:
 			var d := Vector2.from_angle(s[0])
-			draw_line(d * radius * 0.45, d * radius * float(s[1]), Color(0.04, 0.03, 0.03, 0.2 * a), float(s[2]), true)
+			draw_line(d * radius * 0.45, d * radius * float(s[1]), Color(soot, soot.a * a), float(s[2]), true)
 		# Embers still glowing in the char for a moment.
 		var glow := clampf(1.0 - _t / 2.5, 0.0, 1.0)
 		if glow > 0.0:

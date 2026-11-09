@@ -127,6 +127,9 @@ func reset() -> void:
 	bonus_picks = 0
 	choosing = false
 	stacks.clear()
+	# PARTS (autoload/parts.gd): parts like the Missile Rack start every run with their upgrade at LV 1.
+	for id in Parts.starting_upgrades():
+		stacks[id] = 1
 	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls") + Contracts.bonus_rerolls() + (1 if Game.pool_reached(1) else 0)
 	banishes = BASE_BANISHES + Game.hangar_level(&"banishes")
 	banished.clear()
@@ -481,6 +484,12 @@ func _lv(id: StringName, lvl: int) -> int:
 	return level_of(id) if lvl < 0 else lvl
 
 
+## PARTS (autoload/parts.gd): the equipped parts' multiplier on a stat. Live values only (lvl < 0), so the
+## level-up cards still describe the upgrade on its own.
+func _part(stat: String, lvl: int) -> float:
+	return Parts.mult(stat) if lvl < 0 else 1.0
+
+
 func aim_assist_deg(lvl := -1) -> float:
 	var l := _lv(&"target_lock", lvl)
 	return 0.0 if l <= 0 else [12.0, 18.0, 26.0][l - 1]
@@ -517,7 +526,7 @@ func fire_rate_mult(lvl := -1) -> float:
 ## (Power Core, times the Hangar's Weapon Calibration + its MK levels and the PILOT contract row bonus)
 func damage_mult(lvl := -1) -> float:
 	return (1.0 + 0.15 * _lv(&"power", lvl)) * (1.0 + 0.05 * Game.hangar_level(&"calibration")
-		+ Game.hangar_mk_bonus(&"calibration")) * Contracts.damage_mult()
+		+ Game.hangar_mk_bonus(&"calibration")) * Contracts.damage_mult() * _part("damage", lvl)
 
 
 ## SALVAGE PROTOCOL (a contract unlock): +15% scrap per level for the rest of the run.
@@ -532,11 +541,11 @@ func max_hp_bonus(lvl := -1) -> float:
 ## (Thrusters, times the Hangar's Servo Motors (+ MK levels) and the chassis)
 func move_mult(lvl := -1) -> float:
 	return (1.0 + 0.1 * _lv(&"thrusters", lvl)) * (1.0 + 0.04 * Game.hangar_level(&"servos") + Game.hangar_mk_bonus(&"servos")) \
-		* float(Game.chassis_info()["speed"]) * Game.twist_value("player_speed")
+		* float(Game.chassis_info()["speed"]) * Game.twist_value("player_speed") * _part("speed", lvl)
 
 
 func boost_cd_mult(lvl := -1) -> float:
-	return 1.0 - 0.15 * _lv(&"thrusters", lvl)
+	return (1.0 - 0.15 * _lv(&"thrusters", lvl)) * _part("boost_cd", lvl)
 
 
 func blade_count(lvl := -1) -> int:
@@ -554,11 +563,11 @@ func salvage_heal(lvl := -1) -> float:
 
 
 func heat_mult(lvl := -1) -> float:
-	return 1.0 + 0.35 * _lv(&"heat_sink", lvl)
+	return (1.0 + 0.35 * _lv(&"heat_sink", lvl)) * _part("heat", lvl)
 
 
 func magnet_mult(lvl := -1) -> float:
-	return 1.0 + 0.6 * _lv(&"magnet", lvl)
+	return (1.0 + 0.6 * _lv(&"magnet", lvl)) * _part("magnet", lvl)
 
 
 func xp_mult(lvl := -1) -> float:
@@ -567,10 +576,13 @@ func xp_mult(lvl := -1) -> float:
 
 func crit_chance(lvl := -1) -> float:
 	var l := _lv(&"crit", lvl)
-	return 0.0 if l <= 0 else [0.1, 0.18, 0.26][l - 1]
+	return (0.0 if l <= 0 else [0.1, 0.18, 0.26][l - 1]) + (Parts.add("crit") if lvl < 0 else 0.0)
 
 
 func drone_count(lvl := -1) -> int:
+	# CORVID (carrier chassis) launches with 2 drones; the upgrade adds the 3rd (bit_drones.gd has 3 slots).
+	if lvl < 0 and Game.chassis == &"carrier":
+		return mini(_lv(&"drones", lvl) + 2, 3)
 	return _lv(&"drones", lvl)
 
 
@@ -627,7 +639,7 @@ func od_gain(lvl := -1) -> float:
 
 
 func ability_cost_mult(lvl := -1) -> float:
-	return 1.0 - 0.12 * _lv(&"thermal", lvl)
+	return (1.0 - 0.12 * _lv(&"thermal", lvl)) * _part("ability_cost", lvl)
 
 
 func ability_damage_mult(lvl := -1) -> float:

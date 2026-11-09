@@ -1,11 +1,11 @@
 extends Control
 ## Title screen + lobby (redesigned 2026-11-08 from real game lobbies: Apex Legends, Brawl Stars, Mech Arena,
-## Mecha BREAK, Gundam Breaker 4). Over the animated hero scene (ui/title_scene.gd: the Halo Forge on its
+## Mecha BREAK, Gundam Breaker 4). Over the animated hero scene (ui/title_scene.gd: NIMBUS-07 on its
 ## holo-pedestal under the gold halo, standing between the two columns):
 ##   top left      the POCKET MECH ARENA logo (glint; slams in on the first visit)
 ##   top right     resource chips (scrap, best Endless wave, weapons unlocked) + SETTINGS / EXIT buttons
 ##   left column   nav tiles ARMORY (equipped weapon crossed with another) / HANGAR (gold badge = upgrades you
-##                 can afford) / CUSTOMIZE (a fan deck in your colours) / WEAPON RANGE, and the UNIT 07 name
+##                 can afford) / CUSTOMIZE (a fan deck in your colours) / WEAPON RANGE, and the MOBILE UNIT name
 ##                 plate (chassis, equipped weapon + its mastery)
 ##   right column  SELECT OPERATION: CAMPAIGN (next arena's real art, arena pips) and ENDLESS (best wave, next
 ##                 weapon unlock) cards, the next Hangar upgrade (scrap bar toward it) and the gold LAUNCH
@@ -517,7 +517,9 @@ func _refresh_lobby() -> void:
 		Game.armor()["color"], Game.energy_color()]
 	_tiles[2].colors = cols
 	var ch := Game.chassis_info()
-	_unit.chassis = String(ch["name"]).to_upper()
+	# The selected frame: its name as the title (NIMBUS-07, ARROWHEAD...), its role on the tag.
+	_unit.chassis = String(ch.get("role", ch["name"])).to_upper()
+	_unit.mech_name = String(ch["name"]).to_upper()
 	_unit.chassis_color = ch["color"]
 	_unit.weapon = String(w["name"]).to_upper()
 	_unit.weapon_art = _weapon_tex(Game.weapon)

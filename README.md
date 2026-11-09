@@ -55,6 +55,18 @@ on their own as you play (a toast mid-run, a list on the results screen). Claim 
 Hangar; claiming a whole row switches on its permanent bonus (+5% scrap, +5% damage, +1 reroll a run, +5%
 XP, +10% scrap). Gold Rush opens the Salvager Beacon Hangar row and Jackpot the Salvage Protocol card.
 
+**Mech parts (Hangar > PARTS):** build your mech from four slots: HEAD (sensors), ARMS (weapon handling),
+LEGS (movement) and BACKPACK (booster). Each starts on a free STOCK part; the 12 others cost scrap, and
+every one trades a strength for a weakness, most with a perk on top. Head: Longsight Optics (+crit),
+Salvage Dish (+pickup radius and scrap), Lock-On Head (starts runs with Target Lock). Arms: Gunner (+gun
+fire rate, STEADY: no recoil), Brawler (+melee speed, SCRAPPER: melee kills repair), Thermal (+heat gain,
+VENTS: cheaper Nova / Cone). Legs: Sprinter (+speed and dash), Anchor (+HP), Hover Skirt (HOVER: lava
+pools, steam vents and shock panels can't hurt you). Backpack: Twin Booster (DOUBLE DASH), Missile Rack
+(starts runs with the Micro-Missile Pod), Overburn Booster (starts runs with Impulse Burst); each backpack
+has its own thruster flame. The cards show what a part changes against the one you have on. Buying a part
+puts it on, and you can swap between owned parts any time. The Hover Skirt, Twin Booster and Missile Rack
+open with the Campaigner, Survivor and Tank Buster contracts.
+
 **Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close),
 Dynamic Camera (the view pulls out as robots crowd in and during boss fights, punches in on big kills,
 glides over to a boss as it lands), Damage Numbers, controller Rumble, fullscreen (also F11 / Alt+Enter), CONTROLS (rebind every keyboard / mouse action), and on touch
@@ -116,7 +128,9 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --gun-range --touch --attach=res://tools/touch_test.gd --temp-save` checks the touch controls (auto-aim, FIRE button, move stick)
 - `godot --headless --path . -- --arena=6 --no-intro --attach=res://tools/forge_test.gd --temp-save` checks the Volcanic Forge robots and the VULCAN boss
 - `godot --headless --path . -- --gun-range --attach=res://tools/energy_sword_test.gd --temp-save` checks the Energy Sword (unlock, held art, combo + CRESCENT NOVA)
+- `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, FEATHER SWARM, PHASE BLINK)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
+- `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena
 - `godot --headless --path . -- --temp-save --scrap=4200 --attach=res://tools/lobby_test.gd --lobby-nav-test` checks keyboard / gamepad navigation on the title lobby (add `--portrait` for the phone layout)
 

@@ -6,9 +6,9 @@ extends Control
 ##   sky         twinkling star glints, an occasional shooting star, small ships crossing far away, and a
 ##               distant battle: beam shots and blasts flickering far off, low-key
 ##   vignette    the edges fall off to dark so the hero is the brightest thing on screen
-##   halo        the "Halo Forge" ring behind the mech: a gold ring of light with a tick ring and HUD arcs
+##   halo        the gold ring behind the mech: a gold ring of light with a tick ring and HUD arcs
 ##               turning around it, a glint racing round; it ignites when the mech lands
-##   mech        the player's robot, the Halo Forge (assets/hq/title_mech.png, rendered from its 3D model in
+##   mech        the player's robot, NIMBUS-07 (assets/hq/title_mech.png, rendered from its 3D model in
 ##               a low-angle aiming pose, art_src/halo_forge/tools/render_title.py), big (about 80% of the
 ##               screen height) on a holo-pedestal running off the bottom edge: gentle bob and sway, a soft
 ##               cyan glow hugging its silhouette, a light sweep across the armour every few seconds, its
@@ -24,7 +24,7 @@ const BG := preload("res://assets/hq/title_space.png")
 const MECH := preload("res://assets/hq/title_mech.png")
 const GLOW := preload("res://assets/fx/glow.tres")
 const SHEEN := preload("res://ui/mech_sheen.gdshader")
-## Visor points (both ends of the Halo Forge's visor) as fractions of the mech art (render_title.py prints
+## Visor points (both ends of NIMBUS-07's visor) as fractions of the mech art (render_title.py prints
 ## them).
 const EYES := [Vector2(0.643, 0.115), Vector2(0.666, 0.115)]
 ## Where the sunrise is in the backdrop art (fraction of its size): the god rays fan out from there.
@@ -351,7 +351,7 @@ func _draw_rays() -> void:
 	_glow_on(_rays, sun, size.y * 0.16, Color(1.0, 0.85, 0.6, 0.16 + 0.04 * sin(_t * 0.6)))
 
 
-## The Halo Forge's halo behind the mech: a gold ring of light (soft bloom, a bright core line), an inner
+## The halo behind NIMBUS-07: a gold ring of light (soft bloom, a bright core line), an inner
 ## dashed ring and an outer tick ring turning opposite ways, three HUD arcs, a glint racing round. It
 ## ignites (grows in and brightens) with the visor when the mech lands.
 func _draw_halo() -> void:

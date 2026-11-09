@@ -201,6 +201,9 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, 176.0, a - 1.0 + sweep, a + 1.0 + sweep, 24, Color(1, 0.95, 0.85, 0.9 * _slash_fx), 5.0, true)
 	draw_set_transform(Vector2.ZERO)
 	if _state == &"dash_windup":
+		# Dash-slash warning (fx/danger_lane.gd): lane edges + marching chevrons + timing sweep. The first
+		# wind-up of a set is 0.7 s, the follow-up dashes 0.4 s.
 		var reach := _charge_dir * DASH_SPEED * DASH_TIME
-		draw_line(Vector2.ZERO, reach, Color(1.0, 0.15, 0.1, 0.22 + 0.3 * sin(_t * 30.0)), 120.0)
-		draw_line(Vector2.ZERO, reach, Color(1.0, 0.35, 0.2, 0.9), 2.0)
+		var windup := 0.7 if _dashes >= phase else 0.4
+		DangerLane.draw(self, _charge_dir * 40.0, reach, 58.0, clampf(1.0 - _state_t / windup, 0.0, 1.0), _t,
+			Color(1.0, 0.3, 0.2))

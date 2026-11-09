@@ -100,12 +100,40 @@ static func fist(m: Mech, side := 1.0) -> Vector2:
 
 
 ## A point from a per-frame table (FIST / RIFLE_TIP) on the sprite's current frame, in Body space.
+## MULTI-MECH: a mech whose frames come from res://assets/sprites/mechs/<sheet>/ (Game.chassis_frames) uses
+## that sheet's own measured table (fists.tres, made by tools/make_mech_frames.gd) instead.
 static func frame_point(m: Mech, table: Dictionary, side := 1.0) -> Vector2:
 	var s := m.sprite
+	var own := _sheet_table(m, "fist" if is_same(table, FIST) else ("rifle_tip" if is_same(table, RIFLE_TIP) else ""))
+	if not own.is_empty():
+		table = own
 	var pts: Array = table.get(s.animation, table[&"idle"])
 	var p: Vector2 = pts[clampi(s.frame, 0, pts.size() - 1)] - CELL_CENTER
 	p.x *= side
 	return s.position + p * s.scale
+
+
+## Per-sheet tables: frames dir -> {"fist": {...}, "rifle_tip": {...}} ({} = none, use the built-in ones).
+static var _sheets := {}
+
+
+static func _sheet_table(m: Mech, key: String) -> Dictionary:
+	var sf := m.sprite.sprite_frames
+	if key == "" or sf == null:
+		return {}
+	var dir := sf.resource_path.get_base_dir()
+	if not dir.contains("/mechs/"):
+		return {}
+	if not _sheets.has(dir):
+		var t := {}
+		var path := dir + "/fists.tres"
+		if ResourceLoader.exists(path):
+			var r := load(path)
+			for k in ["fist", "rifle_tip"]:
+				if r and r.has_meta(k):
+					t[k] = r.get_meta(k)
+		_sheets[dir] = t
+	return _sheets[dir].get(key, {})
 
 
 ## Called every frame by the mech with its current weapon.

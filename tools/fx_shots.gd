@@ -4,9 +4,12 @@ extends Node
 ##       --fx=SCENE --fx-out=DIR [--fx-frames=10,14,18] [--fx-zoom=2.0]
 ## Scenes: drone (3 Bit Drones vs robots), rifle / gatling / pistols (the weapon firing at a line of
 ## robots), death (a Magma Crawler, a Scrap Hound and a Heavy Tank destroyed in front of the mech),
-## lava (Magma Crawler lava trail + burst pool), boss (a Warden landing: camera focus + card).
+## lava (Magma Crawler lava trail + burst pool), boss (a Warden landing: camera focus + card),
+## ronin_dash / warden_charge / striker (an attack wind-up warning lane, forced to start at once).
 ## Saves DIR/<scene>_<frame>.png at each listed physics frame (counted from the start of the scene),
 ## then quits. The mech is invulnerable and stands still at the landing circle aiming right.
+## --fx-sheet=NAME puts res://assets/sprites/mechs/NAME/ frames on the mech (a new mech's art before a chassis
+## points at it).
 
 var arena: Node
 var mech: Mech
@@ -14,6 +17,7 @@ var _frames: Array[int] = [20, 24, 28, 32, 40, 60]
 var _out := "user://fx"
 var _scene := "rifle"
 var _zoom := 0.0
+var _sheet := ""
 
 
 func _ready() -> void:
@@ -33,6 +37,8 @@ func _ready() -> void:
 				_frames.append(int(s))
 		elif a.begins_with("--fx-zoom="):
 			_zoom = float(a.trim_prefix("--fx-zoom="))
+		elif a.begins_with("--fx-sheet="):
+			_sheet = a.trim_prefix("--fx-sheet=")
 	DirAccess.make_dir_recursive_absolute(_out)
 	_run.call_deferred()
 
@@ -56,6 +62,9 @@ func _run() -> void:
 	await get_tree().physics_frame
 	arena = get_tree().current_scene
 	mech = get_tree().get_first_node_in_group("player") as Mech
+	if _sheet != "":
+		mech._frames_gun = load("res://assets/sprites/mechs/%s/frames.tres" % _sheet)
+		mech._frames_nogun = load("res://assets/sprites/mechs/%s/frames_nogun.tres" % _sheet)
 	var cam := mech.get_node("Camera2D")
 	if _zoom > 0.0:
 		cam.zoom_override = _zoom
@@ -93,6 +102,28 @@ func _run() -> void:
 			kill_at = 50
 		"boss":
 			arena.spawn_boss("warden_boss")
+		"ronin_dash", "warden_charge", "striker":
+			# An attack wind-up, forced to start right away (camera kept still for the shot).
+			Game.dynamic_camera = false
+			arena.select_weapon(&"dual_pistols", false)
+			var e: Enemy
+			if _scene == "striker":
+				e = _spawn("blade_striker", Vector2(300, -180))
+				e._state = BladeStriker.State.WINDUP
+				e._st = 0.42
+			else:
+				arena.spawn_boss("bosses/ronin_boss" if _scene == "ronin_dash" else "warden_boss")
+				e = arena._boss
+				e.global_position = mech.global_position + Vector2(380, -260)
+				e._state = &"dash_windup" if _scene == "ronin_dash" else &"charge_windup"
+				e._state_t = 0.7 if _scene == "ronin_dash" else 0.75
+				if _scene == "ronin_dash":
+					e._dashes = e.phase
+			e._spawn_t = 0.0
+			if _scene == "striker":
+				e._dash_dir = (mech.global_position - e.global_position).normalized()
+			else:
+				e._charge_dir = (mech.global_position - e.global_position).normalized()
 	var last: int = _frames.max()
 	for f in last + 1:
 		_hold()

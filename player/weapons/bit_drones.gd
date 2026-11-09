@@ -5,7 +5,7 @@ extends Node2D
 ## STORM BITS combo (Bit Drones + Arc Emitter): every drone hit also arcs lightning to another robot
 ## (Mech.arc_from).
 ## Look (drawn in code, top-down, +x = the way the drone faces): four rotors in thin guard rings on an X
-## frame, spinning blades with a motion-blur disc; a white armour shell with the Halo Forge's gold
+## frame, spinning blades with a motion-blur disc; a white armour shell with NIMBUS-07's gold
 ## chevron, a dark glass sensor dome and an energy-coloured camera lens at the nose between the two gun
 ## barrels; red / green navigation lights blinking on the rear arms (port / starboard); a soft shadow on
 ## the ground below, which bobs with the hover. Firing: muzzle flashes, the body kicks back, the lens flares.

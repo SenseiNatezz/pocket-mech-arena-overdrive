@@ -53,6 +53,9 @@ var _simple := true
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_wanted = _forced or Controls.touch_active
+	# Decide right away: a CanvasLayer starts visible, so waiting for _process flashed the buttons for
+	# one frame on desktop when an arena loaded.
+	visible = _wanted and not get_tree().paused
 	Controls.device_changed.connect(_on_device_changed)
 	# SIMPLE layout's smart HEAT button (its own action; the mech picks Nova or Cone).
 	if not InputMap.has_action(&"heat_smart"):

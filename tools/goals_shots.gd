@@ -4,10 +4,12 @@ extends Node
 ##          --goals-shot=C:/x/a.png --goals-mode=salvager | frenzy | pool | results
 ##   menu:  -- --temp-save --menu-page=7 (Hangar) | 6 (Loadout, add --difficulty=3 --threat=3) | 3 (Armory)
 ##          --attach=res://tools/goals_shots.gd --goals-shot=C:/x/m.png --goals-mode=contracts | loadout | armory
+##          | parts (add --parts-scroll=PX to scroll the PARTS tab down)
 ## salvager: a Gold Salvager next to the mech, just spotted. frenzy: a SCRAP FRENZY running while a few robots
 ## pop into x7 scrap chips, with a CONTRACT COMPLETE toast. results: ARENA CLEARED with a THREAT win, its
 ## bounty and the CONTRACTS block. contracts: Hangar > CONTRACTS mid-progress. loadout: the THREAT picker.
-## armory: weapon cards with THREAT badges. Saves the PNG, then quits.
+## armory: weapon cards with THREAT badges. parts: Hangar > PARTS with a few parts bought (Sprinter Legs and
+## the Twin Booster on, Gunner Arms owned), the Salvage Dish focused. Saves the PNG, then quits.
 
 const CHASER := preload("res://enemies/chaser.tscn")
 const SALVAGER := preload("res://enemies/gold_salvager.gd")
@@ -83,6 +85,22 @@ func _menu(menu: Node) -> void:
 		"armory":
 			var ar := menu.get("_armory") as ArmoryPage
 			ar.refresh()
+			await _wait(0.4)
+		"parts":
+			Game.contracts_done.append(&"survivor")
+			for id: StringName in [&"arms_gunner", &"legs_sprint", &"backpack_twin"]:
+				Parts.owned.append(id)
+			Parts.equipped[&"legs"] = &"legs_sprint"
+			Parts.equipped[&"backpack"] = &"backpack_twin"
+			var hp := menu.get("_hangar") as HangarPage
+			hp.refresh()
+			hp._set_tab(2)
+			await _wait(0.3)
+			(hp._parts._cards[&"head_dish"] as Control).grab_focus()
+			await _wait(0.4)
+			for a in OS.get_cmdline_user_args():
+				if a.begins_with("--parts-scroll="):
+					hp._scroll.scroll_vertical = int(a.trim_prefix("--parts-scroll="))
 			await _wait(0.4)
 	await _wait(0.3)
 

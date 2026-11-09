@@ -301,20 +301,48 @@ const HANGAR := {
 const HANGAR_MK_STEP := 0.02
 ## ...and costs this much more than the level before it (MK II = the last listed cost x1.15).
 const HANGAR_MK_COST := 1.15
-## Mech chassis (Hangar): multipliers on the standard frame. `ability` is the frame's signature trick.
+## Mech chassis (Hangar): multipliers on the standard frame. `ability` is the frame's signature trick
+## (player/mech.gd), `role` the frame class shown under the name, `sheet` the mech design whose sprite sheet
+## it flies (assets/sprites/mechs/<sheet>/, see chassis_frames; designs in Mech Designs\New 10 - DESIGNS.md).
 const CHASSIS: Array[Dictionary] = [
-	{"id": &"standard", "name": "VX-7 Standard", "cost": 0, "hp": 1.0, "speed": 1.0, "boost_cd": 1.0,
-		"boost_speed": 1.0, "taken": 1.0, "scale": 1.0, "color": Color(0.45, 0.75, 1.0),
-		"ability": "ADAPTIVE CORE: level-ups offer 4 upgrade cards instead of 3.", "desc": "The frame you know: solid armor, solid speed."},
-	{"id": &"striker", "name": "VX-5 Striker", "cost": 2500, "hp": 0.75, "speed": 1.18, "boost_cd": 0.6,
-		"boost_speed": 1.15, "taken": 1.0, "scale": 0.82, "color": Color(0.3, 1.0, 0.85),
+	{"id": &"standard", "name": "NIMBUS-07", "role": "Standard frame", "sheet": &"nimbus", "cost": 0, "hp": 1.0,
+		"speed": 1.0, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.0, "scale": 1.0, "color": Color(1.0, 0.84, 0.4),
+		"ability": "ADAPTIVE CORE: level-ups offer 4 upgrade cards instead of 3.", "desc": "The all-rounder: solid armor, solid speed."},
+	{"id": &"striker", "name": "ARROWHEAD", "role": "Striker frame", "sheet": &"arrowhead", "cost": 2500, "hp": 0.75,
+		"speed": 1.18, "boost_cd": 0.6, "boost_speed": 1.15, "taken": 1.0, "scale": 0.82, "color": Color(0.3, 1.0, 0.85),
 		"ability": "AFTERBURNER: boost slices through robots, and every kill recharges your boost faster.",
 		"desc": "Light and fast: -25% HP, +18% speed, boost recharges 40% faster."},
-	{"id": &"bulwark", "name": "VX-9 Bulwark", "cost": 3500, "hp": 1.5, "speed": 0.86, "boost_cd": 1.2,
-		"boost_speed": 0.9, "taken": 0.8, "scale": 1.25, "color": Color(1.0, 0.65, 0.3),
+	{"id": &"bulwark", "name": "RAMPART", "role": "Bulwark frame", "sheet": &"rampart", "cost": 3500, "hp": 1.5,
+		"speed": 0.86, "boost_cd": 1.2, "boost_speed": 0.9, "taken": 0.8, "scale": 1.25, "color": Color(1.0, 0.55, 0.25),
 		"ability": "SIEGE MODE: hold still to brace (+30% damage, -30% damage taken); boost rams robots aside.",
 		"desc": "Heavy armor: +50% HP, takes 20% less damage, but slower."},
+	{"id": &"artillery", "name": "TEMPEST", "role": "Artillery frame", "sheet": &"tempest", "cost": 4500,
+		"hp": 1.15, "speed": 0.92, "boost_cd": 1.1, "boost_speed": 0.95, "taken": 0.95, "scale": 1.12,
+		"color": Color(1.0, 0.9, 0.2),
+		"ability": "SALVO: the shoulder pods fire 4 heavy homing rockets at nearby robots every 4 seconds.",
+		"desc": "Walking artillery: +15% HP, takes 5% less damage, a little slower."},
+	{"id": &"duelist", "name": "ONIBI", "role": "Duelist frame", "sheet": &"onibi", "cost": 5000, "hp": 0.9,
+		"speed": 1.08, "boost_cd": 0.85, "boost_speed": 1.05, "taken": 1.0, "scale": 0.95, "color": Color(1.0, 0.34, 0.32),
+		"ability": "IAIDO: melee weapons hit 30% harder and build Overdrive 50% faster; melee kills heal 3 HP.",
+		"desc": "A blade master: guns deal 20% less damage, -10% HP, +8% speed."},
+	{"id": &"guardian", "name": "SOLSTICE", "role": "Guardian frame", "sheet": &"solstice", "cost": 5500, "hp": 1.1,
+		"speed": 0.95, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.0, "scale": 1.12, "color": Color(1.0, 0.8, 0.3),
+		"ability": "BARRIER: always carries a shield charge that recharges 25% faster; when it breaks it blasts robots back.",
+		"desc": "Defensive frame: +10% HP and +1 Defense Shield charge, a little slower."},
+	{"id": &"carrier", "name": "CORVID", "role": "Carrier frame", "sheet": &"corvid", "cost": 6000, "hp": 0.85,
+		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 0.98, "color": Color(0.72, 0.48, 1.0),
+		"ability": "FEATHER SWARM: launches with 2 Bit Drones (the upgrade adds a 3rd), and kills can fire homing feathers.",
+		"desc": "Lets its drones fight: -15% HP, takes 5% more damage."},
+	{"id": &"phantom", "name": "VESPER", "role": "Phantom frame", "sheet": &"vesper", "cost": 7000, "hp": 0.8,
+		"speed": 1.1, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9, "color": Color(1.0, 0.42, 0.85),
+		"ability": "PHASE BLINK: boost is an instant blink, and attacks within 1.5 s of a blink are critical (x2 damage).",
+		"desc": "Glass cannon: -20% HP, +10% speed, boost recharges 30% faster."},
 ]
+## Where a chassis's rendered sprite frames live (the Blender pipeline writes frames.tres + frames_nogun.tres).
+const MECH_SPRITES := "res://assets/sprites/mechs/%s/%s.tres"
+const NIMBUS_FRAMES := "res://assets/sprites/gundam_frames.tres"
+const NIMBUS_FRAMES_NOGUN := "res://assets/sprites/gundam_frames_nogun.tres"
+var _frames_cache := {}
 var scrap := 0
 var hangar := {}
 ## Settings: mission control's voiced radio callouts (autoload/radio.gd).
@@ -565,7 +593,7 @@ func earn_scrap(amount: float, part := &"kills") -> float:
 func scrap_mult() -> float:
 	return diff("scrap") * (1.0 + 0.1 * hangar_level(&"salvage_rights") + hangar_mk_bonus(&"salvage_rights")) \
 		* twist_value("scrap") * Contracts.scrap_mult() * Upgrades.salvage_protocol_mult() \
-		* (1.0 + POOL_SCRAP if pool_reached(0) else 1.0)
+		* (1.0 + POOL_SCRAP if pool_reached(0) else 1.0) * Parts.mult("scrap")
 
 
 ## Scrap paid as it is (Gold Salvager prizes, Threat bounties): no multipliers. Returns what was added (0
@@ -860,6 +888,32 @@ func chassis_info(id: StringName = &"") -> Dictionary:
 		if c["id"] == want:
 			return c
 	return CHASSIS[0]
+
+
+## Sprite frames a chassis flies: its own design's sheet once rendered (MECH_SPRITES), else NIMBUS-07's.
+## `gun` = the frames with the painted Beam Rifle (only shown with the blaster).
+func chassis_frames(id: StringName = &"", gun := true) -> SpriteFrames:
+	var sheet := String(chassis_info(id).get("sheet", &"nimbus"))
+	var key := sheet + ("" if gun else ":nogun")
+	if not _frames_cache.has(key):
+		var path := MECH_SPRITES % [sheet, "frames" if gun else "frames_nogun"]
+		if not ResourceLoader.exists(path):
+			path = NIMBUS_FRAMES if gun else NIMBUS_FRAMES_NOGUN
+		_frames_cache[key] = load(path)
+	return _frames_cache[key]
+
+
+## True while a chassis has no art of its own yet (it borrows NIMBUS-07's sheet, tinted its colour).
+func chassis_placeholder(id: StringName = &"") -> bool:
+	var sheet := String(chassis_info(id).get("sheet", &"nimbus"))
+	return sheet != "nimbus" and not ResourceLoader.exists(MECH_SPRITES % [sheet, "frames"])
+
+
+## Tint for a chassis drawn with NIMBUS-07's art (white when it has its own sheet).
+func chassis_tint(id: StringName = &"") -> Color:
+	if not chassis_placeholder(id):
+		return Color.WHITE
+	return Color.WHITE.lerp(chassis_info(id)["color"], 0.45)
 
 
 func owns_chassis(id: StringName) -> bool:
@@ -1339,6 +1393,7 @@ func save() -> void:
 	cfg.set_value("hangar", "chassis_owned", owned)
 	cfg.set_value("mech", "look", look)
 	cfg.set_value("mech", "weapon", String(range_restore if range_restore != &"" else weapon))
+	Parts.save_to(cfg)  # [parts]: owned + equipped mech parts (autoload/parts.gd)
 	cfg.save(save_path)
 
 
@@ -1430,6 +1485,8 @@ func _load() -> void:
 	new_unlocks.clear()
 	var w := StringName(cfg.get_value("mech", "weapon", "blaster"))
 	weapon = w if is_unlocked(w) else &"blaster"
+	# Mech parts (a save from before them gets the STOCK parts).
+	Parts.load_from(cfg)
 
 
 func _apply_volume() -> void:

@@ -12,3 +12,6 @@ art_src/halo_forge/raw/
 art_src/halo_forge/turntable_new/
 art_src/halo_forge/*.txt
 art_src/halo_forge/backup_old_gundam/turntable/
+
+# Multi-mech pipeline work folders (art_src/mechs/make_mech.py): per-mech .blend copies, raw renders
+art_src/mechs/*/

@@ -2,8 +2,9 @@ class_name HangarPage
 extends Control
 ## Main menu HANGAR (permanent progression, see Game.HANGAR / Game.CHASSIS): spend the SCRAP earned in
 ## runs on mech chassis and permanent upgrades. One scrolling column, so it works in landscape and
-## portrait alike, with mouse, touch and keyboard / gamepad focus. Two tabs under the title:
+## portrait alike, with mouse, touch and keyboard / gamepad focus. Three tabs under the title:
 ##   UPGRADES   the chassis + permanent upgrades below
+##   PARTS      build the mech from head / arms / legs / backpack parts (ui/parts_panel.gd, autoload/parts.gd)
 ##   CONTRACTS  the contract board (ui/contracts_panel.gd); the tab says how many are ready to claim
 ## A row with a `lock` (Salvager Beacon) stays greyed out, naming its contract, until that's done.
 ##   MECH CHASSIS  three frames as cards (big mech art at the frames' real relative sizes), SELECT / BUY;
@@ -31,6 +32,7 @@ var _flash := 0.0
 var _tab_btns: Array[Button] = []
 var _upgrade_nodes: Array[Control] = []
 var _contracts: ContractsPanel
+var _parts: PartsPanel
 var _tab := 0
 
 
@@ -60,16 +62,16 @@ func _ready() -> void:
 	head.add_child(title)
 	_scrap_label = _label("", 24, GOLD)
 	head.add_child(_scrap_label)
-	var sub := _label("Earn SCRAP in every run (more on harder difficulties). Spend it here on new mech frames and permanent upgrades. Maxed upgrades keep going as MK levels. Finished CONTRACTS pay extra scrap.",
+	var sub := _label("Earn SCRAP in every run (more on harder difficulties). Spend it here on new mech frames, PARTS and permanent upgrades. Maxed upgrades keep going as MK levels. Finished CONTRACTS pay extra scrap.",
 		15, Color(0.7, 0.85, 1.0, 0.85))
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_column.add_child(sub)
 
-	# UPGRADES / CONTRACTS tabs.
+	# UPGRADES / PARTS / CONTRACTS tabs (PARTS is tab 2 but sits in the middle).
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 10)
 	_column.add_child(tabs)
-	for i in 2:
+	for i in 3:
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(250, 42)
 		b.focus_mode = Control.FOCUS_ALL
@@ -79,6 +81,7 @@ func _ready() -> void:
 		b.mouse_entered.connect(b.grab_focus)
 		tabs.add_child(b)
 		_tab_btns.append(b)
+	tabs.move_child(_tab_btns[2], 1)
 
 	var chassis_head := _heading("MECH CHASSIS")
 	_column.add_child(chassis_head)
@@ -108,6 +111,10 @@ func _ready() -> void:
 	_contracts.visible = false
 	_contracts.claimed.connect(func(_total: int) -> void: refresh())
 	_column.add_child(_contracts)
+	_parts = PartsPanel.new()
+	_parts.visible = false
+	_parts.changed.connect(refresh)
+	_column.add_child(_parts)
 
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 6)
@@ -132,8 +139,9 @@ func _relayout() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	var w := minf(vp.x - 40.0, 1100.0)
 	_column.custom_minimum_size = Vector2(w, 0)
-	_chassis_grid.columns = 3
-	var cw := (w - 24.0) / 3.0
+	# 8 frames: 4 across (two rows) in landscape, 2 across in portrait / narrow windows.
+	_chassis_grid.columns = 2 if vp.x < 900.0 else 4
+	var cw := (w - 12.0 * (_chassis_grid.columns - 1)) / float(_chassis_grid.columns)
 	var ch := 0.0
 	for card: ChassisCard in _chassis_btns.values():
 		ch = maxf(ch, card.needed_height(cw))
@@ -144,6 +152,9 @@ func _relayout() -> void:
 	for row: UpgradeRow in _upgrade_rows.values():
 		row.custom_minimum_size = Vector2(uw, 74)
 	_contracts.set_layout(w, _upgrade_grid.columns)
+	_parts.set_layout(w, 2 if _upgrade_grid.columns == 1 else 4)
+	for b in _tab_btns:
+		b.custom_minimum_size = Vector2(minf(250.0, (w - 20.0) / 3.0), 42)
 	# (the centring container spans the scroll area's width)
 	_scroll.get_child(0).custom_minimum_size = Vector2(vp.x, 0)
 
@@ -155,11 +166,13 @@ func refresh() -> void:
 	for id in _upgrade_rows:
 		_upgrade_rows[id].refresh()
 	_contracts.refresh()
+	_parts.refresh()
 	# Tabs: the open one lit cyan; CONTRACTS turns gold while contracts are waiting to be claimed.
 	var ready := Contracts.ready_ids().size()
 	_tab_btns[0].text = "UPGRADES"
 	_tab_btns[1].text = "CONTRACTS  (%d READY)" % ready if ready > 0 else "CONTRACTS  %d / %d" % [Contracts.done_count(),
 		Contracts.LIST.size()]
+	_tab_btns[2].text = "PARTS  %d / %d" % [Parts.owned_count(), Parts.LIST.size()]
 	for i in _tab_btns.size():
 		var b := _tab_btns[i]
 		var on := i == _tab
@@ -172,16 +185,19 @@ func refresh() -> void:
 		b.add_theme_color_override("font_color", GOLD if hot and not on else (Color.WHITE if on else Color(0.75, 0.85, 1.0)))
 
 
-## Focus the selected chassis (menu opens the page) - or, on the CONTRACTS tab, the first contract to claim.
+## Focus the selected chassis (menu opens the page) - or, on the CONTRACTS tab, the first contract to claim;
+## on PARTS, the head that's on.
 func focus_default() -> void:
 	if _tab == 1:
 		_contracts.first_focus().grab_focus()
+	elif _tab == 2:
+		_parts.first_focus().grab_focus()
 	else:
 		(_chassis_btns.get(Game.chassis, _back) as Control).grab_focus()
 	_scroll.scroll_vertical = 0
 
 
-## 0 = UPGRADES (chassis + permanent upgrades), 1 = CONTRACTS.
+## 0 = UPGRADES (chassis + permanent upgrades), 1 = CONTRACTS, 2 = PARTS (drawn between the two).
 func _set_tab(i: int) -> void:
 	if i != _tab:
 		Sfx.play(&"select", -10.0, 0.0)
@@ -189,6 +205,7 @@ func _set_tab(i: int) -> void:
 	for n in _upgrade_nodes:
 		n.visible = i == 0
 	_contracts.visible = i == 1
+	_parts.visible = i == 2
 	_scroll.scroll_vertical = 0
 	refresh()
 
@@ -256,7 +273,9 @@ class ChassisCard:
 		info = c
 		focus_mode = Control.FOCUS_ALL
 		text = ""
-		_tex = HangarPage.MECH_FRAMES.get_frame_texture(&"idle", 0)
+		# The design's rendered portrait when the mech pipeline made one, else its top-down idle frame.
+		var portrait := Game.MECH_SPRITES.get_base_dir() % String(c.get("sheet", &"nimbus")) + "/portrait.png"
+		_tex = load(portrait) if ResourceLoader.exists(portrait) else Game.chassis_frames(c["id"]).get_frame_texture(&"idle", 0)
 		_used = Rect2(Vector2.ZERO, _tex.get_size())
 		var img := _tex.get_image()
 		if img:
@@ -291,10 +310,14 @@ class ChassisCard:
 			draw_circle(c, pad * (1.0 - i * 0.2), Color(col, 0.05 + 0.035 * i))
 		draw_arc(c, pad * 0.98, 0.0, TAU, 48, Color(col, 0.35 if owned else 0.15), 2.0, true)
 		var art := Rect2(c - _used.size * s / 2.0, _used.size * s)
-		draw_texture_rect_region(_tex, art.grow(0), _used, Color(1.35, 1.35, 1.4) if owned else Color(0.5, 0.53, 0.6))
+		var tint := Game.chassis_tint(info["id"])
+		draw_texture_rect_region(_tex, art.grow(0), _used, Color(1.35, 1.35, 1.4) * tint if owned else Color(0.5, 0.53, 0.6))
 		var y := 12.0 + PREVIEW_H + 22.0
 		draw_string(font, Vector2(10, y), String(info["name"]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, w - 20, 18, col.lightened(0.2))
-		y += 22.0
+		y += 17.0
+		draw_string(font, Vector2(10, y), String(info.get("role", "")).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, w - 20, 11,
+			Color(col, 0.75))
+		y += 21.0
 		var stats := "HP %d%%   SPEED %d%%   BOOST %s" % [roundi(float(info["hp"]) * 100.0), roundi(float(info["speed"]) * 100.0),
 			"FAST" if float(info["boost_cd"]) < 1.0 else ("SLOW" if float(info["boost_cd"]) > 1.0 else "STD")]
 		var fs := 12
@@ -318,7 +341,7 @@ class ChassisCard:
 		var font := get_theme_default_font()
 		var lines := _wrap(font, String(info["ability"]), w - 24.0, 13).size() * 17.0 \
 			+ _wrap(font, String(info["desc"]), w - 24.0, 12).size() * 16.0
-		return 12.0 + PREVIEW_H + 22.0 + 30.0 + lines + 56.0
+		return 12.0 + PREVIEW_H + 22.0 + 46.0 + lines + 56.0
 
 	static func _max_scale() -> float:
 		var m := 1.0

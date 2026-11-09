@@ -10,3 +10,4 @@ acceleration = 900.0
 contact_damage = 22.0
 hit_radius = 90.0
 body_radius = 51.0
+keep_out = 110.0

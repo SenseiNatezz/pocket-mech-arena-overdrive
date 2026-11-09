@@ -6,7 +6,9 @@ extends Node
 ##   - It's then CLAIMED in the Hangar for its row's scrap reward (ROWS). Claiming all 8 of a row switches on
 ##     that row's permanent bonus: +5% scrap / +5% damage / +1 reroll a run / +5% XP / +10% scrap.
 ##   - Two contracts unlock things (`unlock`): "Gold Rush" opens the Hangar's Salvager Beacon row
-##     (Game.HANGAR "lock"), "Jackpot" puts the SALVAGE PROTOCOL card into the level-up pool.
+##     (Game.HANGAR "lock"), "Jackpot" puts the SALVAGE PROTOCOL card into the level-up pool. Three more open
+##     mech parts (Parts.LIST "contract"): Campaigner the Hover Skirt, Survivor the Twin Booster, Tank Buster
+##     the Missile Rack.
 ## Counters (kills, bosses, Gold Salvagers...) only move in real runs (Game.scrap_enabled). The others read
 ## the save (waves beaten, Endless best, weapons, mastery, Hangar, Threat), so an existing save finds its
 ## finished contracts ready to claim. Progress lives in Game (contract_stats / contracts_done /
@@ -40,8 +42,10 @@ const LIST: Array[Dictionary] = [
 	# PILOT
 	{"id": &"sharpshooter", "row": 1, "title": "Sharpshooter", "text": "Destroy 300 robots with the Beam Rifle", "stat": "w:blaster", "goal": 300},
 	{"id": &"blademaster", "row": 1, "title": "Blademaster", "text": "Destroy 300 robots with melee weapons", "stat": "kills_melee", "goal": 300},
-	{"id": &"survivor", "row": 1, "title": "Survivor", "text": "Reach Endless wave 15", "stat": "endless_best", "goal": 15},
-	{"id": &"campaigner", "row": 1, "title": "Campaigner", "text": "Clear 3 different arenas", "stat": "arenas", "goal": 3},
+	{"id": &"survivor", "row": 1, "title": "Survivor", "text": "Reach Endless wave 15", "stat": "endless_best", "goal": 15,
+		"unlock": "Part: Twin Booster"},
+	{"id": &"campaigner", "row": 1, "title": "Campaigner", "text": "Clear 3 different arenas", "stat": "arenas", "goal": 3,
+		"unlock": "Part: Hover Skirt"},
 	{"id": &"hard_target", "row": 1, "title": "Hard Target", "text": "Clear an arena on Hard or Extreme", "stat": "diff_clears:2", "goal": 1},
 	{"id": &"specialist", "row": 1, "title": "Specialist", "text": "Reach mastery LV 5 with a weapon", "stat": "mastery_best", "goal": 5},
 	{"id": &"elite_hunter", "row": 1, "title": "Elite Hunter", "text": "Destroy 40 gold elites", "stat": "kills_elite", "goal": 40},
@@ -49,9 +53,10 @@ const LIST: Array[Dictionary] = [
 		"unlock": "Level-up card: Salvage Protocol"},
 	# VETERAN
 	{"id": &"lancer_down", "row": 2, "title": "Lancer Down", "text": "Destroy 100 Lancers", "stat": "k:Lancer", "goal": 100},
-	{"id": &"tank_buster", "row": 2, "title": "Tank Buster", "text": "Destroy 60 Heavy Tanks", "stat": "k:HeavyTank", "goal": 60},
-	{"id": &"hit_and_run", "row": 2, "title": "Hit and Run", "text": "Clear an arena with the VX-5 Striker", "stat": "clear_c:striker", "goal": 1},
-	{"id": &"iron_wall", "row": 2, "title": "Iron Wall", "text": "Clear an arena with the VX-9 Bulwark", "stat": "clear_c:bulwark", "goal": 1},
+	{"id": &"tank_buster", "row": 2, "title": "Tank Buster", "text": "Destroy 60 Heavy Tanks", "stat": "k:HeavyTank", "goal": 60,
+		"unlock": "Part: Missile Rack"},
+	{"id": &"hit_and_run", "row": 2, "title": "Hit and Run", "text": "Clear an arena with the ARROWHEAD", "stat": "clear_c:striker", "goal": 1},
+	{"id": &"iron_wall", "row": 2, "title": "Iron Wall", "text": "Clear an arena with the RAMPART", "stat": "clear_c:bulwark", "goal": 1},
 	{"id": &"endurance", "row": 2, "title": "Endurance", "text": "Reach Endless wave 25", "stat": "endless_best", "goal": 25},
 	{"id": &"twist_rider", "row": 2, "title": "Twist Rider", "text": "Beat 15 waves during Endless twists", "stat": "twist_waves", "goal": 15},
 	{"id": &"collector", "row": 2, "title": "Collector", "text": "Unlock 9 weapons", "stat": "unlocked", "goal": 9},

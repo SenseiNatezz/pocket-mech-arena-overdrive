@@ -7,7 +7,7 @@ extends Control
 ## Choices stay pending until APPLY (saved and used in battle); BACK discards them.
 
 const BG := preload("res://assets/hq/customize_bg.jpg")
-## 360-degree turntable: 120 frames rendered from the Halo Forge's 3D model (assets/hq/turntable/
+## 360-degree turntable: 120 frames rendered from NIMBUS-07's 3D model (assets/hq/turntable/
 ## frame_NNN.png, art_src/halo_forge/tools/render_turntable.py: brighter showcase shading, cropped to the
 ## mech). Frame 0 = front, then turning clockwise seen from above; neighbouring frames blend (3 degrees
 ## apart, so no ghosting).

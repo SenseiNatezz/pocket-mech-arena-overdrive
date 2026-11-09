@@ -26,6 +26,10 @@ const MAP_SHARPEN := preload("res://environment/map_sharpen.gdshader")
 ## spores (Alien Outpost: glowing teal motes), wind (Skyway Junction: fast streaks), dust (Ruined Plaza).
 ## Every scenic arena also gets slow cloud shadows drifting across (see CloudShadows).
 @export_enum("none", "snow", "pollen", "embers", "spores", "wind", "dust") var weather := "none"
+## Very bright floor (Frozen Outpost ice): the painting is dimmed a touch (PALE_FLOOR_SHADE) so white shots
+## and blasts still pop, and scorch marks turn to grey soot instead of black ink (BlastFx.pale_floor).
+@export var pale_floor := false
+const PALE_FLOOR_SHADE := Color(0.84, 0.87, 0.92)
 @export var intro_texture: Texture2D
 @export var intro_subtitle := ""
 
@@ -72,6 +76,7 @@ const ESCORT_KINDS: Array[String] = ["striker", "shooter", "tank"]
 
 func _ready() -> void:
 	add_to_group("arena")
+	BlastFx.pale_floor = pale_floor
 	if Game.is_endless():
 		arena_name = "Endless - " + arena_name
 		intro_subtitle = "Endless mode  //  survive as long as you can  -  a boss every %d waves" % Game.ENDLESS_BOSS_EVERY
@@ -94,7 +99,24 @@ func _ready() -> void:
 		cam.limit_bottom = int(size.y)
 		cam.reset_smoothing()
 		_add_weather(cam)
-	objective_changed.emit.call_deferred("Hold the plaza")
+	objective_changed.emit.call_deferred(_opening_objective())
+
+
+## The line under the HUD before wave 1: each map gets its own (it used to say "Hold the plaza" everywhere).
+const OPENING_OBJECTIVES := {
+	"Frozen Outpost": "Secure the outpost",
+	"Jungle Megafactory": "Clear the reactor yard",
+	"Alien Outpost": "Break through the colony defenders",
+	"Skyway Junction": "Hold the skyway",
+	"Ruined Plaza": "Take back the plaza",
+	"Volcanic Forge": "Shut down the foundry",
+}
+
+
+func _opening_objective() -> String:
+	if Game.is_endless():
+		return "Survive the waves"
+	return String(OPENING_OBJECTIVES.get(arena_name, "Clear the area"))
 
 
 func map_to_world(p: Vector2) -> Vector2:
@@ -147,6 +169,8 @@ func _build_art() -> void:
 	art.centered = false
 	art.scale = Vector2(_k, _k)
 	art.z_index = -10
+	if pale_floor:
+		art.self_modulate = PALE_FLOOR_SHADE
 	add_child(art)
 	move_child(art, 0)
 	# Occluders: the same painting, cut to the tall scenery's outline, drawn above characters.
@@ -160,6 +184,8 @@ func _build_art() -> void:
 		o.polygon = pts
 		o.uv = poly
 		o.z_index = 6
+		if pale_floor:
+			o.self_modulate = PALE_FLOOR_SHADE
 		add_child(o)
 		_occluders.append(o)
 		_occluder_world.append(pts)
@@ -346,25 +372,25 @@ func _add_weather(cam: Camera2D) -> void:
 		ramp.set_color(1, Color(1.0, 0.3, 0.05, 0.0))
 	elif weather == "spores":
 		# Glowing alien spores bobbing up and drifting.
-		p.amount = 70
+		p.amount = 150
 		p.direction = Vector2(0.3, -1)
 		p.spread = 60.0
 		p.initial_velocity_min = 6.0
 		p.initial_velocity_max = 24.0
 		p.gravity = Vector2(3, -3)
 		p.texture = preload("res://assets/fx/glow.tres")
-		p.scale_amount_min = 0.12
-		p.scale_amount_max = 0.3
+		p.scale_amount_min = 0.18
+		p.scale_amount_max = 0.42
 		p.lifetime = 7.0
 		p.preprocess = 7.0
 		var add := CanvasItemMaterial.new()
 		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 		p.material = add
 		ramp.offsets = PackedFloat32Array([0.0, 0.2, 1.0])
-		ramp.colors = PackedColorArray([Color(0.4, 1.0, 0.85, 0.0), Color(0.45, 1.0, 0.9, 0.85), Color(0.3, 0.7, 1.0, 0.0)])
+		ramp.colors = PackedColorArray([Color(0.4, 1.0, 0.85, 0.0), Color(0.5, 1.0, 0.92, 1.0), Color(0.3, 0.7, 1.0, 0.0)])
 	elif weather == "wind":
 		# High-altitude wind: thin fast streaks.
-		p.amount = 45
+		p.amount = 95
 		p.direction = Vector2(1, 0.12)
 		p.spread = 4.0
 		p.initial_velocity_min = 520.0
@@ -372,40 +398,64 @@ func _add_weather(cam: Camera2D) -> void:
 		p.gravity = Vector2.ZERO
 		p.lifetime = 1.6
 		p.preprocess = 1.6
-		p.scale_amount_min = 1.0
-		p.scale_amount_max = 1.6
+		p.scale_amount_min = 1.3
+		p.scale_amount_max = 2.2
 		p.particle_flag_align_y = false
-		var streak := Image.create(48, 2, false, Image.FORMAT_RGBA8)
-		for x in 48:
-			streak.set_pixel(x, 0, Color(1, 1, 1, float(x) / 48.0 * 0.8))
-			streak.set_pixel(x, 1, Color(1, 1, 1, float(x) / 48.0 * 0.5))
+		var streak := Image.create(72, 3, false, Image.FORMAT_RGBA8)
+		for x in 72:
+			streak.set_pixel(x, 0, Color(1, 1, 1, float(x) / 72.0 * 0.6))
+			streak.set_pixel(x, 1, Color(1, 1, 1, float(x) / 72.0))
+			streak.set_pixel(x, 2, Color(1, 1, 1, float(x) / 72.0 * 0.6))
 		p.texture = ImageTexture.create_from_image(streak)
 		p.angle_min = rad_to_deg(atan2(0.12, 1.0))
 		p.angle_max = p.angle_min
 		ramp.offsets = PackedFloat32Array([0.0, 0.3, 1.0])
-		ramp.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(0.92, 0.96, 1.0, 0.35), Color(1, 1, 1, 0.0)])
+		ramp.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(0.92, 0.96, 1.0, 0.7), Color(1, 1, 1, 0.0)])
 	elif weather == "dust":
-		# Dust and ash drifting over the ruins.
-		p.amount = 110
-		p.direction = Vector2(1, 0.25)
-		p.spread = 25.0
-		p.initial_velocity_min = 25.0
-		p.initial_velocity_max = 70.0
-		p.gravity = Vector2(4, 2)
+		# Dust blowing over the ruins: big pale haze puffs rolling across, plus fine bright specks (tan
+		# motes alone vanished against the tan floor).
+		p.amount = 34
+		p.direction = Vector2(1, 0.2)
+		p.spread = 15.0
+		p.initial_velocity_min = 60.0
+		p.initial_velocity_max = 110.0
+		p.gravity = Vector2.ZERO
+		p.lifetime = 7.0
+		p.preprocess = 7.0
 		p.texture = preload("res://assets/fx/glow.tres")
-		p.scale_amount_min = 0.06
-		p.scale_amount_max = 0.16
-		ramp.offsets = PackedFloat32Array([0.0, 0.25, 1.0])
-		ramp.colors = PackedColorArray([Color(0.85, 0.78, 0.65, 0.0), Color(0.85, 0.78, 0.65, 0.55), Color(0.7, 0.65, 0.55, 0.0)])
+		p.scale_amount_min = 1.6
+		p.scale_amount_max = 3.2
+		ramp.offsets = PackedFloat32Array([0.0, 0.35, 1.0])
+		ramp.colors = PackedColorArray([Color(1.0, 0.93, 0.8, 0.0), Color(1.0, 0.94, 0.82, 0.22), Color(1.0, 0.92, 0.78, 0.0)])
+		var specks := CPUParticles2D.new()
+		specks.z_index = 20
+		specks.amount = 200
+		specks.lifetime = 4.0
+		specks.preprocess = 4.0
+		specks.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+		specks.emission_rect_extents = Vector2(900, 520)
+		specks.local_coords = false
+		specks.direction = Vector2(1, 0.25)
+		specks.spread = 25.0
+		specks.initial_velocity_min = 70.0
+		specks.initial_velocity_max = 150.0
+		specks.scale_amount_min = 2.5
+		specks.scale_amount_max = 4.5
+		var sr := Gradient.new()
+		sr.offsets = PackedFloat32Array([0.0, 0.2, 1.0])
+		sr.colors = PackedColorArray([Color(1.0, 0.97, 0.9, 0.0), Color(1.0, 0.97, 0.9, 0.85), Color(1.0, 0.93, 0.82, 0.0)])
+		specks.color_ramp = sr
+		cam.add_child(specks)
 	else:
 		p.direction = Vector2(1, -0.3)
 		p.spread = 40.0
 		p.initial_velocity_min = 8.0
 		p.initial_velocity_max = 30.0
 		p.gravity = Vector2(0, -4)
-		p.scale_amount_min = 1.5
-		p.scale_amount_max = 3.5
-		ramp.set_color(0, Color(1.0, 0.95, 0.6, 0.8))
+		p.amount = 150
+		p.scale_amount_min = 2.0
+		p.scale_amount_max = 4.5
+		ramp.set_color(0, Color(1.0, 0.95, 0.6, 0.95))
 		ramp.set_color(1, Color(1.0, 0.85, 0.4, 0.0))
 	p.color_ramp = ramp
 	cam.add_child(p)
@@ -728,7 +778,7 @@ class CloudShadows:
 		z_index = 15
 		top_level = true
 		for i in 4:
-			_clouds.append([Vector2(randf_range(-1400, 1400), randf_range(-900, 900)), randf_range(380.0, 620.0), randf_range(0.1, 0.16)])
+			_clouds.append([Vector2(randf_range(-1400, 1400), randf_range(-900, 900)), randf_range(380.0, 620.0), randf_range(0.18, 0.26)])
 
 	func _process(delta: float) -> void:
 		var cam := get_parent() as Camera2D
