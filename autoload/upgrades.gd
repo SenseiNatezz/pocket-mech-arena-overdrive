@@ -79,11 +79,11 @@ const COMBOS := {
 		"desc": "Orbit blades grow bigger, spin 60% faster and hit 50% harder."},
 	&"overclock": {"name": "Overclock", "needs": [&"rapid", &"heat_sink"],
 		"desc": "The hotter your mech runs, the faster it fires: up to +40% at full heat."},
-	&"railgun": {"name": "Railgun", "needs": [&"pierce", &"power"], "only": [&"blaster", &"gatling"],
+	&"railgun": {"name": "Railgun", "needs": [&"pierce", &"power"], "only": [&"blaster", &"gatling", &"dual_pistols"],
 		"desc": "Every 6th shot is a railgun slug: 4x damage, pierces everything."},
 	&"nano_repair": {"name": "Nano Repair", "needs": [&"salvage", &"armor"],
 		"desc": "Regenerate 2 HP a second after 3 s without taking damage."},
-	&"seeker_swarm": {"name": "Seeker Swarm", "needs": [&"multishot", &"target_lock"], "only": [&"blaster", &"gatling"],
+	&"seeker_swarm": {"name": "Seeker Swarm", "needs": [&"multishot", &"target_lock"], "only": [&"blaster", &"gatling", &"dual_pistols"],
 		"desc": "Your side shots become seekers that chase down robots."},
 	&"storm_bits": {"name": "Storm Bits", "needs": [&"drones", &"chain"],
 		"desc": "Bit Drone shots always arc lightning to another robot nearby."},
@@ -127,7 +127,7 @@ func reset() -> void:
 	bonus_picks = 0
 	choosing = false
 	stacks.clear()
-	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls") + Contracts.bonus_rerolls()
+	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls") + Contracts.bonus_rerolls() + (1 if Game.pool_reached(1) else 0)
 	banishes = BASE_BANISHES + Game.hangar_level(&"banishes")
 	banished.clear()
 	save_checkpoint()
@@ -203,7 +203,8 @@ func add_xp(amount: float) -> void:
 		xp = 0.0
 		return
 	xp += amount * xp_mult() * Game.diff("xp") * (1.0 + 0.06 * Game.hangar_level(&"analytics")
-		+ Game.hangar_mk_bonus(&"analytics")) * Game.twist_value("xp") * Contracts.xp_mult()
+		+ Game.hangar_mk_bonus(&"analytics")) * Game.twist_value("xp") * Contracts.xp_mult() \
+		* (1.0 + Game.POOL_XP if Game.pool_reached(2) else 1.0)
 	var gained := 0
 	while xp >= xp_to_next():
 		xp -= xp_to_next()

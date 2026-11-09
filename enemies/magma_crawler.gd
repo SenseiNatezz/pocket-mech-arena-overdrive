@@ -32,7 +32,7 @@ func die() -> void:
 	var p := global_position
 	super.die()
 	Combat.explode(p, 90.0, 12.0 * damage_mult, self, "player", LavaPool.ORANGE, 220.0)
-	LavaPool.spawn(p, 78.0, 5.0, trail_dps * 1.4, null)
+	LavaPool.spawn(p, 66.0, 5.0, trail_dps * 1.4, null)
 
 
 func _think(delta: float) -> void:

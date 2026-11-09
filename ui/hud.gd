@@ -8,7 +8,8 @@ extends CanvasLayer
 ##              gold SCRAP ticker (real runs), which rolls up as scrap chips land, with a "+N" pop per gain
 ##              (see _update_scrap), and a SCRAP FRENZY timer beside it while one runs (Gold Salvager prize)
 ##   arrows     off-screen robots (a big gold one for a GOLD SALVAGER, see _draw_enemy_arrows)
-##   toasts     NEW WEAPON UNLOCKED, MASTERY UP and CONTRACT COMPLETE (queued), stacked on the right side
+##   toasts     NEW WEAPON UNLOCKED, MASTERY UP, ARMORY MASTERY POOL checkpoints and CONTRACT COMPLETE
+##              (queued), stacked on the right side
 ##   banners    waves, bosses, GOLD SALVAGER spotted / its prize / got away, THREAT bounty / tier unlocked
 ##   panels     pause (resume / restart / screen shake / main menu + upgrades owned), game over,
 ##              victory (both count the run's SCRAP up with a breakdown, list the THREAT result and a
@@ -75,6 +76,9 @@ var _contract_toast: PanelContainer
 var _contract_tw: Tween
 ## Contracts finished while a toast is up wait their turn (several can finish on the same kill).
 var _contract_queue: Array[StringName] = []
+## ARMORY MASTERY POOL checkpoint toast (Game.pool_checkpoint).
+var _pool_toast: PanelContainer
+var _pool_tw: Tween
 var _over_goals: VBoxContainer
 var _win_goals: VBoxContainer
 ## THREAT TIERS: what this run won (Game.threat_won), for the results text.
@@ -160,6 +164,9 @@ func _ready() -> void:
 	_contract_toast = _make_contract_toast()
 	root.add_child(_contract_toast)
 	Contracts.contract_done.connect(_on_contract_done)
+	_pool_toast = _make_pool_toast()
+	root.add_child(_pool_toast)
+	Game.pool_checkpoint.connect(_on_pool_checkpoint)
 	Game.salvager_spotted.connect(_on_salvager_spotted)
 	Game.salvager_caught.connect(_on_salvager_caught)
 	Game.salvager_escaped.connect(_on_salvager_escaped)
@@ -428,6 +435,11 @@ func _show_boss_card(b: Node) -> void:
 	var accent: Color = b.get("accent") if b.get("accent") is Color else Color(1.0, 0.3, 0.25)
 	var title := boss_title(full)
 	_card_name = full
+	# Boss arrival: the camera glides over to it and back, a low brass swell, a heavy rumble.
+	if b is Node2D and b.is_inside_tree():
+		Combat.camera_focus((b as Node2D).global_position, 2.2)
+	Sfx.play(&"boss_braam", -5.0, 0.0)
+	Combat.rumble(0.4, 0.7, 0.5)
 	# The arena's own "<BOSS NAME>" banner would only repeat the card.
 	if _banner.text == full:
 		if _banner_tw:
@@ -555,8 +567,7 @@ func _on_weapon_unlocked(names: Array[String]) -> void:
 		_toast_tw.kill()
 	# (`position` is in parent coordinates, so slide in to 450 px left of the right edge, under the run
 	# info + scrap ticker; in portrait it sits below the status card + boss bar)
-	var x := (_unlock_toast.get_parent() as Control).size.x - 450.0
-	_unlock_toast.position = Vector2(x + 40.0, _toast_stack_y(_unlock_toast))
+	var x := _toast_start(_unlock_toast)
 	_toast_tw = create_tween()
 	_toast_tw.set_parallel()
 	_toast_tw.tween_property(_unlock_toast, "modulate:a", 1.0, 0.2)
@@ -644,9 +655,7 @@ func _on_mastery_up(id: StringName, level: int) -> void:
 	Sfx.play(&"levelup", -9.0, 0.0)
 	if _mastery_tw:
 		_mastery_tw.kill()
-	t.reset_size()
-	var x := (t.get_parent() as Control).size.x - 450.0
-	t.position = Vector2(x + 40.0, _toast_stack_y(t))
+	var x := _toast_start(t)
 	_mastery_tw = create_tween()
 	_mastery_tw.set_parallel()
 	_mastery_tw.tween_property(t, "modulate:a", 1.0, 0.2)
@@ -654,13 +663,82 @@ func _on_mastery_up(id: StringName, level: int) -> void:
 	_mastery_tw.chain().tween_property(t, "modulate:a", 0.0, 0.6).set_delay(3.2)
 
 
-## Where the next toast in the right-hand column goes: under whichever toasts are showing.
+## Where the next toast in the right-hand column goes: under whichever toasts are showing. (A toast counts
+## from the frame it's shown - see _toast_start - so two shown at once stack too.)
 func _toast_stack_y(skip: Control) -> float:
 	var y := _toast_y()
-	for t: Control in [_unlock_toast, _mastery_toast, _contract_toast]:
+	for t: Control in [_unlock_toast, _mastery_toast, _contract_toast, _pool_toast]:
 		if t != skip and t.modulate.a > 0.05:
 			y = maxf(y, t.position.y + t.size.y + 10.0)
 	return y
+
+
+## Puts a toast at the bottom of the column, just off to the right, already counting as showing.
+func _toast_start(t: Control) -> float:
+	t.reset_size()
+	var x := (t.get_parent() as Control).size.x - 450.0
+	t.position = Vector2(x + 40.0, _toast_stack_y(t))
+	t.modulate.a = maxf(t.modulate.a, 0.06)
+	return x
+
+
+## MASTERY POOL toast (Game.pool_checkpoint): a gold checkpoint diamond, "MASTERY POOL 25%" and the perk it
+## switched on for good.
+func _make_pool_toast() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.08, 0.06, 0.02, 0.92)
+	sb.border_color = SCRAP_GOLD
+	sb.set_border_width_all(2)
+	sb.border_width_left = 5
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(10)
+	p.add_theme_stylebox_override("panel", sb)
+	p.custom_minimum_size = Vector2(430, 0)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.modulate.a = 0.0
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	p.add_child(h)
+	var badge := Control.new()
+	badge.custom_minimum_size = Vector2(40, 52)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.draw.connect(func() -> void:
+		var c := badge.size / 2.0
+		badge.draw_circle(c, 20.0, Color(SCRAP_GOLD, 0.15))
+		badge.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -16), c + Vector2(16, 0), c + Vector2(0, 16),
+			c + Vector2(-16, 0)]), SCRAP_GOLD.lightened(0.3))
+		badge.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -8), c + Vector2(8, 0), c + Vector2(0, 8),
+			c + Vector2(-8, 0)]), Color(0.42, 0.27, 0.05)))
+	h.add_child(badge)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 2)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	for n: Array in [["Head", 14, SCRAP_GOLD], ["Name", 21, Color.WHITE], ["Perk", 13, Color(1.0, 0.9, 0.6)]]:
+		var l := _label(n[1], n[2])
+		l.name = n[0]
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		v.add_child(l)
+	return p
+
+
+func _on_pool_checkpoint(i: int) -> void:
+	var cp: Dictionary = Game.POOL_CHECKPOINTS[i]
+	var t := _pool_toast
+	(t.find_child("Head", true, false) as Label).text = "ARMORY MASTERY POOL  %d%%" % roundi(float(cp["at"]) * 100.0)
+	(t.find_child("Name", true, false) as Label).text = "CHECKPOINT REACHED"
+	(t.find_child("Perk", true, false) as Label).text = "%s from now on" % cp["perk"]
+	Sfx.play(&"levelup", -7.0, 0.0)
+	if _pool_tw:
+		_pool_tw.kill()
+	var x := _toast_start(t)
+	_pool_tw = create_tween()
+	_pool_tw.set_parallel()
+	_pool_tw.tween_property(t, "modulate:a", 1.0, 0.2)
+	_pool_tw.tween_property(t, "position:x", x, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_pool_tw.chain().tween_property(t, "modulate:a", 0.0, 0.6).set_delay(3.8)
 
 
 ## CONTRACT COMPLETE toast (Contracts.contract_done during a run): the contract, its reward (claimed in the
@@ -732,9 +810,7 @@ func _show_contract_toast() -> void:
 	Sfx.play(&"coin", -6.0, 0.0)
 	if _contract_tw:
 		_contract_tw.kill()
-	t.reset_size()
-	var x := (t.get_parent() as Control).size.x - 450.0
-	t.position = Vector2(x + 40.0, _toast_stack_y(t))
+	var x := _toast_start(t)
 	_contract_tw = create_tween()
 	_contract_tw.set_parallel()
 	_contract_tw.tween_property(t, "modulate:a", 1.0, 0.2)
@@ -746,12 +822,15 @@ func _show_contract_toast() -> void:
 		_show_contract_toast())
 
 
-## Results screens list the run's contracts themselves: drop the toast and anything still queued.
+## Results screens list the run's contracts (and the Mastery Pool) themselves: drop those toasts and
+## anything still queued.
 func _hide_contract_toast() -> void:
 	_contract_queue.clear()
-	if _contract_tw:
-		_contract_tw.kill()
+	for tw: Tween in [_contract_tw, _pool_tw]:
+		if tw:
+			tw.kill()
 	_contract_toast.modulate.a = 0.0
+	_pool_toast.modulate.a = 0.0
 
 
 ## GOLD SALVAGER banners: it showed up, what it paid, or it got away.
@@ -936,8 +1015,9 @@ func _show_scrap_results(box: VBoxContainer) -> void:
 	var wid: StringName = mech.weapon if mech else Game.weapon
 	var wname := String(Game.weapon_info(wid)["name"]).to_upper()
 	var ml := Game.mastery_level(wid)
-	(box.find_child("Mastery", true, false) as Label).text = "%s  MASTERED" % wname if Game.is_mastered(wid) \
-		else "%s mastery LV %d  -  %d%% to LV %d" % [wname, ml, roundi(Game.mastery_fraction(wid) * 100.0), ml + 1]
+	(box.find_child("Mastery", true, false) as Label).text = ("%s  MASTERED" % wname if Game.is_mastered(wid)
+		else "%s mastery LV %d  -  %d%% to LV %d" % [wname, ml, roundi(Game.mastery_fraction(wid) * 100.0), ml + 1]) \
+		+ "   -   POOL %d%%" % floori(Game.pool_fraction() * 100.0)
 	var amount := box.find_child("Amount", true, false) as Label
 	var bank := box.find_child("Bank", true, false) as Label
 	var start := Game.scrap - got
@@ -1058,9 +1138,27 @@ func _process(delta: float) -> void:
 	_t += delta
 	if mech:
 		_hp_shown = lerpf(_hp_shown, mech.hp / mech.max_hp, 1.0 - exp(-6.0 * delta))
+		_update_heartbeat(delta)
 	_update_scrap(delta)
 	_bars.queue_redraw()
 	_update_blackout(delta)
+
+
+## LOW ARMOUR: under 30% HP a soft heartbeat thumps (faster the lower it gets) with a little rumble,
+## alongside the red vignette. Not while paused or destroyed.
+var _beat_t := 0.0
+
+
+func _update_heartbeat(delta: float) -> void:
+	var f := mech.hp / mech.max_hp
+	if mech.dead or f >= 0.3 or get_tree().paused:
+		_beat_t = 0.0
+		return
+	_beat_t -= delta
+	if _beat_t <= 0.0:
+		_beat_t = lerpf(0.65, 1.05, f / 0.3)
+		Sfx.play(&"heartbeat", -10.0 + (0.3 - f) * 12.0, 0.0)
+		Combat.rumble(0.15, 0.25, 0.12)
 
 
 ## LIVE SCRAP ticker: follow the scrap that has landed this run (Game.run_scrap_landed). Each gain bumps

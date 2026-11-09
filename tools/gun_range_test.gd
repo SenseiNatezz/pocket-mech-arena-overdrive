@@ -89,6 +89,9 @@ func _run() -> void:
 	_check("key - selects the 11th weapon", mech.weapon == Game.WEAPONS[10]["id"])
 	await _key(KEY_EQUAL)
 	_check("key = selects the 12th weapon", mech.weapon == Game.WEAPONS[11]["id"])
+	# (past the 12 hotkeys, Tab walks on through the rest of the bar, then wraps)
+	for i in Game.WEAPONS.size() - 12:
+		await _key(KEY_TAB)
 	await _key(KEY_TAB)
 	_check("Tab wraps to the 1st weapon", mech.weapon == Game.WEAPONS[0]["id"])
 	await _key(KEY_TAB, true)

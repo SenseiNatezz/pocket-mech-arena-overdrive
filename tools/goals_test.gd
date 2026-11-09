@@ -9,6 +9,9 @@ extends Node
 ## Contracts: counters move only in real runs, contracts complete (toast + results lines), claim pays once,
 ## row bonuses switch on, the two unlocks (Salvager Beacon row, SALVAGE PROTOCOL card) open, the Hangar
 ## CONTRACTS tab shows them, and progress saves.
+## Armory Mastery Pool: real-run mastery XP (mastered weapons too) + a bonus per mastery level fill it, the
+## four checkpoints switch on +5% scrap / +1 reroll / +10% XP / FINISHER for all, the HUD toasts them, the
+## results and the Armory show it, it saves, and an older save starts from its mastery.
 ## Prints PASS/FAIL per check; exit code 0 = all passed.
 
 const CHASER := preload("res://enemies/chaser.tscn")
@@ -90,6 +93,7 @@ func _run() -> void:
 	_threat_checks()
 	await _contract_checks()
 	await _ui_checks()
+	await _pool_checks()
 	Game.scrap_enabled = false
 	print("GOALS TEST %s (%d failed)" % ["OK" if _fails == 0 else "FAILED", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
@@ -447,6 +451,106 @@ func _ui_checks() -> void:
 	_check("...and back down (THREAT %d)" % Game.threat, Game.threat == 1)
 	Game.difficulty = 1
 	lo.focus_equipped()
-	_check("on other difficulties it's just a hint (no arrows)", not lo._threat.active() and not lo._threat._right.visible)
+	_check("on other difficulties it's just a hint (no arrows)", not lo._threat.active() and not lo._threat._right.visible
+		and lo._pool == null)
 	lo.queue_free()
+	await _frames(2)
+
+
+# --- armory mastery pool -----------------------------------------------------------------------------------
+
+func _pool_checks() -> void:
+	Game.mastery.clear()
+	Game.mastery_pool = 0
+	Game.weapon = &"blaster"
+	mech.weapon = &"blaster"
+	Upgrades.level = Upgrades.MAX_LEVEL
+	Game.scrap_enabled = true
+	Game.bank_scrap()
+	var hits: Array = []
+	var on_cp := func(i: int) -> void: hits.append(i)
+	Game.pool_checkpoint.connect(on_cp)
+	# A 900 HP robot is worth 20 mastery XP.
+	var e := _target(mech.global_position + Vector2(150, 0), 900.0)
+	await _frames(2)
+	_kill(e)
+	_check("a kill's mastery XP also fills the pool (%d)" % Game.mastery_pool, Game.mastery_pool == 20)
+	var e2 := _target(mech.global_position + Vector2(150, 50), 900.0)
+	await _frames(2)
+	_kill(e2)
+	_check("...and a mastery level-up adds %d more (LV %d, pool %d)" % [Game.POOL_LEVEL_BONUS, Game.mastery_level(&"blaster"),
+		Game.mastery_pool], Game.mastery_level(&"blaster") == 1 and Game.mastery_pool == 40 + Game.POOL_LEVEL_BONUS)
+	Game.mastery[&"katana"] = Game.MASTERY_XP[9]
+	var p0 := Game.mastery_pool
+	Game.add_mastery(&"katana", 25)
+	_check("a MASTERED weapon keeps filling the pool (+%d) without more mastery" % (Game.mastery_pool - p0),
+		Game.mastery_pool - p0 == 25 and Game.mastery_xp(&"katana") == Game.MASTERY_XP[9])
+	Game.scrap_enabled = false
+	var e3 := _target(mech.global_position + Vector2(150, -50), 900.0)
+	await _frames(2)
+	_kill(e3)
+	_check("no pool outside real runs (%d)" % Game.mastery_pool, Game.mastery_pool == p0 + 25)
+	Game.scrap_enabled = true
+	# Checkpoints and their perks.
+	Game.bank_scrap()
+	var base := Game.earn_scrap(100.0, &"kills")
+	Game.mastery_pool = Game.pool_checkpoint_xp(0) - 1
+	hits.clear()
+	Game.add_pool(1)
+	var boosted := Game.earn_scrap(100.0, &"kills")
+	_check("10%%: a checkpoint (%s) and +5%% scrap (%.2f -> %.2f)" % [str(hits), base, boosted],
+		hits == [0] and is_equal_approx(boosted, base * 1.05))
+	Game.bank_scrap()
+	Upgrades.reset()
+	var r0 := Upgrades.rerolls
+	Game.add_pool(Game.pool_checkpoint_xp(1) - Game.mastery_pool)
+	Upgrades.reset()
+	_check("25%%: +1 level-up reroll every run (%d -> %d)" % [r0, Upgrades.rerolls], Upgrades.rerolls == r0 + 1 and hits == [0, 1])
+	Upgrades.level = 5
+	Upgrades.xp = 0.0
+	Upgrades.add_xp(10.0)
+	var x0 := Upgrades.xp
+	Upgrades.xp = 0.0
+	Game.add_pool(Game.pool_checkpoint_xp(2) - Game.mastery_pool)
+	Upgrades.add_xp(10.0)
+	_check("50%%: +10%% XP (%.2f -> %.2f)" % [x0, Upgrades.xp], x0 > 0.0 and is_equal_approx(Upgrades.xp, x0 * 1.1) and hits == [0, 1, 2])
+	Upgrades.level = Upgrades.MAX_LEVEL
+	Upgrades.xp = 0.0
+	Game.mastery[&"sniper"] = 0
+	var before := Game.has_finisher(&"sniper")
+	Game.add_pool(Game.POOL_MAX)
+	_check("95%%: FINISHER on every weapon (Sniper Beam at LV 0: %s -> %s), the pool caps at %s" % [before,
+		Game.has_finisher(&"sniper"), Game.fmt_int(Game.mastery_pool)], not before and Game.has_finisher(&"sniper")
+		and Game.mastery_pool == Game.POOL_MAX and hits == [0, 1, 2, 3])
+	var shown := await _wait_until(func() -> bool: return hud._pool_toast.modulate.a > 0.9, 1.5)
+	var head := (hud._pool_toast.find_child("Head", true, false) as Label).text
+	_check("a MASTERY POOL toast shows each checkpoint (\"%s\")" % head, shown and head.contains("95%"))
+	Game.pool_checkpoint.disconnect(on_cp)
+	# The results screen's mastery line.
+	Game.credit_scrap(10.0, &"kills")
+	hud._show_scrap_results(hud._win_scrap)
+	var ml := (hud._win_scrap.find_child("Mastery", true, false) as Label).text
+	_check("the results show the pool (\"%s\")" % ml, ml.ends_with("POOL 100%"))
+	hud._win_scrap.hide()
+	# Saving, and a save from before the pool.
+	Game.mastery_pool = 7777
+	Game.save()
+	Game.mastery_pool = 0
+	Game._load()
+	_check("the pool saves (%d)" % Game.mastery_pool, Game.mastery_pool == 7777)
+	var old := ConfigFile.new()
+	old.set_value("mastery", "xp", {"blaster": 100, "katana": 40})
+	old.save(Game.save_path)
+	Game.mastery.clear()
+	Game._load()
+	var want := 100 + 2 * Game.POOL_LEVEL_BONUS + 40 + Game.POOL_LEVEL_BONUS
+	_check("an older save starts its pool from its mastery so far (%d = %d)" % [Game.mastery_pool, want], Game.mastery_pool == want)
+	# The Armory shows it.
+	var ar := ArmoryPage.new()
+	get_tree().current_scene.add_child(ar)
+	await _frames(2)
+	_check("the Armory shows the MASTERY POOL strip", ar._pool != null and ar._threat == null and ar._pool.visible
+		and ar._pool.size.x > 300.0)
+	ar.queue_free()
+	Game.scrap_enabled = false
 	await _frames(2)

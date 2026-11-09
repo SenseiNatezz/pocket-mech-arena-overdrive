@@ -22,7 +22,10 @@ const MAP_SHARPEN := preload("res://environment/map_sharpen.gdshader")
 @export var map_layout: Script
 ## World pixels per painting pixel (sets how big the scenery is compared to the Gundam).
 @export var map_scale := 1.0
-@export_enum("none", "snow", "pollen", "embers") var weather := "none"
+## Ambient particles over the map: snow (Frozen Outpost), pollen (Jungle), embers (Volcanic Forge),
+## spores (Alien Outpost: glowing teal motes), wind (Skyway Junction: fast streaks), dust (Ruined Plaza).
+## Every scenic arena also gets slow cloud shadows drifting across (see CloudShadows).
+@export_enum("none", "snow", "pollen", "embers", "spores", "wind", "dust") var weather := "none"
 @export var intro_texture: Texture2D
 @export var intro_subtitle := ""
 
@@ -306,6 +309,8 @@ func _bake_navigation() -> void:
 
 
 func _add_weather(cam: Camera2D) -> void:
+	if weather != "embers":
+		cam.add_child(CloudShadows.new())
 	if weather == "none":
 		return
 	var p := CPUParticles2D.new()
@@ -339,6 +344,59 @@ func _add_weather(cam: Camera2D) -> void:
 		p.scale_amount_max = 4.0
 		ramp.set_color(0, Color(1.0, 0.8, 0.35, 0.95))
 		ramp.set_color(1, Color(1.0, 0.3, 0.05, 0.0))
+	elif weather == "spores":
+		# Glowing alien spores bobbing up and drifting.
+		p.amount = 70
+		p.direction = Vector2(0.3, -1)
+		p.spread = 60.0
+		p.initial_velocity_min = 6.0
+		p.initial_velocity_max = 24.0
+		p.gravity = Vector2(3, -3)
+		p.texture = preload("res://assets/fx/glow.tres")
+		p.scale_amount_min = 0.12
+		p.scale_amount_max = 0.3
+		p.lifetime = 7.0
+		p.preprocess = 7.0
+		var add := CanvasItemMaterial.new()
+		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		p.material = add
+		ramp.offsets = PackedFloat32Array([0.0, 0.2, 1.0])
+		ramp.colors = PackedColorArray([Color(0.4, 1.0, 0.85, 0.0), Color(0.45, 1.0, 0.9, 0.85), Color(0.3, 0.7, 1.0, 0.0)])
+	elif weather == "wind":
+		# High-altitude wind: thin fast streaks.
+		p.amount = 45
+		p.direction = Vector2(1, 0.12)
+		p.spread = 4.0
+		p.initial_velocity_min = 520.0
+		p.initial_velocity_max = 760.0
+		p.gravity = Vector2.ZERO
+		p.lifetime = 1.6
+		p.preprocess = 1.6
+		p.scale_amount_min = 1.0
+		p.scale_amount_max = 1.6
+		p.particle_flag_align_y = false
+		var streak := Image.create(48, 2, false, Image.FORMAT_RGBA8)
+		for x in 48:
+			streak.set_pixel(x, 0, Color(1, 1, 1, float(x) / 48.0 * 0.8))
+			streak.set_pixel(x, 1, Color(1, 1, 1, float(x) / 48.0 * 0.5))
+		p.texture = ImageTexture.create_from_image(streak)
+		p.angle_min = rad_to_deg(atan2(0.12, 1.0))
+		p.angle_max = p.angle_min
+		ramp.offsets = PackedFloat32Array([0.0, 0.3, 1.0])
+		ramp.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(0.92, 0.96, 1.0, 0.35), Color(1, 1, 1, 0.0)])
+	elif weather == "dust":
+		# Dust and ash drifting over the ruins.
+		p.amount = 110
+		p.direction = Vector2(1, 0.25)
+		p.spread = 25.0
+		p.initial_velocity_min = 25.0
+		p.initial_velocity_max = 70.0
+		p.gravity = Vector2(4, 2)
+		p.texture = preload("res://assets/fx/glow.tres")
+		p.scale_amount_min = 0.06
+		p.scale_amount_max = 0.16
+		ramp.offsets = PackedFloat32Array([0.0, 0.25, 1.0])
+		ramp.colors = PackedColorArray([Color(0.85, 0.78, 0.65, 0.0), Color(0.85, 0.78, 0.65, 0.55), Color(0.7, 0.65, 0.55, 0.0)])
 	else:
 		p.direction = Vector2(1, -0.3)
 		p.spread = 40.0
@@ -655,3 +713,48 @@ func _on_endless_boss_defeated() -> void:
 		get_tree().create_timer(1.6, false).timeout.connect(func() -> void:
 			if is_instance_valid(mech) and not mech.dead:
 				Upgrades.grant_bonus_pick())
+
+
+## Slow cloud shadows: a few huge, very soft dark patches drifting across the whole view (drawn in world
+## space as a child of the camera, so they slide over the floor, the robots and the mech alike).
+class CloudShadows:
+	extends Node2D
+	const GLOW := preload("res://assets/fx/glow.tres")
+	const DRIFT := Vector2(26.0, 9.0)
+	var _clouds: Array = []   # [world position, radius, darkness]
+
+	func _ready() -> void:
+		z_as_relative = false
+		z_index = 15
+		top_level = true
+		for i in 4:
+			_clouds.append([Vector2(randf_range(-1400, 1400), randf_range(-900, 900)), randf_range(380.0, 620.0), randf_range(0.1, 0.16)])
+
+	func _process(delta: float) -> void:
+		var cam := get_parent() as Camera2D
+		if cam == null:
+			return
+		var c := cam.get_screen_center_position()
+		for cl: Array in _clouds:
+			cl[0] += DRIFT * delta
+			# Wrap around a 2800 x 1800 window centred on the view, so there are always a few about.
+			var off: Vector2 = cl[0] - c
+			if off.x > 1500.0:
+				cl[0].x -= 3000.0
+			elif off.x < -1500.0:
+				cl[0].x += 3000.0
+			if off.y > 950.0:
+				cl[0].y -= 1900.0
+			elif off.y < -950.0:
+				cl[0].y += 1900.0
+		queue_redraw()
+
+	func _draw() -> void:
+		for cl: Array in _clouds:
+			var p: Vector2 = cl[0]
+			var r: float = cl[1]
+			var d: float = cl[2]
+			# Two offset blobs per cloud so the edge is irregular.
+			draw_texture_rect(GLOW, Rect2(p - Vector2(r, r * 0.7), Vector2(r * 2.0, r * 1.4)), false, Color(0, 0.02, 0.05, d))
+			draw_texture_rect(GLOW, Rect2(p + Vector2(r * 0.4, r * 0.2) - Vector2(r * 0.7, r * 0.6), Vector2(r * 1.4, r * 1.2)),
+				false, Color(0, 0.02, 0.05, d * 0.8))

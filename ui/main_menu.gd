@@ -74,6 +74,9 @@ var _loadout: ArmoryPage
 var _hangar: HangarPage
 var _radio_btn: TitleButton
 var _zoom_btn: TitleButton
+var _dyncam_btn: TitleButton
+var _rumble_btn: TitleButton
+var _numbers_btn: TitleButton
 var _full_btn: TitleButton
 var _autofire_btn: TitleButton
 var _layout_btn: TitleButton
@@ -169,6 +172,19 @@ func _ready() -> void:
 		Game.radio_voice = not Game.radio_voice
 		Game.save(), cell)
 	_zoom_btn = _grid_btn(sgrid, func() -> void: Game.set_camera_zoom((Game.camera_zoom + 1) % Game.CAMERA_ZOOMS.size()), cell)
+	_dyncam_btn = _grid_btn(sgrid, func() -> void:
+		Game.dynamic_camera = not Game.dynamic_camera
+		Game.save(), cell)
+	_numbers_btn = _grid_btn(sgrid, func() -> void:
+		Game.damage_numbers = not Game.damage_numbers
+		Game.save(), cell)
+	if not OS.has_feature("web") and not OS.has_feature("mobile"):
+		_rumble_btn = _grid_btn(sgrid, func() -> void:
+			Game.rumble = not Game.rumble
+			Game.save()
+			if Game.rumble:
+				for pad in Input.get_connected_joypads():
+					Input.start_joy_vibration(pad, 0.4, 0.6, 0.25), cell)
 	if Game.can_fullscreen():
 		_full_btn = _grid_btn(sgrid, func() -> void: Game.set_fullscreen(not Game.is_fullscreen()), cell)
 	if Controls.touch_active:
@@ -421,13 +437,17 @@ func _refresh() -> void:
 	_sfx_btn.label_text = "Sound FX: %d%%" % roundi(Game.sfx_volume * 100.0)
 	_diff_btn.label_text = "Difficulty: %s" % Game.difficulty_name()
 	_zoom_btn.label_text = "Camera: %s" % Game.CAMERA_ZOOMS[Game.camera_zoom]["name"]
+	_dyncam_btn.label_text = "Dynamic Camera: %s" % ("On" if Game.dynamic_camera else "Off")
+	_numbers_btn.label_text = "Damage Numbers: %s" % ("On" if Game.damage_numbers else "Off")
+	if _rumble_btn:
+		_rumble_btn.label_text = "Rumble: %s" % ("On" if Game.rumble else "Off")
 	if _full_btn:
 		_full_btn.label_text = "Fullscreen: %s" % ("On" if Game.is_fullscreen() else "Off")
 	if _autofire_btn:
 		_autofire_btn.label_text = "Auto-Fire: %s" % ("On" if Game.auto_fire else "Off")
 		_layout_btn.label_text = "Touch: %s" % ("Simple" if Game.touch_simple else "Full")
 	for b in [_diff_btn, _shake_btn, _vol_btn, _music_btn, _sfx_btn, _radio_btn, _zoom_btn, _full_btn, _autofire_btn,
-			_layout_btn]:
+			_layout_btn, _dyncam_btn, _numbers_btn, _rumble_btn]:
 		if b:
 			b.queue_redraw()
 	_refresh_lobby()

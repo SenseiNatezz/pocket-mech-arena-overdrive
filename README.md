@@ -45,18 +45,25 @@ condition on top of the ones before (Armored, Elite Tide, Heavy Ordnance, Bombar
 Repairs, Overclocked, Fortified, Elite Legion, Apex) and +25% scrap, and the first win at each tier with
 each weapon pays a one-time bounty (1,000 scrap x the tier). Weapon cards show their best tier.
 
+**Armory Mastery Pool (Armory page):** every bit of weapon mastery XP your runs earn (mastered weapons
+too) also fills one shared pool, plus a bonus for every mastery level any weapon gains, so trying new
+weapons fills it fastest. Its checkpoints switch on for good: 10% +5% scrap, 25% +1 level-up reroll every
+run, 50% +10% XP, 95% FINISHER on every weapon.
+
 **Contracts (Hangar > CONTRACTS):** 40 goals in 5 rows (Rookie, Pilot, Veteran, Ace, Legend) that finish
 on their own as you play (a toast mid-run, a list on the results screen). Claim each one's scrap in the
 Hangar; claiming a whole row switches on its permanent bonus (+5% scrap, +5% damage, +1 reroll a run, +5%
 XP, +10% scrap). Gold Rush opens the Salvager Beacon Hangar row and Jackpot the Salvage Protocol card.
 
 **Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close),
-fullscreen (also F11 / Alt+Enter), CONTROLS (rebind every keyboard / mouse action), and on touch
+Dynamic Camera (the view pulls out as robots crowd in and during boss fights, punches in on big kills,
+glides over to a boss as it lands), Damage Numbers, controller Rumble, fullscreen (also F11 / Alt+Enter), CONTROLS (rebind every keyboard / mouse action), and on touch
 screens Auto-Fire (fires at the auto-aim target by itself) and the touch layout: Simple (FIRE, BOOST,
 ALT FIRE, BEAM and one smart HEAT button; Repair and Overdrive trigger on their own) or Full.
 
-**Weapons (Armory):** 12 weapons, unlocked by the total number of waves you've beaten in any mode:
-Beam Rifle (start), Beam Saber (3), Sniper Beam (5), Dual Beam Sabers (8), Beam Katana (10),
+**Weapons (Armory):** 13 weapons, unlocked by the total number of waves you've beaten in any mode:
+Beam Rifle (start), Beam Saber (3), Sniper Beam (5), Dual Beam Pistols (6: one in each fist firing in turn,
+very fast but light hits, short range), Dual Beam Sabers (8), Beam Katana (10),
 Gatling Cannon (13), Beam Spear (15), Rocket Launcher (18), Energy Axe (20), Beam Scythe (25) and
 Physical Greatsword (30). The Energy Sword unlocks by defeating VULCAN in the Volcanic Forge (or after
 40 waves): a 4-hit combo whose finisher, CRESCENT NOVA, spins and launches a piercing crescent wave.
@@ -92,7 +99,9 @@ Bastion and the armored Tidebreaker crab (all spawnable in the Weapon Range too)
 - `enemies/` - Scrap Hound (chaser), Scrap Gunner (shooter), Blade Striker, Aegis Guardian, Lancer, Heavy Tank (tank); bosses: Warden, `bosses/` Ronin + Seraph
 - `environment/` - arena builder, arena scenes, tiles, props (cover, crates, pits, doors...), hazards, encounter zones, parallax skyline
 - `ui/` - HUD, menus (title lobby: `main_menu.gd` + `lobby_kit.gd` / `lobby_widgets.gd`; Armory, Hangar, Gun Range panel), touch controls
-- `tools/` - tileset generator, automated tests, autopilot, debug runner
+- `fx/` - shared effects: explosion fireballs, smoke, scorch marks (`blast_fx.gd`, `smoke_puff.gd`), the molten lava shader
+- `tools/` - tileset generator, automated tests, autopilot, debug runner, `fx_shots.gd` (weapon / FX close-up captures)
+- `art_src/` - source for generated art and sound: `weapons/build_beam_pistol.py` (Blender, the pistol art), `sfx/make_combat_sfx.py` (layered combat sounds)
 - `assets/hq/raw/` - source art for the tools only. It has a `.gdignore`, so Godot never imports or exports it. Big painted maps and the Customize turntable import as lossy WebP (small download, works on every platform).
 
 Arena size: select an arena scene's root and change `size_in_screens` in the Inspector.

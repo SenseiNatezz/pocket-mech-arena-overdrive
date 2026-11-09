@@ -66,7 +66,7 @@ const LIST: Array[Dictionary] = [
 	{"id": &"annihilator", "row": 3, "title": "Annihilator", "text": "Destroy 5,000 robots", "stat": "kills", "goal": 5000},
 	{"id": &"bounty_hunter", "row": 3, "title": "Bounty Hunter", "text": "Collect 3 Threat bounties", "stat": "bounties", "goal": 3},
 	# LEGEND
-	{"id": &"full_arsenal", "row": 4, "title": "Full Arsenal", "text": "Unlock all 12 weapons", "stat": "unlocked", "goal": 12},
+	{"id": &"full_arsenal", "row": 4, "title": "Full Arsenal", "text": "Unlock all 13 weapons", "stat": "unlocked", "goal": 13},
 	{"id": &"grand_campaign", "row": 4, "title": "Grand Campaign", "text": "Clear all 6 arenas on Extreme", "stat": "diff_clears:3", "goal": 6},
 	{"id": &"danger_close", "row": 4, "title": "Danger Close", "text": "Win at THREAT 5", "stat": "threat_best", "goal": 5},
 	{"id": &"endless_legend", "row": 4, "title": "Endless Legend", "text": "Reach Endless wave 40", "stat": "endless_best", "goal": 40},

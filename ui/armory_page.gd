@@ -1,13 +1,14 @@
 class_name ArmoryPage
 extends Control
-## Main menu ARMORY: every primary weapon in the game as a card (Higgsfield weapon art) in a 6-column grid
+## Main menu ARMORY: every primary weapon in the game as a card (Higgsfield weapon art) in a 7-column grid
 ## (5 columns, detail panel below, when the screen is portrait - see _relayout()),
 ## plus a detail panel with the selected weapon displayed on a rack, its type, description, stat bars
 ## (damage / speed / range) and unlock progress. Weapons unlock by beating waves (Game.waves_beaten);
 ## pressing an unlocked card equips it. Works with mouse, touch and keyboard/gamepad focus.
 ## WEAPON MASTERY (Game.mastery_*): every unlocked card shows its mastery as ten gold pips + "MASTERY n"
 ## (a MASTERED weapon gets a gold frame and star), and the detail panel adds the level, its damage bonus,
-## the progress to the next level and the next perk.
+## the progress to the next level and the next perk. The ARMORY MASTERY POOL strip (PoolBar; under the grid,
+## or under the title in portrait) shows the shared pool every weapon's mastery fills, and its checkpoints.
 ## START MODE (`start_mode = true` before adding it): the loadout screen before every New Game / Endless
 ## run - pick a starting weapon, then START MISSION (or press the chosen card again) emits start_pressed.
 ## It also holds the THREAT picker (ThreatBar: Extreme only; a one-line hint on the other difficulties).
@@ -20,7 +21,11 @@ const CYAN := Color(0.35, 0.75, 1.0)
 const GOLD := Color(1.0, 0.82, 0.3)
 ## Boss of each Game.ARENAS level (same order; for "or defeat VULCAN" on boss-unlock weapon cards).
 const ARENA_BOSSES: Array[String] = ["WARDEN", "RONIN", "SERAPH", "WARDEN MK-II", "SHOGUN", "VULCAN"]
-const COLS := 6
+## Landscape: cards per row and their width (7 x 106 px fits 13+ weapons in two rows beside the panel).
+const COLS := 7
+const CARD_W := 106.0
+## Portrait: card width.
+const PORTRAIT_CARD_W := 126.0
 ## Portrait (phones held upright): cards per row.
 const PORTRAIT_COLS := 5
 const MASTERY_PIPS := preload("res://ui/mastery_pips.gd")
@@ -38,6 +43,8 @@ var _equip_btn: TitleButton
 var _counter: Label
 var start_mode := false
 var _threat: ThreatBar
+## ARMORY MASTERY POOL strip (the Armory, not the Loadout) - it takes the THREAT picker's spot.
+var _pool: PoolBar
 const THREAT_BAR_H := 56.0
 const THREAT_BAR_H_PORTRAIT := 42.0
 
@@ -93,6 +100,9 @@ func _ready() -> void:
 	if start_mode:
 		_threat = ThreatBar.new(self)
 		add_child(_threat)
+	else:
+		_pool = PoolBar.new()
+		add_child(_pool)
 	# Phones can rotate: re-lay out for portrait / landscape.
 	get_viewport().size_changed.connect(_relayout, CONNECT_DEFERRED)
 	var layout := get_node_or_null("/root/Layout")
@@ -102,7 +112,7 @@ func _ready() -> void:
 	refresh()
 
 
-## Landscape (1280 wide): 6-column grid, tall detail panel on the right, buttons under it.
+## Landscape (1280 wide): 7-column grid, tall detail panel on the right, buttons under it.
 ## Portrait (720 wide): 5-column grid, a wide two-column detail panel below it, buttons side by side at
 ## the bottom.
 func _relayout() -> void:
@@ -118,6 +128,7 @@ func _relayout() -> void:
 		_sub.position = Vector2(26, 72)
 		_sub.size = Vector2(w - 4, 36)
 		_grid.columns = PORTRAIT_COLS
+		_set_card_width(PORTRAIT_CARD_W)
 		_grid.add_theme_constant_override("h_separation", 10)
 		_grid.reset_size()
 		var gw := PORTRAIT_COLS * 126.0 + (PORTRAIT_COLS - 1) * 10.0
@@ -130,12 +141,13 @@ func _relayout() -> void:
 		_back.reset_size()
 		_equip_btn.position = Vector2(24, vp.y - 72)
 		_back.position = Vector2(24 + bw + 12, vp.y - 72)
-		# (Loadout: the THREAT picker takes the instruction line's place under the title - the space between
-		# the grid and the buttons is all the detail panel's)
-		if _threat:
+		# (Loadout: the THREAT picker / Armory: the MASTERY POOL strip takes the instruction line's place under
+		# the title - the space between the grid and the buttons is all the detail panel's)
+		var strip: Control = _threat if _threat else _pool
+		if strip:
 			_sub.visible = false
-			_threat.position = Vector2(24, 66)
-			_threat.size = Vector2(w, THREAT_BAR_H_PORTRAIT)
+			strip.position = Vector2(24, 66)
+			strip.size = Vector2(w, THREAT_BAR_H_PORTRAIT)
 		# The panel hugs its content (~280 px) and sits centred in the space between grid and buttons.
 		var room := maxf(vp.y - 86 - top, 256)
 		var dh := minf(room, 284.0)
@@ -154,6 +166,7 @@ func _relayout() -> void:
 		_sub.position = Vector2(52, 74)
 		_sub.size = Vector2(800, 24)
 		_grid.columns = COLS
+		_set_card_width(CARD_W)
 		_grid.add_theme_constant_override("h_separation", 12)
 		_grid.position = Vector2(48, 112)
 		_detail.position = Vector2(880, 24)
@@ -165,14 +178,24 @@ func _relayout() -> void:
 			b.reset_size()
 		_equip_btn.position = Vector2(900, 580)
 		_back.position = Vector2(900, 638)
-		# (Loadout: the THREAT picker under the weapon grid)
-		if _threat:
+		# (Loadout: the THREAT picker / Armory: the MASTERY POOL strip, under the weapon grid)
+		var strip: Control = _threat if _threat else _pool
+		if strip:
 			_sub.visible = true
-			_threat.position = Vector2(48, 654)
-			_threat.size = Vector2(816, THREAT_BAR_H)
+			strip.position = Vector2(48, 654)
+			strip.size = Vector2(816, THREAT_BAR_H)
 	_detail.queue_redraw()
 	if _threat:
 		_threat.queue_redraw()
+	if _pool:
+		_pool.queue_redraw()
+
+
+func _set_card_width(w: float) -> void:
+	for c in _cards:
+		c.custom_minimum_size = Vector2(w, 262)
+		c.size = c.custom_minimum_size
+	_grid.reset_size()
 
 
 func _label(txt: String, fs: int, col: Color) -> Label:
@@ -228,6 +251,8 @@ func _select(id: StringName) -> void:
 	_detail.queue_redraw()
 	if _threat:
 		_threat.refresh()
+	if _pool:
+		_pool.queue_redraw()
 
 
 ## The weapon whose details are showing (the THREAT picker shows its bounty).
@@ -366,8 +391,9 @@ func _draw_mastery(d: Control, font: Font, x: float, y: float, w: float, perk_li
 	var txt := "Every perk earned: +20% damage, FINISHER, gold badge"
 	if not mastered:
 		var p := Game.mastery_progress(_selected)
+		# (the Mastery Pool's last checkpoint gives every weapon FINISHER early)
 		txt = "%d / %d to LV %d  -  %s" % [p.x, p.y, ml + 1, "FINISHER at LV %d" % Game.MASTERY_FINISHER_LEVEL
-			if ml < Game.MASTERY_FINISHER_LEVEL else "MASTERED at LV %d" % Game.MASTERY_MAX]
+			if ml < Game.MASTERY_FINISHER_LEVEL and not Game.pool_reached(3) else "MASTERED at LV %d" % Game.MASTERY_MAX]
 	d.draw_string(font, Vector2(x, y + 33.0), txt, HORIZONTAL_ALIGNMENT_LEFT, w, 12, Color(0.9, 0.86, 0.7))
 
 
@@ -413,26 +439,31 @@ class Card extends Button:
 		draw_rect(r, Color(edge, 0.55 + 0.45 * _hl), false, 2.0)
 		# Art.
 		var art := Rect2(10, 26, size.x - 20, 176)
-		draw_circle(art.get_center(), 56.0, Color(edge, 0.07 + 0.08 * _hl))
+		draw_circle(art.get_center(), minf(56.0, size.x / 2.0 - 6.0), Color(edge, 0.07 + 0.08 * _hl))
 		var ts := tex.get_size()
 		var k := minf(art.size.x / ts.x, art.size.y / ts.y)
 		var dst := Rect2(art.get_center() - ts * k / 2, ts * k)
 		draw_texture_rect(tex, dst, false, Color.WHITE if unlocked else Color(0.09, 0.1, 0.14))
 		var font := get_theme_default_font()
 		var kind := "MELEE" if info.get("melee", false) else "RANGED"
-		draw_string(font, Vector2(10, 18), kind, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(edge, 0.9))
+		# (narrow cards: the equipped one says just EQUIPPED, there's no room for both)
+		if not (equipped and size.x < 120.0):
+			draw_string(font, Vector2(10, 18), kind, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(edge, 0.9))
 		if equipped:
-			draw_string(font, Vector2(0, 18), "EQUIPPED", HORIZONTAL_ALIGNMENT_RIGHT, size.x - 10, 11, GOLD)
+			draw_string(font, Vector2(0, 18), "EQUIPPED", HORIZONTAL_ALIGNMENT_CENTER if size.x < 120.0 else HORIZONTAL_ALIGNMENT_RIGHT,
+				size.x if size.x < 120.0 else size.x - 10, 11, GOLD)
 		# THREAT TIERS: the highest tier this weapon has won at.
 		var tb := Game.weapon_threat_best(id)
 		if unlocked and tb > 0:
-			draw_string(font, Vector2(0, 33 if equipped else 18), "THREAT %d" % tb, HORIZONTAL_ALIGNMENT_RIGHT, size.x - 10, 10,
+			draw_string(font, Vector2(0, 33 if equipped or size.x < 120.0 else 18), "THREAT %d" % tb, HORIZONTAL_ALIGNMENT_RIGHT, size.x - 10, 10,
 				Game.THREAT_COLOR)
 		if not unlocked:
 			ArmoryPage._draw_lock(self, art.get_center())
 		# Name (+ progress when locked).
 		var name_col := Color.WHITE.lerp(Color(0.8, 0.88, 1.0), 1.0 - _hl) if unlocked else Color(0.6, 0.65, 0.75)
 		var name_size := 14 if String(info["name"]).length() <= 13 else 12
+		if size.x < 120.0 and String(info["name"]).length() > 15:
+			name_size = 11 if String(info["name"]).length() <= 17 else 10
 		draw_string(font, Vector2(0, 224), info["name"], HORIZONTAL_ALIGNMENT_CENTER, size.x, name_size, name_col)
 		# Weapon mastery: ten pips (gold = levels earned, the next one filling) and "MASTERY n"; a MASTERED
 		# weapon gets a gold inner frame and a starred "MASTERED".
@@ -577,3 +608,65 @@ class ThreatBar:
 		while fs > 9 and font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w:
 			fs -= 1
 		draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+
+
+## ARMORY MASTERY POOL strip (the Armory page; Game.mastery_pool): "MASTERY POOL  7,420 / 20,000 (37%)", the
+## next checkpoint's perk on the right, and a gold bar with the four checkpoints (diamonds, lit once
+## reached; in landscape their perks sit under them).
+class PoolBar:
+	extends Control
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var font := get_theme_default_font()
+		var g := ArmoryPage.GOLD
+		var compact := size.y < 50.0
+		var frac := Game.pool_fraction()
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.075, 0.06, 0.025, 0.9))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(g, 0.7), false, 2.0)
+		draw_rect(Rect2(0, 0, 4, size.y), g)
+		# Title + amount on the left, the next checkpoint on the right.
+		var y1 := 17.0 if compact else 20.0
+		var head := "MASTERY POOL"
+		var hfs := 14 if compact else 15
+		draw_string(font, Vector2(14, y1), head, HORIZONTAL_ALIGNMENT_LEFT, -1, hfs, g)
+		var x := 14.0 + font.get_string_size(head, HORIZONTAL_ALIGNMENT_LEFT, -1, hfs).x + 12.0
+		var amt := "%s / %s  (%d%%)" % [Game.fmt_int(Game.mastery_pool), Game.fmt_int(Game.POOL_MAX), floori(frac * 100.0)]
+		var afs := 12 if compact else 13
+		draw_string(font, Vector2(x, y1), amt, HORIZONTAL_ALIGNMENT_LEFT, -1, afs, Color(1.0, 0.92, 0.7))
+		x += font.get_string_size(amt, HORIZONTAL_ALIGNMENT_LEFT, -1, afs).x + 16.0
+		var n := Game.pool_checkpoints_reached()
+		var nxt := "EVERY CHECKPOINT REACHED"
+		if n < Game.POOL_CHECKPOINTS.size():
+			var c: Dictionary = Game.POOL_CHECKPOINTS[n]
+			nxt = "NEXT AT %d%%: %s" % [roundi(float(c["at"]) * 100.0), c["short"]]
+		var nfs := afs
+		while nfs > 9 and font.get_string_size(nxt, HORIZONTAL_ALIGNMENT_LEFT, -1, nfs).x > size.x - 14.0 - x:
+			nfs -= 1
+		draw_string(font, Vector2(x, y1), nxt, HORIZONTAL_ALIGNMENT_RIGHT, size.x - 14.0 - x, nfs, Color(1.0, 0.85, 0.45))
+		# The bar, with a diamond per checkpoint.
+		var bx := 14.0
+		var bw := size.x - 28.0
+		var by := y1 + 7.0 if compact else 27.0
+		var bh := 8.0
+		draw_rect(Rect2(bx, by, bw, bh), Color(0.18, 0.14, 0.06, 0.95))
+		if frac > 0.0:
+			draw_rect(Rect2(bx, by, bw * frac, bh), g)
+			draw_rect(Rect2(bx, by, bw * frac, 2.0), Color(1, 1, 1, 0.3))
+		for i in Game.POOL_CHECKPOINTS.size():
+			var cp: Dictionary = Game.POOL_CHECKPOINTS[i]
+			var on := Game.pool_reached(i)
+			var c := Vector2(bx + bw * float(cp["at"]), by + bh / 2.0)
+			var d := PackedVector2Array([c + Vector2(0, -7), c + Vector2(7, 0), c + Vector2(0, 7), c + Vector2(-7, 0)])
+			draw_colored_polygon(d, g.lightened(0.35) if on else Color(0.3, 0.26, 0.18))
+			var ring := d.duplicate()
+			ring.append(d[0])
+			draw_polyline(ring, Color(0.15, 0.1, 0.02) if on else Color(g, 0.6), 1.5, true)
+			if not compact:
+				var label := String(cp["short"])
+				var lw := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
+				var lx := clampf(c.x - lw / 2.0, bx, bx + bw - lw)
+				draw_string(font, Vector2(lx, by + bh + 14.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10,
+					g if on else Color(0.75, 0.68, 0.5, 0.75))

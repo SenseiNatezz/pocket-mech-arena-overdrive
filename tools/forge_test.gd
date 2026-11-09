@@ -84,7 +84,7 @@ func _run() -> void:
 	_check("Magma Crawler lunges", lunged)
 	crawler.take_damage(9999.0, crawler.global_position, mech)
 	await _frames(3, mech)
-	var big_pool := get_tree().get_nodes_in_group("lava_pools").any(func(p: LavaPool) -> bool: return p.radius >= 70.0)
+	var big_pool := get_tree().get_nodes_in_group("lava_pools").any(func(p: LavaPool) -> bool: return p.radius >= 60.0)
 	_check("its sac bursts into a big lava pool when it dies", big_pool)
 	for p in get_tree().get_nodes_in_group("lava_pools"):
 		p.queue_free()

@@ -259,7 +259,10 @@ func die() -> void:
 	# Hit feel: metal debris for everyone; a split-second freeze for big robots and elites.
 	var tint: Color = ELITE_GOLD if elite else DEBRIS_TINTS.get(get_script().get_global_name(), Color(0.7, 0.45, 0.3))
 	Combat.debris(global_position, hit_radius, tint)
-	if hit_radius >= 40.0 or elite:
+	# Scorch mark; big robots / elites burn, go off in a chain of blasts, boom and punch the camera in.
+	var big := hit_radius >= 40.0 or elite
+	BlastFx.robot_death(global_position, hit_radius, big)
+	if big:
 		Combat.hitstop(0.07 if hit_radius >= 55.0 else 0.05)
 	Combat.report_kill(self)
 	died.emit(self)

@@ -343,7 +343,7 @@ func _run() -> void:
 	_check("beating 3 waves unlocks the Beam Saber", Game.is_unlocked(&"sword") and not Game.is_unlocked(&"sniper"))
 	Game.waves_beaten = 9
 	_check("reaching 10 waves unlocks every tier up to the Beam Katana",
-		Game.record_wave_cleared() == ["Sniper Beam", "Dual Beam Sabers", "Beam Katana"])
+		Game.record_wave_cleared() == ["Sniper Beam", "Dual Beam Pistols", "Dual Beam Sabers", "Beam Katana"])
 	_check("locked weapons show their progress", Game.unlock_text(&"greatsword") == "Beat 30 waves (10 / 30)")
 	Game.equip(&"gatling")
 	_check("can't equip a locked weapon", Game.weapon != &"gatling")

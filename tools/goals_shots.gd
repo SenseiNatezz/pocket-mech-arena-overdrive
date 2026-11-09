@@ -1,7 +1,7 @@
 extends Node
 ## Preview captures of the GOLD SALVAGER, THREAT TIERS and CONTRACTS. Attach it and give it a file + mode:
 ##   arena: -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=3 --attach=res://tools/goals_shots.gd
-##          --goals-shot=C:/x/a.png --goals-mode=salvager | frenzy | results
+##          --goals-shot=C:/x/a.png --goals-mode=salvager | frenzy | pool | results
 ##   menu:  -- --temp-save --menu-page=7 (Hangar) | 6 (Loadout, add --difficulty=3 --threat=3) | 3 (Armory)
 ##          --attach=res://tools/goals_shots.gd --goals-shot=C:/x/m.png --goals-mode=contracts | loadout | armory
 ## salvager: a Gold Salvager next to the mech, just spotted. frenzy: a SCRAP FRENZY running while a few robots
@@ -129,6 +129,11 @@ func _arena(arena: Node) -> void:
 			hud._on_contract_done(&"elite_hunter")
 			await _burst(mech, [Vector2(150, -40), Vector2(120, 70), Vector2(-140, 50), Vector2(-60, -120)])
 			await _wait(0.45)
+		"pool":
+			# A kill's mastery tips the Armory Mastery Pool over its 25% checkpoint.
+			Game.mastery_pool = Game.pool_checkpoint_xp(1) - 1
+			await _burst(mech, [Vector2(150, -40), Vector2(-140, 50)])
+			await _wait(0.6)
 		"results":
 			Game.earn_scrap(420.0, &"boss")
 			Game.credit_scrap(380.0, &"gold")

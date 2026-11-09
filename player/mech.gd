@@ -69,6 +69,13 @@ const GATLING_DAMAGE := 8.0
 const GATLING_BULLET_SIZE := 1.7
 const GATLING_FLASH_SCALE := 1.6
 const DEFAULT_FLASH_SCALE := 0.7
+## Dual Beam Pistols: one in each fist firing in turn - very fast, low damage (~90 DPS vs the Beam Rifle's
+## ~108), quick short-range darts, full speed while firing.
+const PISTOL_RATE := 18.0
+const PISTOL_DAMAGE := 5.0
+const PISTOL_SPEED_MULT := 1.15
+const PISTOL_LIFETIME := 0.6
+const PISTOL_SPREAD := 0.06
 ## Rocket Launcher: slow heavy rockets that explode (splash); see player/weapons/rocket.gd.
 const ROCKET_RATE := 1.5
 const ROCKET_DAMAGE := 60.0
@@ -122,6 +129,8 @@ var _invuln := 0.0
 var _knockback := Vector2.ZERO
 var _flash := 0.0
 var _muzzle_t := 0.0
+## Gatling rounds fired (every few puffs gun smoke).
+var _gun_smoke := 0
 var _afterimage_t := 0.0
 var beam: BeamCannon
 var melee: MeleeKit
@@ -385,6 +394,7 @@ func _weapon_rate() -> float:
 		return MeleeKit.rate(weapon)
 	match weapon:
 		&"gatling": return GATLING_RATE
+		&"dual_pistols": return PISTOL_RATE
 		&"rockets": return ROCKET_RATE
 		&"sniper": return SNIPER_RATE
 	return fire_rate
@@ -411,22 +421,30 @@ func _fire_primary(mult: float) -> void:
 			_fire_bolts(mult)
 
 
-## Blaster / Gatling: Triple Shot fans extra bolts out to the sides (75% damage each).
+## Blaster / Gatling / Dual Pistols: Triple Shot fans extra bolts out to the sides (75% damage each).
+## Each draws its own shot (player/weapons/rifle_fx.gd): rifle beam bolts, gatling tracers, pistol darts.
 func _fire_bolts(mult: float) -> void:
 	var gatling := weapon == &"gatling"
-	var base := _shot_dir().rotated(randf_range(-0.1, 0.1) if gatling else randf_range(-0.04, 0.04))
-	var dmg := (GATLING_DAMAGE if gatling else bolt_damage) * mult
+	var pistols := weapon == &"dual_pistols"
+	var spread := 0.1 if gatling else (PISTOL_SPREAD if pistols else 0.04)
+	var base := _shot_dir().rotated(randf_range(-spread, spread))
+	var dmg := (GATLING_DAMAGE if gatling else (PISTOL_DAMAGE if pistols else bolt_damage)) * mult
+	var speed := bolt_speed * (1.1 if gatling else (PISTOL_SPEED_MULT if pistols else 1.0))
 	var n := Upgrades.multishot_count()
 	var seekers := Upgrades.level_of(&"seeker_swarm") > 0
 	for i in n:
 		var off := (i - (n - 1) / 2.0) * 0.16
 		var seek := seekers and off != 0.0
 		var col := Upgrades.COMBO_GOLD.lerp(_shot_color(), 0.4) if seek else _shot_color()
-		var b := Combat.fire(muzzle.global_position, base.rotated(off * (2.8 if seek else 1.0)) * bolt_speed * (1.1 if gatling else 1.0),
-			dmg * (1.0 if off == 0.0 else 0.75), true, self, col, GATLING_BULLET_SIZE if gatling else 1.0)
+		var b := Combat.fire(muzzle.global_position, base.rotated(off * (2.8 if seek else 1.0)) * speed,
+			dmg * (1.0 if off == 0.0 else 0.75), true, self, col,
+			GATLING_BULLET_SIZE if gatling else (0.85 if pistols else 1.0), PISTOL_LIFETIME if pistols else 1.2)
 		_arm(b)
-		# Beam Rifle: hand-drawn, cel-animated bolts (player/weapons/rifle_fx.gd).
-		if not gatling:
+		if gatling:
+			b.set_tracer_style()
+		elif pistols:
+			b.set_dart_style()
+		else:
 			b.set_rifle_style()
 		# SEEKER SWARM combo: side shots swing out wide, then hunt.
 		if seek:
@@ -441,16 +459,32 @@ func _fire_bolts(mult: float) -> void:
 			Combat.spark(muzzle.global_position + base * 20.0, Color(0.7, 0.95, 1.0), 2.0)
 			Combat.shake(0.12)
 			Sfx.play(&"beam_rifle", -8.0, 0.05)
-	sprite.position = Vector2(0, 3 if gatling else 4)
-	if not gatling:
-		# Beam Rifle: a drawn starburst at the barrel instead of the glow sprite.
-		RifleFx.muzzle(muzzle, base, _shot_color())
-	else:
+	sprite.position = Vector2(0, 3 if gatling else (2 if pistols else 4))
+	if gatling:
 		_muzzle_t = 0.05
 		muzzle_flash.scale = Vector2.ONE * GATLING_FLASH_SCALE * randf_range(0.85, 1.15)
+		muzzle_flash.modulate = Color(1.0, 0.7, 0.3)
 		held.kick(0.35)
-		Combat.spark(muzzle.global_position + base * 14.0, _shot_color().lightened(0.4), 1.5)
-	Sfx.play(&"shoot", -21.0 if gatling else -18.0, 0.12 if gatling else 0.06)
+		RifleFx.gat_muzzle(muzzle, base)
+		_gun_smoke += 1
+		if _gun_smoke % 4 == 0:
+			SmokePuff.spawn(muzzle.global_position + base * 18.0, Color(0.62, 0.62, 0.66, 0.42), 11.0, 0.7,
+				base * 50.0 + base.orthogonal() * randf_range(-25.0, 25.0))
+		Combat.camera_kick(-base * 2.5)
+		Combat.rumble(0.3, 0.12, 0.08)
+		Sfx.play(&"gatling_shot", -12.0, 0.08)
+	elif pistols:
+		# The pistol that fired kicks, and the Muzzle hops to the other fist for the next shot.
+		RifleFx.pistol_muzzle(muzzle, base, _shot_color())
+		held.kick(1.0)
+		Combat.rumble(0.14, 0.0, 0.04)
+		Sfx.play(&"pistol_shot", -15.0, 0.1)
+	else:
+		# Beam Rifle: a drawn ignition at the barrel instead of the glow sprite.
+		RifleFx.muzzle(muzzle, base, _shot_color())
+		Combat.camera_kick(-base * 1.5)
+		Combat.rumble(0.18, 0.05, 0.05)
+		Sfx.play(&"beam_shot", -13.0, 0.06)
 
 
 ## Rocket Launcher: heavy rockets that explode on impact (splash hits everything nearby). Triple Shot =
@@ -839,6 +873,7 @@ func _apply_damage(amount: float) -> void:
 	_flash = 1.0
 	Combat.damage_number(global_position, amount, Color(1, 0.35, 0.3), self)
 	Combat.shake(0.35)
+	Combat.rumble(0.55, 0.35, 0.16)
 	Sfx.play(&"hurt", -4.0)
 	stats_changed.emit()
 	# Hangar LAST STAND: once per arena, a fatal hit leaves 1 HP and a moment of invulnerability.
@@ -996,6 +1031,7 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 	muzzle_flash.visible = _muzzle_t > 0.0
 	if weapon != &"gatling":
 		muzzle_flash.scale = Vector2.ONE * DEFAULT_FLASH_SCALE
+		muzzle_flash.modulate = Game.energy_color()
 	if muzzle_flash.visible:
 		muzzle_flash.rotation = randf() * TAU
 	_flash = move_toward(_flash, 0.0, delta * 6.0)

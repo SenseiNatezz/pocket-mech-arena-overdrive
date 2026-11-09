@@ -10,6 +10,10 @@ extends Node
 signal damage_dealt(amount: float, source: Node, target: Node)
 signal enemy_killed(enemy: Node)
 signal shake_requested(strength: float)
+## Dynamic camera requests (player/mech_camera.gd): a quick zoom-in, a recoil push, a look at a point.
+signal camera_punched(amount: float)
+signal camera_kicked(offset: Vector2)
+signal camera_focused(world_pos: Vector2, seconds: float)
 
 const BULLET := preload("res://player/weapons/bullet.tscn")
 const GLOW := preload("res://assets/fx/glow.tres")
@@ -222,14 +226,19 @@ func explode(pos: Vector2, radius: float, damage: float, source: Node, hurts := 
 	explosion_fx(pos, radius, color)
 
 
+## Explosion look: shock rings, a fireball (fx/blast_fx.gd: flash -> swelling lobes cooling to red,
+## burning bits), a smoke column, ember / debris bursts, the boom, screen shake and controller rumble.
 func explosion_fx(pos: Vector2, radius: float, color := Color(1.0, 0.55, 0.2)) -> void:
 	shockwave(pos, radius, color, 0.4)
 	shockwave(pos, radius * 0.55, Color(1, 0.95, 0.8), 0.22)
+	BlastFx.fireball(pos, clampf(radius * 0.42, 22.0, 140.0))
+	BlastFx.smoke(pos, clampf(radius * 0.32, 14.0, 90.0), 2 if radius < 140.0 else 4)
 	spark(pos, color, radius / 40.0)
 	burst(pos, color, radius * 3.0, 1.4)
 	burst(pos, Color(0.35, 0.33, 0.33), radius * 2.0, 1.8)
 	Sfx.play(&"explode", -3.0)
 	shake(clampf(radius / 260.0, 0.15, 0.6))
+	rumble(0.25, clampf(radius / 300.0, 0.15, 0.7), 0.15)
 
 
 ## Telegraphed artillery: a red circle for `delay` seconds, then an explosion. If `from` is given, a
@@ -244,6 +253,41 @@ func artillery(pos: Vector2, radius: float, damage: float, source: Node, delay :
 func shake(strength: float) -> void:
 	if Game.screen_shake:
 		shake_requested.emit(strength)
+
+
+## Dynamic camera: zoom in by `amount` for a split second (big kills, finishers).
+func camera_punch(amount: float) -> void:
+	camera_punched.emit(amount)
+
+
+## Dynamic camera: push the view `offset` px (heavy-gun recoil), springing back.
+func camera_kick(offset: Vector2) -> void:
+	camera_kicked.emit(offset)
+
+
+## Dynamic camera: glide to `world_pos`, hold, come back over `seconds` (a boss landing).
+func camera_focus(world_pos: Vector2, seconds: float) -> void:
+	if Game.get("dynamic_camera") != false:
+		camera_focused.emit(world_pos, seconds)
+
+
+## CONTROLLER RUMBLE (Settings > Rumble): `weak` / `strong` motor strength 0-1 for `seconds`, on every
+## connected gamepad. The strongest request running wins; weaker ones don't cut it short.
+var _rumble_until := 0
+var _rumble_power := 0.0
+
+
+func rumble(weak: float, strong: float, seconds: float) -> void:
+	if Game.get("rumble") == false or Controls.device != Controls.Device.GAMEPAD:
+		return
+	var now := Time.get_ticks_msec()
+	var power := maxf(weak, strong)
+	if now < _rumble_until and power < _rumble_power:
+		return
+	_rumble_power = power
+	_rumble_until = now + int(seconds * 1000.0)
+	for pad in Input.get_connected_joypads():
+		Input.start_joy_vibration(pad, clampf(weak, 0.0, 1.0), clampf(strong, 0.0, 1.0), seconds)
 
 
 # --- pooled effects --------------------------------------------------------------------------------
@@ -337,6 +381,9 @@ func burst(pos: Vector2, color: Color, speed := 260.0, size := 1.0) -> void:
 ## so crowded fights (Extreme, Triple Shot, Gatling, Orbit Blades...) stay readable. Bigger totals are
 ## drawn bigger. At most MAX_NUMBERS show at once; past that, small unkeyed numbers are skipped.
 func damage_number(pos: Vector2, amount: float, color := Color(1, 0.85, 0.6), target: Object = null) -> void:
+	# Settings > Damage Numbers off hides the damage numbers (green heal numbers still show).
+	if Game.get("damage_numbers") == false and not (color.g > color.r + 0.2 and color.g > color.b):
+		return
 	_world()
 	var key := ""
 	if target != null:

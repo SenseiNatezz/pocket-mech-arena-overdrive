@@ -9,6 +9,7 @@
 
 [node name="SkywayJunction" type="Node2D"]
 script = ExtResource("1")
+weather = "wind"
 map_texture = ExtResource("2")
 map_layout = ExtResource("3")
 map_scale = 1.5

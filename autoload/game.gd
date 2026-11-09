@@ -8,6 +8,8 @@ signal weapon_unlocked(names: Array[String])
 signal scrap_bonus(amount: float, label: String)
 ## A weapon's mastery reached a new level mid-run (the HUD shows a MASTERY UP toast).
 signal mastery_up(weapon_id: StringName, level: int)
+## The ARMORY MASTERY POOL passed checkpoint `index` (POOL_CHECKPOINTS; the HUD toasts it).
+signal pool_checkpoint(index: int)
 ## GOLD SALVAGER (enemies/gold_salvager.gd): one showed up / was shot down (`prize` = &"frenzy", &"lucky",
 ## &"xp", &"overdrive" or &"jackpot"; `amount` = scrap it paid at once) / got away. The HUD announces them.
 signal salvager_spotted
@@ -85,6 +87,9 @@ const WEAPONS: Array[Dictionary] = [
 		"desc": "Fast melee slashes that cut bullets out of the air. Every 3rd hit is a DASH SLASH."},
 	{"id": &"sniper", "name": "Sniper Beam", "waves": 5, "icon": "sniper", "stats": [4, 1, 5],
 		"desc": "Slow, heavy hitscan beam that pierces EVERY enemy in a line."},
+	# One in each fist, firing in turn (player/mech.gd _fire_bolts, art: art_src/weapons/build_beam_pistol.py).
+	{"id": &"dual_pistols", "name": "Dual Beam Pistols", "waves": 6, "icon": "dual_pistols", "stats": [1, 5, 2],
+		"desc": "A beam pistol in each hand firing in turn: a blistering stream of quick light shots. Low damage per hit and short range, but you keep full speed while firing."},
 	{"id": &"dual_sabers", "name": "Dual Beam Sabers", "waves": 8, "melee": true, "icon": "dual_sabers",
 		"stats": [2, 5, 2], "desc": "Blistering twin-blade combos. Every 5th hit WHIRLS both sabers around you."},
 	{"id": &"katana", "name": "Beam Katana", "waves": 10, "melee": true, "icon": "katana", "stats": [3, 3, 3],
@@ -228,6 +233,11 @@ var camera_zoom := 1
 var fullscreen := true
 var auto_fire := true
 var touch_simple := true
+## Settings: DYNAMIC CAMERA (zoom follows the fight, punch-ins, boss focus - player/mech_camera.gd),
+## controller RUMBLE (Combat.rumble) and floating DAMAGE NUMBERS (Combat.damage_number). All on by default.
+var dynamic_camera := true
+var rumble := true
+var damage_numbers := true
 var cleared: Array[int] = []
 var look := DEFAULT_LOOK.duplicate()
 var weapon := &"blaster"
@@ -364,6 +374,25 @@ const MASTERY_BOSS_XP := 30
 var mastery := {}
 var _mastery_dirty := false
 
+## ARMORY MASTERY POOL (Melvor Idle's mastery pool): every point of weapon mastery XP a real run earns also
+## fills one shared pool - mastered weapons included, so kills keep paying after LV 10 - plus
+## POOL_LEVEL_BONUS for every mastery level any weapon gains (fresh weapons level fastest, so trying other
+## weapons fills it quicker). Passing a checkpoint (a share of POOL_MAX) switches its perk on for good:
+## +5% scrap (scrap_mult), +1 level-up reroll every run (Upgrades.reset), +10% XP (Upgrades.add_xp) and
+## FINISHER on every weapon (has_finisher). Saved in [mastery] pool; an older save starts with what its
+## mastery so far is worth (see _seed_pool).
+const POOL_MAX := 20000
+const POOL_LEVEL_BONUS := 150
+const POOL_CHECKPOINTS: Array[Dictionary] = [
+	{"at": 0.10, "perk": "+5% scrap", "short": "+5% SCRAP"},
+	{"at": 0.25, "perk": "+1 level-up reroll every run", "short": "+1 REROLL"},
+	{"at": 0.50, "perk": "+10% XP", "short": "+10% XP"},
+	{"at": 0.95, "perk": "FINISHER on every weapon", "short": "FINISHER ALL"},
+]
+const POOL_SCRAP := 0.05
+const POOL_XP := 0.1
+var mastery_pool := 0
+
 ## Per-run stats (reset when an arena starts).
 var kills := 0
 var run_time := 0.0
@@ -406,6 +435,8 @@ func _ready() -> void:
 			for part in a.trim_prefix("--mastery=").split(","):
 				var kv := part.split(":")
 				mastery[StringName(kv[0])] = int(kv[1])
+		elif a.begins_with("--pool="):  # debug (use --temp-save): Armory Mastery Pool XP
+			mastery_pool = clampi(int(a.trim_prefix("--pool=")), 0, POOL_MAX)
 		elif a.begins_with("--threat="):  # debug (use with --temp-save): pick + open THREAT N (Extreme only)
 			threat = clampi(int(a.trim_prefix("--threat=")), 0, THREAT_MAX)
 			threat_unlocked = maxi(threat_unlocked, threat)
@@ -530,10 +561,11 @@ func earn_scrap(amount: float, part := &"kills") -> float:
 
 
 ## Every multiplier on earned scrap: difficulty (+ Threat), Salvage Rights (+ MK), the Endless twist, the
-## Contracts' row bonuses and the SALVAGE PROTOCOL level-up card.
+## Contracts' row bonuses, the SALVAGE PROTOCOL level-up card and the Mastery Pool's first checkpoint.
 func scrap_mult() -> float:
 	return diff("scrap") * (1.0 + 0.1 * hangar_level(&"salvage_rights") + hangar_mk_bonus(&"salvage_rights")) \
-		* twist_value("scrap") * Contracts.scrap_mult() * Upgrades.salvage_protocol_mult()
+		* twist_value("scrap") * Contracts.scrap_mult() * Upgrades.salvage_protocol_mult() \
+		* (1.0 + POOL_SCRAP if pool_reached(0) else 1.0)
 
 
 ## Scrap paid as it is (Gold Salvager prizes, Threat bounties): no multipliers. Returns what was added (0
@@ -747,9 +779,10 @@ func mastery_damage_mult(id: StringName) -> float:
 	return 1.0 + MASTERY_DAMAGE * mastery_level(id)
 
 
-## LV 5 perk: FINISHER (hits on robots under MASTERY_FINISHER_HP of their HP deal x1.25).
+## LV 5 perk: FINISHER (hits on robots under MASTERY_FINISHER_HP of their HP deal x1.25) - for every weapon
+## once the Mastery Pool's last checkpoint is reached.
 func has_finisher(id: StringName) -> bool:
-	return mastery_level(id) >= MASTERY_FINISHER_LEVEL
+	return mastery_level(id) >= MASTERY_FINISHER_LEVEL or pool_reached(3)
 
 
 ## LV 10: MASTERED (gold name badge).
@@ -757,17 +790,68 @@ func is_mastered(id: StringName) -> bool:
 	return mastery_level(id) >= MASTERY_MAX
 
 
-## Adds mastery XP to `id` (saved when the run banks, or right away on a level-up).
+## Adds mastery XP to `id` (saved when the run banks, or right away on a level-up), and the same to the
+## MASTERY POOL (plus POOL_LEVEL_BONUS per level gained). A mastered weapon only feeds the pool.
 func add_mastery(id: StringName, amount: int) -> void:
-	if amount <= 0 or is_mastered(id) or not WEAPONS.any(func(w: Dictionary) -> bool: return w["id"] == id):
+	if amount <= 0 or not WEAPONS.any(func(w: Dictionary) -> bool: return w["id"] == id):
+		return
+	add_pool(amount)
+	if is_mastered(id):
 		return
 	var before := mastery_level(id)
 	mastery[id] = mastery_xp(id) + amount
 	_mastery_dirty = true
 	var now := mastery_level(id)
 	if now > before:
+		add_pool(POOL_LEVEL_BONUS * (now - before))
 		save()
 		mastery_up.emit(id, now)
+
+
+# --- armory mastery pool ---------------------------------------------------------------------------------
+
+## Pool XP needed for checkpoint `i`.
+func pool_checkpoint_xp(i: int) -> int:
+	return roundi(POOL_MAX * float(POOL_CHECKPOINTS[i]["at"]))
+
+
+func pool_reached(i: int) -> bool:
+	return mastery_pool >= pool_checkpoint_xp(i)
+
+
+## How many checkpoints are reached (they're in order).
+func pool_checkpoints_reached() -> int:
+	var n := 0
+	for i in POOL_CHECKPOINTS.size():
+		if pool_reached(i):
+			n = i + 1
+	return n
+
+
+func pool_fraction() -> float:
+	return clampf(float(mastery_pool) / POOL_MAX, 0.0, 1.0)
+
+
+## Fills the pool (up to POOL_MAX); every checkpoint passed is announced (pool_checkpoint) and saved.
+func add_pool(amount: int) -> void:
+	if amount <= 0 or mastery_pool >= POOL_MAX:
+		return
+	var before := pool_checkpoints_reached()
+	mastery_pool = mini(mastery_pool + amount, POOL_MAX)
+	_mastery_dirty = true
+	var now := pool_checkpoints_reached()
+	for i in range(before, now):
+		pool_checkpoint.emit(i)
+	if now > before:
+		save()
+
+
+## A save from before the pool: it starts with what the mastery earned so far is worth.
+func _seed_pool() -> int:
+	var total := 0
+	for id in mastery:
+		total += mastery_xp(id) + POOL_LEVEL_BONUS * mastery_level(id)
+	return mini(total, POOL_MAX)
 
 
 func chassis_info(id: StringName = &"") -> Dictionary:
@@ -1211,6 +1295,9 @@ func save() -> void:
 	cfg.set_value("settings", "fullscreen", fullscreen)
 	cfg.set_value("settings", "auto_fire", auto_fire)
 	cfg.set_value("settings", "touch_simple", touch_simple)
+	cfg.set_value("settings", "dynamic_camera", dynamic_camera)
+	cfg.set_value("settings", "rumble", rumble)
+	cfg.set_value("settings", "damage_numbers", damage_numbers)
 	cfg.set_value("controls", "keys", Controls.bindings_to_save())
 	cfg.set_value("progress", "cleared", cleared)
 	var names: Array[String] = []
@@ -1229,6 +1316,7 @@ func save() -> void:
 	for id in mastery:
 		mxp[String(id)] = int(mastery[id])
 	cfg.set_value("mastery", "xp", mxp)
+	cfg.set_value("mastery", "pool", mastery_pool)
 	_mastery_dirty = false
 	cfg.set_value("progress", "threat", threat)
 	cfg.set_value("progress", "threat_unlocked", threat_unlocked)
@@ -1283,6 +1371,9 @@ func _load() -> void:
 	fullscreen = bool(cfg.get_value("settings", "fullscreen", true))
 	auto_fire = bool(cfg.get_value("settings", "auto_fire", true))
 	touch_simple = bool(cfg.get_value("settings", "touch_simple", true))
+	dynamic_camera = bool(cfg.get_value("settings", "dynamic_camera", true))
+	rumble = bool(cfg.get_value("settings", "rumble", true))
+	damage_numbers = bool(cfg.get_value("settings", "damage_numbers", true))
 	Controls.load_bindings(cfg.get_value("controls", "keys", {}))
 	cleared.assign(cfg.get_value("progress", "cleared", []))
 	var saved: Dictionary = cfg.get_value("mech", "look", {})
@@ -1299,6 +1390,8 @@ func _load() -> void:
 	var saved_mastery: Dictionary = cfg.get_value("mastery", "xp", {})
 	for k in saved_mastery:
 		mastery[StringName(k)] = maxi(int(saved_mastery[k]), 0)
+	mastery_pool = clampi(int(cfg.get_value("mastery", "pool", 0)), 0, POOL_MAX) if cfg.has_section_key("mastery", "pool") \
+		else _seed_pool()
 	threat_unlocked = clampi(int(cfg.get_value("progress", "threat_unlocked", 0)), 0, THREAT_MAX)
 	threat = clampi(int(cfg.get_value("progress", "threat", 0)), 0, threat_unlocked)
 	threat_best = clampi(int(cfg.get_value("progress", "threat_best", 0)), 0, THREAT_MAX)
@@ -1357,7 +1450,34 @@ func _reset_run() -> void:
 	Contracts.start_run()
 
 
+## Scene transition doors (ui/scene_shutter.gd): shut before a scene change, part after it. Off in
+## headless runs (tests) and with --no-shutter.
+var _shutter: SceneShutter
+var _changing := false
+
+
 func _change(path: String) -> void:
+	if _changing:
+		return  # already on its way to another scene
+	var animate := DisplayServer.get_name() != "headless" and not OS.get_cmdline_user_args().has("--no-shutter")
+	if animate:
+		if _shutter == null:
+			_shutter = SceneShutter.new()
+			add_child(_shutter)
+		_changing = true
+		get_tree().paused = true
+		await _shutter.close()
+		_changing = false
+		_change_now(path)
+		# Part the doors once the new scene has had a frame to build.
+		await get_tree().process_frame
+		await get_tree().process_frame
+		_shutter.open()
+		return
+	_change_now(path)
+
+
+func _change_now(path: String) -> void:
 	start_at_boss = _pending_boss_start
 	_pending_boss_start = false
 	if path != GUN_RANGE and range_restore != &"":

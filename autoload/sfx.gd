@@ -16,7 +16,8 @@ const MAX_VOICES := 4
 const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"pickup": 3, &"missile": 3,
 	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1,
 	&"scatter": 3, &"boost": 2, &"nova": 2, &"cone": 2, &"repair": 1, &"overdrive": 1, &"deny": 1, &"coin": 3,
-	&"sparkle": 1}
+	&"sparkle": 1, &"beam_shot": 3, &"gatling_shot": 4, &"pistol_shot": 4, &"drone_shot": 2, &"death_boom": 3,
+	&"heartbeat": 1, &"boss_braam": 1}
 
 var _streams: Dictionary = {}
 var _from_file: Dictionary = {}
@@ -116,6 +117,16 @@ func _build() -> void:
 	_streams[&"repair"] = _synth(0.4, 500, 1300, 0.35, 0.0, 0.15, 0.3, 0.3, 1.3)
 	_streams[&"overdrive"] = _synth(0.9, 120, 600, 0.45, 0.5, 0.4, 0.15, 0.4, 1.0, 0.02)
 	_streams[&"deny"] = _synth(0.12, 170, 150, 0.35, 0.8, 0.0, 0.0, 0.0, 0.6)
+	# Layered combat sounds (assets/audio/sfx/*.wav from art_src/sfx/make_combat_sfx.py; these synth
+	# versions only stand in if a file is missing): Beam Rifle, Gatling round, Dual Pistols, Bit Drone,
+	# big robot destroyed, low-armour heartbeat, boss arrival.
+	_streams[&"beam_shot"] = _synth(0.4, 2600, 380, 0.4, 0.4, 0.5, 0.8, 0.2, 1.4)
+	_streams[&"gatling_shot"] = _synth(0.12, 170, 70, 0.5, 0.3, 0.8, 0.7, 0.2, 2.2)
+	_streams[&"pistol_shot"] = _synth(0.12, 2100, 650, 0.4, 0.5, 0.2, 0.8, 0.4, 2.0)
+	_streams[&"drone_shot"] = _synth(0.08, 3400, 1400, 0.35, 0.3, 0.2, 0.9, 0.6, 2.0)
+	_streams[&"death_boom"] = _synth(1.2, 85, 32, 0.6, 0.0, 1.0, 0.3, 0.03, 1.4)
+	_streams[&"heartbeat"] = _synth(0.25, 70, 40, 0.7, 0.0, 0.1, 0.05, 0.02, 2.0)
+	_streams[&"boss_braam"] = _synth(2.0, 55, 50, 0.6, 0.7, 0.3, 0.05, 0.02, 1.0, 0.05)
 	# Scrap chip landing / results count-up: a quick two-note metallic "ting".
 	var ting: Array[AudioStreamWAV] = [_synth(0.045, 1568, 1568, 0.32, 0.15, 0.0, 0.0, 0.0, 1.2),
 		_synth(0.13, 2093, 2093, 0.32, 0.15, 0.0, 0.0, 0.0, 1.8)]

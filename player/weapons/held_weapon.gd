@@ -52,6 +52,10 @@ const GUNS := {
 		"slide": 4.0, "climb": 0.1, "settle": 5.0, "rear": Vector2(37, 254)},
 	&"sniper": {"tex": "sniper", "length": 124.0, "hand": Vector2(12, 178), "muzzle": Vector2(13.5, 1),
 		"slide": 4.0, "climb": 0.14, "settle": 4.5, "eject": Vector2(24, 160), "eject_dir": Vector2(1.0, 0.25)},
+	# One in EACH fist (`dual`): the left one is the mirror image. They fire in turn (kick() swaps hands) and
+	# the Muzzle jumps to whichever pistol fires next. Art: art_src/weapons/build_beam_pistol.py (Blender).
+	&"dual_pistols": {"tex": "beam_pistol", "length": 50.0, "hand": Vector2(36, 229), "muzzle": Vector2(40, 54),
+		"slide": 3.0, "climb": 0.1, "settle": 16.0, "dual": true},
 }
 ## Gatling barrel spin: full speed (rad/s), spin-up and spin-down rates.
 const SPIN_MAX := 40.0
@@ -68,6 +72,9 @@ var mech: Mech
 var _id := &""
 var _tex: Texture2D
 var _kick := 0.0
+## Dual Beam Pistols: the left pistol's own recoil, and which hand fires next (1 right, -1 left).
+var _kick_l := 0.0
+var _side := 1.0
 var _rumble := 0.0
 ## Gatling barrels: spin angle and speed (they keep turning for a moment after you let go).
 var _spin := 0.0
@@ -110,6 +117,7 @@ func sync(id: StringName, delta: float, firing: bool) -> void:
 		_spin_v = 0.0
 	visible = _tex != null
 	_kick = move_toward(_kick, 0.0, delta * (float(GUNS[_id]["settle"]) if _tex else 9.0))
+	_kick_l = move_toward(_kick_l, 0.0, delta * (float(GUNS[_id]["settle"]) if _tex else 9.0))
 	var gatling_firing := firing and id == &"gatling"
 	_rumble = _rumble + delta * 60.0 if gatling_firing else 0.0
 	_spin_v = move_toward(_spin_v, SPIN_MAX if gatling_firing else 0.0, delta * (SPIN_UP if gatling_firing else SPIN_DOWN))
@@ -126,6 +134,14 @@ func sync(id: StringName, delta: float, firing: bool) -> void:
 
 ## Recoil (1 = full rocket kick): the gun jolts back in the fist and twists, and each gun does its own thing.
 func kick(amount := 1.0) -> void:
+	if _tex != null and GUNS[_id].get("dual", false):
+		# The pistol that just fired kicks; the other one fires next.
+		if _side > 0.0:
+			_kick = maxf(_kick, amount)
+		else:
+			_kick_l = maxf(_kick_l, amount)
+		_side = -_side
+		return
 	_kick = maxf(_kick, amount)
 	if _tex == null:
 		return
@@ -147,29 +163,30 @@ func _process(_delta: float) -> void:
 ## Body space: the big gun's barrel tip, the painted rifle's tip, or (melee) just in front of the fist.
 func _barrel_tip() -> Vector2:
 	if _tex != null:
-		return _art_point(GUNS[_id]["muzzle"])
+		return _art_point(GUNS[_id]["muzzle"], _side if GUNS[_id].get("dual", false) else 1.0)
 	if _id == &"blaster":
 		return frame_point(mech, RIFLE_TIP)
 	return fist(mech) + Vector2(0, -HAND_MUZZLE)
 
 
 ## Where the gun's grip is right now (Body space): in the fist, slid back a little by the recoil.
-func _grip() -> Vector2:
+func _grip(side := 1.0) -> Vector2:
 	var shake := Vector2(sin(_rumble) * 0.8, cos(_rumble * 1.3) * 0.5) if _rumble > 0.0 else Vector2.ZERO
-	return fist(mech) + Vector2(0, _kick * float(GUNS[_id]["slide"])) + shake
+	return fist(mech, side) + Vector2(0, (_kick if side > 0.0 else _kick_l) * float(GUNS[_id]["slide"])) + shake
 
 
 ## The gun's twist right now: outward with the kick (the Gatling judders instead).
-func _rot() -> float:
-	var r: float = float(GUNS[_id]["climb"]) * _kick
+func _rot(side := 1.0) -> float:
+	var r: float = float(GUNS[_id]["climb"]) * (_kick if side > 0.0 else -_kick_l)
 	if _rumble > 0.0:
 		r += sin(_rumble * 1.7) * 0.012
 	return r
 
 
 ## A pixel of the gun art, in Body space, where it is drawn this frame.
-func _art_point(art: Vector2) -> Vector2:
-	return _grip() + ((art - GUNS[_id]["hand"]) * _scale()).rotated(_rot())
+## `side` -1 = the left-hand copy of a dual weapon (mirrored).
+func _art_point(art: Vector2, side := 1.0) -> Vector2:
+	return _grip(side) + ((art - GUNS[_id]["hand"]) * _scale() * Vector2(side, 1.0)).rotated(_rot(side))
 
 
 func _scale() -> float:
@@ -209,6 +226,14 @@ func _draw() -> void:
 	draw_texture(_tex, -hand, Color(0, 0, 0, 0.3))
 	draw_set_transform(grip, rot, Vector2(s, s))
 	draw_texture(_tex, -hand)
+	if g.get("dual", false):
+		# The left fist's pistol: mirrored.
+		var gl := _grip(-1.0)
+		var rl := _rot(-1.0)
+		draw_set_transform(gl + Vector2(3, 5), rl, Vector2(-s, s))
+		draw_texture(_tex, -hand, Color(0, 0, 0, 0.3))
+		draw_set_transform(gl, rl, Vector2(-s, s))
+		draw_texture(_tex, -hand)
 	# Gatling: glints sliding across the barrel cluster as it spins (art x 8-37, the barrels' length).
 	if _id == &"gatling" and _spin_v > 1.0:
 		var k := clampf(_spin_v / SPIN_MAX, 0.0, 1.0)

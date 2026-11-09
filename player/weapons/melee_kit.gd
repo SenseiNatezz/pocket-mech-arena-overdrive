@@ -397,6 +397,9 @@ func _hit_line(from: Vector2, to: Vector2, width: float, dmg: float, knock: floa
 	# Hit feel: blades bite - a tiny freeze when a swing connects (longer on heavy blows).
 	if hits > 0:
 		Combat.hitstop(0.055 if dmg >= 90.0 else 0.03)
+		Combat.rumble(0.35, 0.25 if dmg >= 90.0 else 0.0, 0.07)
+		if dmg >= 90.0:
+			Combat.camera_punch(0.03)
 	return hits
 
 
