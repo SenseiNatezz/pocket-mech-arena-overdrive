@@ -58,6 +58,8 @@ const CATALOG := {
 	&"redline": {"name": "Redline", "max": 3, "color": Color(1.0, 0.3, 0.3)},
 	&"od_core": {"name": "Reactor Overcharge", "max": 3, "color": Color(1.0, 0.85, 0.3)},
 	&"thermal": {"name": "Thermal Amplifier", "max": 3, "color": Color(1.0, 0.5, 0.2)},
+	# `contract`: only dealt once that contract is done (autoload/contracts.gd). Effect: Game.scrap_mult.
+	&"salvage_protocol": {"name": "Salvage Protocol", "max": 3, "color": Color(1.0, 0.8, 0.28), "contract": &"jackpot"},
 }
 ## REROLL / BANISH / SKIP (level-up menu): charges per run. Rerolls deal 3 fresh cards, a banish removes
 ## an upgrade from the rest of the run, skipping a pick repairs SKIP_REPAIR HP instead. The Hangar adds
@@ -125,7 +127,7 @@ func reset() -> void:
 	bonus_picks = 0
 	choosing = false
 	stacks.clear()
-	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls")
+	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls") + Contracts.bonus_rerolls()
 	banishes = BASE_BANISHES + Game.hangar_level(&"banishes")
 	banished.clear()
 	save_checkpoint()
@@ -140,6 +142,9 @@ func next_arena_bonus() -> void:
 ## level-up menu deals them as soon as it's ready).
 func grant_head_start() -> void:
 	var n := Game.hangar_level(&"head_start")
+	# Head Start MK levels: a chance of one more free pick.
+	if n > 0 and randf() < Game.hangar_mk_bonus(&"head_start"):
+		n += 1
 	if n > 0:
 		pending += n
 		bonus_picks += n
@@ -197,7 +202,8 @@ func add_xp(amount: float) -> void:
 	if is_max_level():
 		xp = 0.0
 		return
-	xp += amount * xp_mult() * Game.diff("xp") * (1.0 + 0.06 * Game.hangar_level(&"analytics")) * Game.twist_value("xp")
+	xp += amount * xp_mult() * Game.diff("xp") * (1.0 + 0.06 * Game.hangar_level(&"analytics")
+		+ Game.hangar_mk_bonus(&"analytics")) * Game.twist_value("xp") * Contracts.xp_mult()
 	var gained := 0
 	while xp >= xp_to_next():
 		xp -= xp_to_next()
@@ -257,6 +263,8 @@ func is_available(id: StringName) -> bool:
 	if u.has("only") and not u["only"].has(Game.weapon):
 		return false
 	if u.has("not_for") and u["not_for"].has(Game.weapon):
+		return false
+	if u.has("contract") and not Contracts.is_done(u["contract"]):
 		return false
 	return true
 
@@ -321,18 +329,21 @@ func apply(id: StringName) -> void:
 
 
 ## Level-up menu REROLL: spends a charge (the menu deals fresh cards). False when none are left.
+## (Hangar Tactical Uplink MK levels: a chance it's free.)
 func use_reroll() -> bool:
 	if rerolls <= 0:
 		return false
-	rerolls -= 1
+	if randf() >= Game.hangar_mk_bonus(&"rerolls"):
+		rerolls -= 1
 	return true
 
 
-## Level-up menu BANISH: `id` never shows up again this run.
+## Level-up menu BANISH: `id` never shows up again this run. (Purge Protocol MK: a chance it's free.)
 func banish(id: StringName) -> bool:
 	if banishes <= 0 or id == FIELD_REPAIR or banished.has(id):
 		return false
-	banishes -= 1
+	if randf() >= Game.hangar_mk_bonus(&"banishes"):
+		banishes -= 1
 	banished.append(id)
 	return true
 
@@ -456,6 +467,8 @@ func describe(id: StringName) -> String:
 		&"thermal":
 			return "Nova + Cone cost %d%% less heat and deal +%d%% damage." % [roundi((1.0 - ability_cost_mult(n)) * 100.0),
 				roundi((ability_damage_mult(n) - 1.0) * 100.0)]
+		&"salvage_protocol":
+			return "+15%% scrap from everything for the rest of this run (total +%d%%)." % (n * 15)
 		&"field_repair":
 			return "Repair 40 HP and restock one repair kit."
 	return ""
@@ -500,18 +513,24 @@ func fire_rate_mult(lvl := -1) -> float:
 	return 1.0 + 0.15 * _lv(&"rapid", lvl)
 
 
-## (Power Core, times the Hangar's Weapon Calibration)
+## (Power Core, times the Hangar's Weapon Calibration + its MK levels and the PILOT contract row bonus)
 func damage_mult(lvl := -1) -> float:
-	return (1.0 + 0.15 * _lv(&"power", lvl)) * (1.0 + 0.05 * Game.hangar_level(&"calibration"))
+	return (1.0 + 0.15 * _lv(&"power", lvl)) * (1.0 + 0.05 * Game.hangar_level(&"calibration")
+		+ Game.hangar_mk_bonus(&"calibration")) * Contracts.damage_mult()
+
+
+## SALVAGE PROTOCOL (a contract unlock): +15% scrap per level for the rest of the run.
+func salvage_protocol_mult(lvl := -1) -> float:
+	return 1.0 + 0.15 * _lv(&"salvage_protocol", lvl)
 
 
 func max_hp_bonus(lvl := -1) -> float:
 	return 25.0 * _lv(&"armor", lvl)
 
 
-## (Thrusters, times the Hangar's Servo Motors and the chassis)
+## (Thrusters, times the Hangar's Servo Motors (+ MK levels) and the chassis)
 func move_mult(lvl := -1) -> float:
-	return (1.0 + 0.1 * _lv(&"thrusters", lvl)) * (1.0 + 0.04 * Game.hangar_level(&"servos")) \
+	return (1.0 + 0.1 * _lv(&"thrusters", lvl)) * (1.0 + 0.04 * Game.hangar_level(&"servos") + Game.hangar_mk_bonus(&"servos")) \
 		* float(Game.chassis_info()["speed"]) * Game.twist_value("player_speed")
 
 

@@ -52,6 +52,8 @@ const CHILL_SLOW_BOSS := 0.85
 const ICE := Color(0.6, 0.9, 1.0)
 ## CRITICAL TARGETING: crit numbers are gold.
 const CRIT_NUMBER := Color(1.0, 0.92, 0.3)
+## Weapon mastery FINISHER hits (see take_damage) show in hot orange.
+const FINISH_NUMBER := Color(1.0, 0.55, 0.28)
 
 
 func _ready() -> void:
@@ -178,6 +180,12 @@ func take_damage(amount: float, _from_pos: Vector2, source: Node = null) -> void
 			amount = maxf(amount, hp + armor * armor_tier)
 			Combat.shockwave(global_position, hit_radius * 2.0, CRIT_NUMBER, 0.25)
 		Combat.spark(global_position, CRIT_NUMBER, 1.2)
+	# WEAPON MASTERY LV 5 - FINISHER: the mech's hits on robots under 35% HP land 25% harder (orange numbers).
+	var finisher := false
+	if is_instance_valid(source) and source is Mech and hp < max_hp * Game.MASTERY_FINISHER_HP \
+			and Game.has_finisher((source as Mech).weapon):
+		finisher = true
+		amount *= Game.MASTERY_FINISHER_MULT
 	Combat.report_damage(amount, source, self)
 	# Armor soaks hits first: each point of armor absorbs `armor_tier` points of damage, so stripping
 	# it takes 2x / 3x the hits of the same amount of HP. Leftover damage carries into HP.
@@ -193,7 +201,7 @@ func take_damage(amount: float, _from_pos: Vector2, source: Node = null) -> void
 		if amount <= 0.001:
 			return
 	hp -= amount
-	Combat.damage_number(global_position, amount, CRIT_NUMBER if crit else Color(1, 0.85, 0.6), self)
+	Combat.damage_number(global_position, amount, CRIT_NUMBER if crit else (FINISH_NUMBER if finisher else Color(1, 0.85, 0.6)), self)
 	if hp <= 0.0:
 		die()
 

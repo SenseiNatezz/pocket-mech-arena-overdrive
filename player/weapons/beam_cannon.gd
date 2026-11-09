@@ -1,21 +1,28 @@
 class_name BeamCannon
 extends Node2D
-## Beam Cannon (Higgsfield VFX art in assets/hq/beam): the Gundam's special attack.
-##   CHARGE (0.55 s): energy gathers at the muzzle (6-frame charge sheet) + a thin targeting laser;
-##                    the mech slows down.
-##   FIRE   (1.0 s):  a sustained beam from the muzzle to the first wall / solid obstacle. It pierces
-##                    every enemy along the line (damage ticks), damages solid props it stops on, and
-##                    slowly tracks the aim.
+## Beam Cannon: the mech's special attack, a Gundam-style mega beam in the pilot's energy colour (pink by
+## default; gold in overdrive). All drawn in code, additively:
+##   CHARGE (0.55 s): energy particles are sucked into the muzzle, where an orb of light grows, flickering
+##                    hotter, with a ring closing in and a thin targeting line; the mech slows down.
+##   FIRE   (1.0 s):  a lens-flare burst and shockwave rings at the muzzle, and the beam shoots out to the
+##                    first wall / solid obstacle (player/weapons/mega_beam.gdshader: white-hot core,
+##                    coloured corona, ring ripples, a light helix, a fast width pulse). It pierces every
+##                    enemy along the line (damage ticks), damages solid props it stops on, and slowly
+##                    tracks the aim; where it hits, a flare boils with rings and sparks. At the end it
+##                    thins to a line and leaves a fading after-image.
 ##   COOLDOWN (7 s):  shown on the HUD and the touch button.
 ## Damage is reported through the mech, so it builds heat and overdrive like other attacks.
 
-const BODY := preload("res://assets/hq/beam/beam_body.png")
-const MUZZLE := preload("res://assets/hq/beam/beam_muzzle_flash.png")
-const IMPACT := preload("res://assets/hq/beam/beam_impact.png")
-## Animated beam body (flowing plasma, filaments, pulse rings - see the shader).
-const BODY_SHADER := preload("res://player/weapons/beam_body.gdshader")
-## Charge-up frames cut from the Higgsfield sheet with a soft edge (tools/cut_charge_frames.gd).
-const CHARGE_FRAMES := 6
+## The beam itself (see the shader).
+const BEAM_SHADER := preload("res://player/weapons/mega_beam.gdshader")
+const TINT_SHADER := preload("res://player/weapons/mega_beam_tint.gdshader")
+const GLOW := preload("res://assets/fx/glow.tres")
+## How long the beam takes to shoot out to its end, the opening flash, the closing squeeze to a line, and
+## the after-image.
+const REACH_TIME := 0.08
+const FLASH_TIME := 0.16
+const THIN_TIME := 0.18
+const AFTERGLOW := 0.3
 
 @export var charge_time := 0.55
 @export var fire_time := 1.0
@@ -36,15 +43,14 @@ var _tick_t := 0.0
 var _dir := Vector2.RIGHT
 var _start := Vector2.ZERO
 var _end := Vector2.ZERO
-var _frames: Array[Texture2D] = []
 var _add := CanvasItemMaterial.new()
 var _body: Node2D
 var _body_mat := ShaderMaterial.new()
-## Crackling lightning arcs around the firing beam (re-rolled every ARC_EVERY s) and the impact spark timer.
-var _arcs: Array[PackedVector2Array] = []
-var _arc_t := 0.0
+var _tint: Node2D
+var _tint_mat := ShaderMaterial.new()
+## Impact spark timer, and the beam colour of the current shot.
 var _spark_t := 0.0
-const ARC_EVERY := 0.05
+var _col := Color(1.0, 0.35, 0.8)
 ## Set by the mech every frame (Power Core upgrade).
 var damage_mult := 1.0
 
@@ -54,13 +60,18 @@ func _ready() -> void:
 	z_index = 7
 	_add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	material = _add
-	for i in CHARGE_FRAMES:
-		_frames.append(load("res://assets/hq/beam/charge_%d.png" % i))
-	_body_mat.shader = BODY_SHADER
+	_body_mat.shader = BEAM_SHADER
+	# Under the beam: a normal-blend colour band (keeps the corona saturated on bright floors).
+	_tint_mat.shader = TINT_SHADER
+	_tint = Node2D.new()
+	_tint.material = _tint_mat
+	_tint.show_behind_parent = true
+	_tint.draw.connect(_draw_quad.bind(_tint, _tint_mat))
+	add_child(_tint)
 	_body = Node2D.new()
 	_body.material = _body_mat
 	_body.show_behind_parent = true
-	_body.draw.connect(_draw_body)
+	_body.draw.connect(_draw_quad.bind(_body, _body_mat))
 	add_child(_body)
 
 
@@ -88,8 +99,15 @@ func try_fire(aim: Vector2) -> bool:
 	return true
 
 
+## The beam colour: the pilot's energy colour (gold in overdrive), like the rifle's shots.
+func _beam_color() -> Color:
+	return mech._shot_color() if mech and mech.has_method("_shot_color") else Color(1.0, 0.35, 0.8)
+
+
 func update(delta: float, aim: Vector2, muzzle: Vector2, overdrive: bool) -> void:
 	_t += delta
+	if state == State.CHARGE or state == State.FIRE:
+		_col = _beam_color()
 	match state:
 		State.CHARGE:
 			_dir = aim.normalized()
@@ -103,6 +121,9 @@ func update(delta: float, aim: Vector2, muzzle: Vector2, overdrive: bool) -> voi
 				Sfx.play(&"laser", -4.0, 0.0)
 				Combat.shake(0.45)
 				Combat.hitstop(0.06)
+				# The firing flash: shockwave rings punch out of the muzzle.
+				Combat.shockwave(muzzle, 170.0, _col, 0.4)
+				Combat.shockwave(muzzle, 95.0, Color(1, 1, 1, 0.9), 0.22)
 		State.FIRE:
 			# Slowly sweeps toward the aim while firing.
 			var a := _dir.angle()
@@ -117,15 +138,11 @@ func update(delta: float, aim: Vector2, muzzle: Vector2, overdrive: bool) -> voi
 				_tick_t = tick
 				_damage_tick(1.5 if overdrive else 1.0)
 				Combat.shake(0.08)
-			# Crackle: re-roll the lightning arcs; spray sparks off the impact point.
-			_arc_t -= delta
-			if _arc_t <= 0.0:
-				_arc_t = ARC_EVERY
-				_roll_arcs()
+			# Sparks spray off the impact point.
 			_spark_t -= delta
-			if _spark_t <= 0.0:
+			if _spark_t <= 0.0 and _t > REACH_TIME:
 				_spark_t = 0.07
-				Combat.burst(_end, Color(0.55, 0.9, 1.0), 380.0, 0.8)
+				Combat.burst(_end, _col.lightened(0.3), 380.0, 0.8)
 			if _t >= fire_time:
 				state = State.COOLDOWN
 				cooldown_left = cooldown
@@ -136,42 +153,32 @@ func update(delta: float, aim: Vector2, muzzle: Vector2, overdrive: bool) -> voi
 				cooldown_left = 0.0
 				state = State.READY
 	queue_redraw()
+	_tint.queue_redraw()
 	_body.queue_redraw()
 
 
-## Two jagged lightning arcs hugging the beam, from near the muzzle to near the end.
-func _roll_arcs() -> void:
-	_arcs.clear()
-	var length := _start.distance_to(_end)
-	if length < 40.0:
-		return
-	var side := _dir.orthogonal()
-	for k in 2:
-		var pts := PackedVector2Array()
-		var steps := clampi(int(length / 38.0), 4, 32)
-		var a0 := randf_range(0.0, 0.35)
-		var a1 := randf_range(0.65, 1.0)
-		for i in steps + 1:
-			var f := lerpf(a0, a1, i / float(steps))
-			var bulge := sin(f * PI * randf_range(1.0, 3.0)) * width * randf_range(0.5, 1.1) * (1.0 if k == 0 else -1.0)
-			pts.append(_start + _dir * length * f + side * (bulge + randf_range(-9.0, 9.0)))
-		_arcs.append(pts)
+## The beam's radius (px): the hit width plus its corona.
+func _radius() -> float:
+	return width * 0.85
 
 
 ## The beam body (shader quad) under the muzzle flash and impact (show_behind_parent).
-func _draw_body() -> void:
+## One beam quad (the colour band, then the beam itself) on `node` with its shader material `mat`.
+func _draw_quad(node: Node2D, mat: ShaderMaterial) -> void:
 	if state != State.FIRE:
 		return
-	var fade := clampf((fire_time - _t) / 0.15, 0.0, 1.0) * clampf(_t / 0.06, 0.0, 1.0)
 	var length := maxf(_start.distance_to(_end), 1.0)
-	var h := width * 3.4 * (1.0 + 0.1 * sin(_t * 60.0)) * (0.35 + 0.65 * fade)
-	_body_mat.set_shader_parameter("length_px", length)
-	_body_mat.set_shader_parameter("t", _t)
-	_body_mat.set_shader_parameter("intensity", fade)
+	var h := _radius() * 1.6 * 2.0
+	mat.set_shader_parameter("beam_color", _col)
+	mat.set_shader_parameter("length_px", length)
+	mat.set_shader_parameter("t", _t)
+	mat.set_shader_parameter("intensity", 1.0 - smoothstep(fire_time - 0.05, fire_time, _t))
+	mat.set_shader_parameter("reach", clampf(_t / REACH_TIME, 0.0, 1.0))
+	mat.set_shader_parameter("thin", 1.0 - 0.92 * smoothstep(fire_time - THIN_TIME, fire_time, _t))
 	# (a textured rect, so the shader gets UVs running 0..1 along and across the beam)
-	_body.draw_set_transform(_start, _dir.angle())
-	_body.draw_texture_rect(white_tex(), Rect2(0, -h / 2.0, length, h), false)
-	_body.draw_set_transform(Vector2.ZERO)
+	node.draw_set_transform(_start, _dir.angle())
+	node.draw_texture_rect(white_tex(), Rect2(0, -h / 2.0, length, h), false)
+	node.draw_set_transform(Vector2.ZERO)
 
 
 ## A small white texture the shader beams are drawn with (shared).
@@ -219,76 +226,98 @@ func _damage_tick(mult: float) -> void:
 		var e: Node = hit.collider.get_meta("owner_enemy")
 		if is_instance_valid(e):
 			e.take_damage(dmg, _start, mech)
-	Combat.spark(_end, Color(0.5, 0.9, 1.0), 1.4)
+	Combat.spark(_end, _col.lightened(0.3), 1.4)
+
+
+## Soft round glow (the shared radial gradient texture), radius `r`.
+func _glow(p: Vector2, r: float, c: Color) -> void:
+	draw_texture_rect(GLOW, Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), false, c)
+
+
+## Four-point lens-flare star at `p`: arms `along` the beam and `across` it.
+func _flare(p: Vector2, along: float, across: float, c: Color) -> void:
+	var d := _dir * along
+	var n := _dir.orthogonal() * across
+	var k := minf(along, across) * 0.14
+	var dk := _dir * k
+	var nk := _dir.orthogonal() * k
+	draw_colored_polygon(PackedVector2Array([p + d, p + dk + nk, p + n, p - dk + nk, p - d, p - dk - nk, p - n,
+		p + dk - nk]), c)
+
+
+## A four-point sparkle `r` long around the origin (under a draw transform).
+func _flare_local(r: float, c: Color) -> void:
+	var k := r * 0.14
+	draw_colored_polygon(PackedVector2Array([Vector2(r, 0), Vector2(k, k), Vector2(0, r), Vector2(-k, k), Vector2(-r, 0),
+		Vector2(-k, -k), Vector2(0, -r), Vector2(k, -k)]), c)
 
 
 func _draw() -> void:
+	var white := Color(1, 1, 1)
 	match state:
 		State.CHARGE:
 			var k := clampf(_t / charge_time, 0.0, 1.0)
-			# Targeting laser.
-			draw_line(_start, _end, Color(0.4, 0.85, 1.0, 0.25 + 0.3 * k), 2.0, true)
-			draw_circle(_end, 6.0 + 6.0 * k, Color(0.5, 0.9, 1.0, 0.4))
-			# Energy motes spiralling into the muzzle, faster and brighter as the charge builds.
-			for i in 18:
-				var ph := fmod(_t * (1.6 + 1.4 * k) + i * 0.137, 1.0)
+			var flick := 0.85 + 0.15 * sin(_t * 70.0)
+			# Targeting line.
+			draw_line(_start, _end, Color(_col, 0.18 + 0.25 * k), 1.5, true)
+			draw_circle(_end, 5.0 + 5.0 * k, Color(_col, 0.35))
+			# Energy particles sucked into the muzzle, faster and brighter as the charge builds.
+			for i in 22:
+				var ph := fmod(_t * (1.6 + 1.6 * k) + i * 0.137, 1.0)
 				var ang := i * 2.4 + _t * 6.0 * (1.0 if i % 2 == 0 else -1.0)
-				var r := (1.0 - ph) * (90.0 - 30.0 * k)
+				var r := (1.0 - ph) * (110.0 - 40.0 * k)
 				var p := _start + Vector2.from_angle(ang + ph * 3.0) * r
-				draw_circle(p, 2.0 + 2.5 * ph, Color(0.55, 0.9, 1.0, (0.25 + 0.6 * k) * ph))
+				var c := _col.lerp(white, ph * 0.6)
+				draw_line(p, p + (_start - p).normalized() * (4.0 + 8.0 * ph), Color(c, (0.3 + 0.6 * k) * ph), 2.0, true)
 			# A ring closing in on the muzzle.
-			var ring_r := lerpf(70.0, 16.0, k)
-			draw_arc(_start, ring_r, _t * 8.0, _t * 8.0 + TAU * 0.8, 32, Color(0.6, 0.95, 1.0, 0.3 + 0.5 * k), 2.0 + 2.0 * k, true)
-			# Charge-up frames 0-4 growing at the muzzle.
-			var f := mini(int(k * 5.0), 4)
-			var s := 0.35 + 0.45 * k
-			var tex := _frames[f]
-			draw_set_transform(_start, _t * 5.0, Vector2(s, s))
-			draw_texture(tex, -tex.get_size() / 2)
-			draw_set_transform(Vector2.ZERO)
+			var ring_r := lerpf(80.0, 18.0, k)
+			draw_arc(_start, ring_r, _t * 8.0, _t * 8.0 + TAU * 0.8, 32, Color(_col.lightened(0.3), 0.3 + 0.5 * k),
+				2.0 + 2.0 * k, true)
+			# The orb of light growing at the muzzle: colour bloom, white-hot heart, a twinkle.
+			_glow(_start, (24.0 + 46.0 * k) * flick, Color(_col, 0.45 + 0.45 * k))
+			_glow(_start, (10.0 + 20.0 * k * k) * flick, Color(_col.lerp(white, 0.7), 0.8))
+			draw_circle(_start, (3.0 + 7.0 * k * k) * flick, white)
+			if k > 0.5:
+				_flare(_start, 26.0 * k * flick, 26.0 * k * flick, Color(1, 1, 1, (k - 0.5) * 1.6))
 		State.FIRE:
-			var pulse := 1.0 + 0.12 * sin(_t * 60.0)
-			var fade := clampf((fire_time - _t) / 0.15, 0.0, 1.0) * clampf(_t / 0.06, 0.0, 1.0)
 			var length := _start.distance_to(_end)
-			var h := 190.0 * pulse * (0.4 + 0.6 * fade)
-			# Beam body stretched muzzle -> end (scrolls for an energy-flow look).
-			draw_set_transform(_start, _dir.angle(), Vector2.ONE)
-			var scroll := fmod(_t * 2400.0, BODY.get_width())
-			var x := -scroll
-			while x < length:
-				var seg := minf(BODY.get_width(), length - maxf(x, 0.0))
-				var src_x := 0.0 if x >= 0.0 else -x
-				var dst_x := maxf(x, 0.0)
-				var w := minf(BODY.get_width() - src_x, length - dst_x)
-				if w > 0.0:
-					# (the painted body now sits faintly over the animated shader beam, for texture)
-					draw_texture_rect_region(BODY, Rect2(dst_x, -h / 2, w, h),
-						Rect2(src_x, 0, w, BODY.get_height()), Color(1, 1, 1, fade * 0.4))
-				x += BODY.get_width()
-			draw_set_transform(Vector2.ZERO)
-			# Crackling lightning arcs around the beam.
-			for arc in _arcs:
-				draw_polyline(arc, Color(0.7, 0.95, 1.0, 0.55 * fade), 2.0, true)
-				draw_polyline(arc, Color(1, 1, 1, 0.5 * fade), 1.0, true)
-			# Impact: shock rings rippling out of the hit point; muzzle: rings pulsing back.
-			for i in 3:
-				var ph := fmod(_t * 3.5 + i / 3.0, 1.0)
-				draw_arc(_end, 18.0 + 70.0 * ph, 0.0, TAU, 32, Color(0.6, 0.95, 1.0, (1.0 - ph) * 0.7 * fade), 3.0, true)
-				var mp := fmod(_t * 4.5 + i / 3.0, 1.0)
-				draw_arc(_start, 12.0 + 34.0 * mp, 0.0, TAU, 24, Color(0.8, 0.97, 1.0, (1.0 - mp) * 0.5 * fade), 2.0, true)
-			# Muzzle flash and impact burst.
-			var ms := 0.55 * pulse
-			draw_set_transform(_start, _t * 9.0, Vector2(ms, ms))
-			draw_texture(MUZZLE, -MUZZLE.get_size() / 2, Color(1, 1, 1, fade))
-			var is_ := (0.5 + 0.12 * sin(_t * 45.0)) * (0.5 + 0.5 * fade)
-			draw_set_transform(_end, -_t * 7.0, Vector2(is_, is_))
-			draw_texture(IMPACT, -IMPACT.get_size() / 2, Color(1, 1, 1, fade))
-			draw_set_transform(Vector2.ZERO)
-		State.COOLDOWN:
-			# After-glow (frame 5) at the muzzle for a moment.
-			if _t < 0.35:
-				var tex := _frames[5]
-				var a := 1.0 - _t / 0.35
-				draw_set_transform(_start, 0.0, Vector2(0.6, 0.6))
-				draw_texture(tex, -tex.get_size() / 2, Color(1, 1, 1, a))
+			var reach := clampf(_t / REACH_TIME, 0.0, 1.0)
+			var head := _start + _dir * length * reach
+			var pulse := 1.0 + 0.1 * sin(_t * 60.0)
+			var thin := 1.0 - 0.9 * smoothstep(fire_time - THIN_TIME, fire_time, _t)
+			# Firing flash: a big white lens flare, an anamorphic streak across the beam, a bright bloom.
+			if _t < FLASH_TIME:
+				var a := 1.0 - _t / FLASH_TIME
+				_glow(_start, 150.0 * a, Color(_col, 0.8 * a))
+				_glow(_start, 60.0 * a, Color(1, 1, 1, a))
+				_flare(_start, 120.0 * a, 70.0 * a, Color(1, 1, 1, a))
+				draw_set_transform(_start, _dir.angle() + PI / 2, Vector2(1.0, 0.07))
+				draw_texture_rect(GLOW, Rect2(-360, -360, 720, 720), false, Color(_col.lerp(white, 0.5), 0.9 * a))
 				draw_set_transform(Vector2.ZERO)
+			# Muzzle: a white-hot orb with a coloured bloom, throbbing, and a turning sparkle.
+			_glow(_start, 64.0 * pulse * thin, Color(_col, 0.7))
+			_glow(_start, 26.0 * pulse, Color(_col.lerp(white, 0.6), 0.9))
+			draw_circle(_start, 10.0 * pulse * thin + 2.0, white)
+			draw_set_transform(_start, _t * 6.0, Vector2.ONE)
+			_flare_local(30.0 * pulse * thin, Color(1, 1, 1, 0.75))
+			draw_set_transform(Vector2.ZERO)
+			# Impact: a boiling flare where the beam hits, rings rippling out of it.
+			if reach >= 1.0:
+				var boil := 1.0 + 0.15 * sin(_t * 47.0) + 0.1 * sin(_t * 23.0)
+				_glow(_end, 110.0 * boil * thin, Color(_col, 0.7))
+				_glow(_end, 44.0 * boil, Color(_col.lerp(white, 0.6), 0.95))
+				draw_circle(_end, 13.0 * boil * thin + 3.0, white)
+				for i in 3:
+					var ph := fmod(_t * 3.5 + i / 3.0, 1.0)
+					draw_arc(_end, 20.0 + 80.0 * ph, 0.0, TAU, 36, Color(_col.lightened(0.3), (1.0 - ph) * 0.75 * thin),
+						3.0, true)
+			else:
+				_glow(head, 40.0, Color(_col.lerp(white, 0.5), 0.9))
+		State.COOLDOWN:
+			# After-image: the beam's path fades as a thin line; the muzzle glow dies down.
+			if _t < AFTERGLOW:
+				var a := 1.0 - _t / AFTERGLOW
+				draw_line(_start, _end, Color(_col, 0.5 * a * a), 6.0 * a, true)
+				draw_line(_start, _end, Color(1, 1, 1, 0.8 * a * a), 1.5, true)
+				_glow(_start, 40.0 * a, Color(_col, 0.6 * a))
+				_glow(_end, 60.0 * a, Color(_col, 0.5 * a))

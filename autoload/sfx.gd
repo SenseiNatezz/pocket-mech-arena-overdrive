@@ -15,7 +15,8 @@ const FILE_GAIN_DB := 7.0
 const MAX_VOICES := 4
 const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"pickup": 3, &"missile": 3,
 	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1,
-	&"scatter": 3, &"boost": 2, &"nova": 2, &"cone": 2, &"repair": 1, &"overdrive": 1, &"deny": 1}
+	&"scatter": 3, &"boost": 2, &"nova": 2, &"cone": 2, &"repair": 1, &"overdrive": 1, &"deny": 1, &"coin": 3,
+	&"sparkle": 1}
 
 var _streams: Dictionary = {}
 var _from_file: Dictionary = {}
@@ -115,6 +116,16 @@ func _build() -> void:
 	_streams[&"repair"] = _synth(0.4, 500, 1300, 0.35, 0.0, 0.15, 0.3, 0.3, 1.3)
 	_streams[&"overdrive"] = _synth(0.9, 120, 600, 0.45, 0.5, 0.4, 0.15, 0.4, 1.0, 0.02)
 	_streams[&"deny"] = _synth(0.12, 170, 150, 0.35, 0.8, 0.0, 0.0, 0.0, 0.6)
+	# Scrap chip landing / results count-up: a quick two-note metallic "ting".
+	var ting: Array[AudioStreamWAV] = [_synth(0.045, 1568, 1568, 0.32, 0.15, 0.0, 0.0, 0.0, 1.2),
+		_synth(0.13, 2093, 2093, 0.32, 0.15, 0.0, 0.0, 0.0, 1.8)]
+	_streams[&"coin"] = _join(ting)
+	# Gold Salvager (shows up / shot down): a quick bright run up a major chord, ending on a held shimmer.
+	var sparkle: Array[AudioStreamWAV] = []
+	for f in [1568.0, 1976.0, 2349.0, 3136.0]:
+		sparkle.append(_synth(0.05, f, f, 0.3, 0.1, 0.0, 0.0, 0.0, 1.0))
+	sparkle.append(_synth(0.32, 3951.0, 3951.0, 0.24, 0.05, 0.04, 0.9, 0.9, 1.6))
+	_streams[&"sparkle"] = _join(sparkle)
 	var notes: Array[AudioStreamWAV] = []
 	for f in [523.0, 659.0, 784.0, 1047.0]:
 		notes.append(_synth(0.09, f, f, 0.4, 0.25, 0.0, 0.0, 0.0, 0.8))

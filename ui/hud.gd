@@ -4,12 +4,19 @@ extends CanvasLayer
 ##              cooldown dial, beam cooldown, pilot level + XP bar + equipped weapon
 ##   top-center objective, wave/zone banners (upper third, on a dark strip), boss health bar
 ##   boss card  letterbox + the boss's name and epithet whenever a boss arrives (see _show_boss_card)
-##   top-right  arena name (or endless wave), time, kills
+##   top-right  arena name (or endless wave), time, kills, the difficulty (+ THREAT tier); under it the
+##              gold SCRAP ticker (real runs), which rolls up as scrap chips land, with a "+N" pop per gain
+##              (see _update_scrap), and a SCRAP FRENZY timer beside it while one runs (Gold Salvager prize)
+##   arrows     off-screen robots (a big gold one for a GOLD SALVAGER, see _draw_enemy_arrows)
+##   toasts     NEW WEAPON UNLOCKED, MASTERY UP and CONTRACT COMPLETE (queued), stacked on the right side
+##   banners    waves, bosses, GOLD SALVAGER spotted / its prize / got away, THREAT bounty / tier unlocked
 ##   panels     pause (resume / restart / screen shake / main menu + upgrades owned), game over,
-##              victory, and the level-up menu (ui/level_up_menu.gd)
+##              victory (both count the run's SCRAP up with a breakdown, list the THREAT result and a
+##              CONTRACTS block: done this run + closest to done), and the level-up menu (ui/level_up_menu.gd)
 ## Talks to the arena through its signals (objective_changed, banner, boss_started, ...).
 
 const LEVEL_UP_MENU := preload("res://ui/level_up_menu.gd")
+const MASTERY_PIPS := preload("res://ui/mastery_pips.gd")
 
 var mech: Mech
 var arena: Node
@@ -46,6 +53,32 @@ const BLACKOUT := preload("res://ui/blackout.gdshader")
 var _blackout: ColorRect
 var _blackout_k := 0.0
 var _radio_tw: Tween
+## LIVE SCRAP ticker: the number shown (rolls toward Game.run_scrap_landed()), the last value seen, a
+## bump when it grows, and the "+N" pop (merges gains that arrive close together; bonuses get a label).
+const SCRAP_GOLD := Color(1.0, 0.82, 0.3)
+const SCRAP_POP_TIME := 1.1
+var _scrap_shown := 0.0
+var _scrap_seen := 0.0
+var _scrap_bump := 0.0
+var _scrap_pop := 0.0
+var _scrap_pop_t := 99.0
+var _scrap_pop_label := ""
+var _scrap_next_label := ""
+## Results screens: the SCRAP EARNED block of each panel.
+var _over_scrap: VBoxContainer
+var _win_scrap: VBoxContainer
+var _mastery_toast: PanelContainer
+var _mastery_tw: Tween
+## CONTRACTS (autoload/contracts.gd): the CONTRACT COMPLETE toast and each results panel's CONTRACTS block
+## (contracts finished this run + the closest ones to done).
+var _contract_toast: PanelContainer
+var _contract_tw: Tween
+## Contracts finished while a toast is up wait their turn (several can finish on the same kill).
+var _contract_queue: Array[StringName] = []
+var _over_goals: VBoxContainer
+var _win_goals: VBoxContainer
+## THREAT TIERS: what this run won (Game.threat_won), for the results text.
+var _threat_note := ""
 
 
 func _ready() -> void:
@@ -110,12 +143,29 @@ func _ready() -> void:
 	_over_stats = _stats_label(_over_panel)
 	_pause_upgrades = _stats_label(_pause_panel)
 	_pause_upgrades.add_theme_font_size_override("font_size", 14)
+	_over_scrap = _make_scrap_box(_over_panel)
+	_win_scrap = _make_scrap_box(_win_panel)
+	_over_goals = _make_goals_box(_over_panel)
+	_win_goals = _make_goals_box(_win_panel)
 	for p in [_pause_panel, _over_panel, _win_panel]:
 		root.add_child(p)
 		p.hide()
 	_unlock_toast = _make_unlock_toast()
 	root.add_child(_unlock_toast)
 	Game.weapon_unlocked.connect(_on_weapon_unlocked)
+	_mastery_toast = _make_mastery_toast()
+	root.add_child(_mastery_toast)
+	Game.mastery_up.connect(_on_mastery_up)
+	Game.scrap_bonus.connect(_on_scrap_bonus)
+	_contract_toast = _make_contract_toast()
+	root.add_child(_contract_toast)
+	Contracts.contract_done.connect(_on_contract_done)
+	Game.salvager_spotted.connect(_on_salvager_spotted)
+	Game.salvager_caught.connect(_on_salvager_caught)
+	Game.salvager_escaped.connect(_on_salvager_escaped)
+	Game.threat_won.connect(_on_threat_won)
+	_scrap_seen = Game.run_scrap_landed()
+	_scrap_shown = _scrap_seen
 	_radio_box = _make_radio_box()
 	root.add_child(_radio_box)
 	Radio.line_started.connect(_on_radio_line)
@@ -503,15 +553,298 @@ func _on_weapon_unlocked(names: Array[String]) -> void:
 	Sfx.play(&"levelup", -6.0, 0.0)
 	if _toast_tw:
 		_toast_tw.kill()
-	# (`position` is in parent coordinates, so slide in to 450 px left of the right edge; in portrait
-	# it sits below the status card + boss bar)
+	# (`position` is in parent coordinates, so slide in to 450 px left of the right edge, under the run
+	# info + scrap ticker; in portrait it sits below the status card + boss bar)
 	var x := (_unlock_toast.get_parent() as Control).size.x - 450.0
-	_unlock_toast.position = Vector2(x + 40.0, 170.0 if Layout.portrait else 70.0)
+	_unlock_toast.position = Vector2(x + 40.0, _toast_stack_y(_unlock_toast))
 	_toast_tw = create_tween()
 	_toast_tw.set_parallel()
 	_toast_tw.tween_property(_unlock_toast, "modulate:a", 1.0, 0.2)
 	_toast_tw.tween_property(_unlock_toast, "position:x", x, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_toast_tw.chain().tween_property(_unlock_toast, "modulate:a", 0.0, 0.6).set_delay(4.0)
+
+
+## Top of the right-hand toast column: under the run info and the scrap ticker in landscape, under the
+## status card + boss bar in portrait.
+func _toast_y() -> float:
+	if Layout.portrait:
+		return 170.0
+	# (clear of the ticker's "+N" pop, which rises from just under it)
+	return _scrap_baseline() + 34.0 if Game.scrap_enabled else _run_info_y() + 52.0
+
+
+## MASTERY UP toast (Game.mastery_up): the weapon's art, its new mastery level as ten pips, and what the
+## level gave (+2% damage; LV 5 FINISHER; LV 10 MASTERED). Gold-edged; slides in under the unlock toast
+## when that one is showing.
+func _make_mastery_toast() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.06, 0.03, 0.9)
+	sb.border_color = SCRAP_GOLD
+	sb.set_border_width_all(2)
+	sb.border_width_left = 5
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(10)
+	p.add_theme_stylebox_override("panel", sb)
+	p.custom_minimum_size = Vector2(430, 0)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.modulate.a = 0.0
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	p.add_child(h)
+	var icon := TextureRect.new()
+	icon.name = "Icon"
+	icon.custom_minimum_size = Vector2(34, 70)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	h.add_child(icon)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 3)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	var head := _label(14, SCRAP_GOLD)
+	head.name = "Head"
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(head)
+	var name_l := _label(21, Color.WHITE)
+	name_l.name = "Name"
+	name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(name_l)
+	var pips := Control.new()
+	pips.name = "Pips"
+	pips.custom_minimum_size = Vector2(0, 9)
+	pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pips.draw.connect(func() -> void:
+		MASTERY_PIPS.draw_pips(pips, Rect2(Vector2.ZERO, Vector2(minf(pips.size.x, 250.0), 9)), int(pips.get_meta("level", 0)), 0.0))
+	v.add_child(pips)
+	var perk := _label(13, Color(1.0, 0.9, 0.6))
+	perk.name = "Perk"
+	perk.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(perk)
+	return p
+
+
+func _on_mastery_up(id: StringName, level: int) -> void:
+	var info := Game.weapon_info(id)
+	var t := _mastery_toast
+	(t.find_child("Icon", true, false) as TextureRect).texture = load("res://assets/hq/weapons/%s.png" % info["icon"])
+	(t.find_child("Head", true, false) as Label).text = "WEAPON MASTERED!" if level >= Game.MASTERY_MAX else "MASTERY UP"
+	(t.find_child("Name", true, false) as Label).text = "%s   LV %d" % [String(info["name"]).to_upper(), level]
+	var pips := t.find_child("Pips", true, false) as Control
+	pips.set_meta("level", level)
+	pips.queue_redraw()
+	var dmg := roundi(Game.MASTERY_DAMAGE * level * 100.0)
+	var perk := "+%d%% damage with this weapon" % dmg
+	if level >= Game.MASTERY_MAX:
+		perk = "Gold name badge earned  -  +%d%% damage" % dmg
+	elif level == Game.MASTERY_FINISHER_LEVEL:
+		perk = "FINISHER: +25% damage to robots under 35% HP"
+	(t.find_child("Perk", true, false) as Label).text = perk
+	Sfx.play(&"levelup", -9.0, 0.0)
+	if _mastery_tw:
+		_mastery_tw.kill()
+	t.reset_size()
+	var x := (t.get_parent() as Control).size.x - 450.0
+	t.position = Vector2(x + 40.0, _toast_stack_y(t))
+	_mastery_tw = create_tween()
+	_mastery_tw.set_parallel()
+	_mastery_tw.tween_property(t, "modulate:a", 1.0, 0.2)
+	_mastery_tw.tween_property(t, "position:x", x, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_mastery_tw.chain().tween_property(t, "modulate:a", 0.0, 0.6).set_delay(3.2)
+
+
+## Where the next toast in the right-hand column goes: under whichever toasts are showing.
+func _toast_stack_y(skip: Control) -> float:
+	var y := _toast_y()
+	for t: Control in [_unlock_toast, _mastery_toast, _contract_toast]:
+		if t != skip and t.modulate.a > 0.05:
+			y = maxf(y, t.position.y + t.size.y + 10.0)
+	return y
+
+
+## CONTRACT COMPLETE toast (Contracts.contract_done during a run): the contract, its reward (claimed in the
+## Hangar) or what it unlocks. Cyan-edged, with a gold check badge.
+func _make_contract_toast() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.03, 0.06, 0.1, 0.9)
+	sb.border_color = Color(0.35, 0.85, 1.0)
+	sb.set_border_width_all(2)
+	sb.border_width_left = 5
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(10)
+	p.add_theme_stylebox_override("panel", sb)
+	p.custom_minimum_size = Vector2(430, 0)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.modulate.a = 0.0
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	p.add_child(h)
+	var badge := Control.new()
+	badge.custom_minimum_size = Vector2(40, 52)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.draw.connect(func() -> void:
+		var c := badge.size / 2.0
+		badge.draw_circle(c, 18.0, Color(SCRAP_GOLD, 0.18))
+		badge.draw_arc(c, 18.0, 0.0, TAU, 32, SCRAP_GOLD, 2.5, true)
+		badge.draw_polyline(PackedVector2Array([c + Vector2(-8, 0), c + Vector2(-2, 7), c + Vector2(9, -7)]), Color.WHITE, 3.5, true))
+	h.add_child(badge)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 2)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	var head := _label(14, Color(0.45, 0.9, 1.0))
+	head.text = "CONTRACT COMPLETE"
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(head)
+	var name_l := _label(21, Color.WHITE)
+	name_l.name = "Name"
+	name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(name_l)
+	var sub := _label(13, Color(1.0, 0.9, 0.6))
+	sub.name = "Sub"
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	v.add_child(sub)
+	return p
+
+
+func _on_contract_done(id: StringName) -> void:
+	if not Game.scrap_enabled or _ended:
+		return
+	_contract_queue.append(id)
+	if _contract_queue.size() == 1:
+		_show_contract_toast()
+
+
+## Shows the first queued contract; when its toast is done the next one follows (shorter while more wait).
+func _show_contract_toast() -> void:
+	if _contract_queue.is_empty() or _ended:
+		_contract_queue.clear()
+		return
+	var id: StringName = _contract_queue[0]
+	var c := Contracts.info(id)
+	var t := _contract_toast
+	(t.find_child("Name", true, false) as Label).text = String(c["title"]).to_upper()
+	(t.find_child("Sub", true, false) as Label).text = ("UNLOCKS %s  -  " % String(c["unlock"]).to_upper() if c.has("unlock")
+		else "") + "+%s scrap: claim it in the Hangar" % Game.fmt_int(Contracts.reward(id))
+	Sfx.play(&"coin", -6.0, 0.0)
+	if _contract_tw:
+		_contract_tw.kill()
+	t.reset_size()
+	var x := (t.get_parent() as Control).size.x - 450.0
+	t.position = Vector2(x + 40.0, _toast_stack_y(t))
+	_contract_tw = create_tween()
+	_contract_tw.set_parallel()
+	_contract_tw.tween_property(t, "modulate:a", 1.0, 0.2)
+	_contract_tw.tween_property(t, "position:x", x, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_contract_tw.chain().tween_property(t, "modulate:a", 0.0, 0.4).set_delay(2.2 if _contract_queue.size() > 1 else 3.6)
+	_contract_tw.chain().tween_callback(func() -> void:
+		if not _contract_queue.is_empty():
+			_contract_queue.pop_front()
+		_show_contract_toast())
+
+
+## Results screens list the run's contracts themselves: drop the toast and anything still queued.
+func _hide_contract_toast() -> void:
+	_contract_queue.clear()
+	if _contract_tw:
+		_contract_tw.kill()
+	_contract_toast.modulate.a = 0.0
+
+
+## GOLD SALVAGER banners: it showed up, what it paid, or it got away.
+func _on_salvager_spotted() -> void:
+	show_banner("GOLD SALVAGER!", SCRAP_GOLD)
+
+
+func _on_salvager_caught(prize: StringName, amount: float) -> void:
+	var txt: String = {&"frenzy": "SCRAP FRENZY  x%d!" % roundi(Game.FRENZY_MULT),
+		&"lucky": "LUCKY!  +%s SCRAP" % Game.fmt_int(roundi(amount)), &"xp": "XP SURGE!",
+		&"overdrive": "OVERDRIVE CHARGED!", &"jackpot": "JACKPOT!"}.get(prize, "GOLD SALVAGER DOWN!")
+	show_banner(txt, Color(1.0, 0.9, 0.4))
+	if prize == &"lucky":
+		_scrap_next_label = "LUCKY"
+	Sfx.play(&"levelup", -8.0, 0.0)
+
+
+func _on_salvager_escaped() -> void:
+	show_banner("IT GOT AWAY...", Color(0.8, 0.72, 0.5))
+
+
+func _on_threat_won(tier: int, bounty: int, opened: bool) -> void:
+	var parts: Array[String] = ["THREAT %d WON" % tier if tier > 0 else "EXTREME WON"]
+	if bounty > 0:
+		parts.append("BOUNTY +%s" % Game.fmt_int(bounty))
+	if opened:
+		parts.append("THREAT %d UNLOCKED" % (tier + 1))
+	_threat_note = "   -   ".join(parts)
+	if bounty > 0 or opened:
+		# (a beat later: an Endless boss wave's "BOSS DESTROYED" banner comes first)
+		var txt := parts[-1] if opened else parts[1]
+		get_tree().create_timer(2.2, false).timeout.connect(func() -> void:
+			if not _ended:
+				show_banner(txt, Game.THREAT_COLOR))
+
+
+## The run's THREAT line for the results stats ("" when the run wasn't at a threat and won none).
+func _threat_text() -> String:
+	if _threat_note != "":
+		return "\n" + _threat_note
+	return "\nTHREAT %d" % Game.threat_level() if Game.threat_level() > 0 else ""
+
+
+## Results screens' CONTRACTS block (filled by _show_goals): contracts finished this run (gold) and the
+## ones closest to done (blue), under the SCRAP EARNED block.
+func _make_goals_box(panel: Control) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.name = "GoalsBox"
+	box.add_theme_constant_override("separation", 2)
+	var rule := ColorRect.new()
+	rule.color = Color(0.35, 0.8, 1.0, 0.3)
+	rule.custom_minimum_size = Vector2(0, 1)
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(rule)
+	var head := _label(14, Color(0.45, 0.9, 1.0))
+	head.name = "Head"
+	head.text = "CONTRACTS"
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	box.add_child(head)
+	for n: String in ["Done", "Next"]:
+		var l := _label(13, SCRAP_GOLD if n == "Done" else Color(0.75, 0.88, 1.0))
+		l.name = n
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(380, 0)
+		box.add_child(l)
+	var v := panel.get_node("Box/VBox")
+	v.add_child(box)
+	v.move_child(box, 3)
+	box.hide()
+	return box
+
+
+func _show_goals(box: VBoxContainer) -> void:
+	if not Game.scrap_enabled:
+		box.hide()
+		return
+	# (at most 4 short lines, so the panel still fits a 720 px tall screen)
+	var done: Array[String] = []
+	for id in Contracts.completed_run.slice(0, 2):
+		done.append("DONE  %s  +%s scrap" % [Contracts.info(id)["title"], Game.fmt_int(Contracts.reward(id))])
+	if Contracts.completed_run.size() > 2:
+		done.append("...and %d more" % (Contracts.completed_run.size() - 2))
+	(box.find_child("Head", true, false) as Label).text = "CONTRACTS  -  CLAIM THE SCRAP IN THE HANGAR" if not done.is_empty() \
+		else "CONTRACTS"
+	var next: Array[String] = []
+	for id in Contracts.closest(1 if not done.is_empty() else 2):
+		var p := Contracts.progress(id)
+		next.append("NEXT  %s  %s / %s" % [Contracts.info(id)["text"], Game.fmt_int(p.x), Game.fmt_int(p.y)])
+	(box.find_child("Done", true, false) as Label).text = "\n".join(done)
+	(box.find_child("Done", true, false) as Label).visible = not done.is_empty()
+	(box.find_child("Next", true, false) as Label).text = "\n".join(next)
+	box.visible = not (done.is_empty() and next.is_empty())
 
 
 # --- menus ---------------------------------------------------------------------------------------------
@@ -547,15 +880,90 @@ func _upgrade_summary() -> String:
 		"Upgrades: " + ", ".join(parts) if not parts.is_empty() else "No upgrades yet - defeat enemies to level up"]
 
 
-## Unlock announcement for results screens ("" when nothing new).
-## Banks this run's Hangar scrap and says how much it was (results screens).
-func _scrap_text() -> String:
+## Results screens' SCRAP EARNED block (filled by _show_scrap_results): the run's scrap counting up, what
+## it came from (kills / waves / boss / arena clear), the Hangar total, and the weapon's mastery.
+func _make_scrap_box(panel: Control) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.name = "ScrapBox"
+	box.add_theme_constant_override("separation", 3)
+	var rule := ColorRect.new()
+	rule.color = Color(SCRAP_GOLD, 0.35)
+	rule.custom_minimum_size = Vector2(0, 1)
+	rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(rule)
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	var head := _label(15, Color(0.6, 0.9, 1.0))
+	head.text = "SCRAP EARNED"
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	head.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(head)
+	var amount := _label(30, SCRAP_GOLD)
+	amount.name = "Amount"
+	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(amount)
+	var parts := _label(13, Color(0.85, 0.9, 1.0, 0.85))
+	parts.name = "Parts"
+	parts.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parts.custom_minimum_size = Vector2(380, 0)
+	box.add_child(parts)
+	var bank := _label(15, Color(1.0, 0.9, 0.6))
+	bank.name = "Bank"
+	box.add_child(bank)
+	var mastery := _label(13, Color(0.75, 0.85, 1.0))
+	mastery.name = "Mastery"
+	box.add_child(mastery)
+	var v := panel.get_node("Box/VBox")
+	v.add_child(box)
+	v.move_child(box, 2)
+	box.hide()
+	return box
+
+
+## Banks the run's scrap and counts it up in `box` (with a coin tick as it climbs and a punch at the
+## end), then the Hangar total. Hidden when this run earned no scrap (ranges, tutorial).
+func _show_scrap_results(box: VBoxContainer) -> void:
 	if not Game.scrap_enabled and Game.run_scrap <= 0.0:
-		return ""
+		box.hide()
+		return
 	var got := Game.bank_scrap()
-	return "\n+%d SCRAP   (Hangar: %d)" % [got, Game.scrap]
+	var parts: Array[String] = []
+	for p: Array in Game.SCRAP_PARTS:
+		var n := int(Game.last_parts.get(p[0], 0))
+		if n > 0:
+			parts.append("%s %s" % [p[1], Game.fmt_int(n)])
+	(box.find_child("Parts", true, false) as Label).text = "   -   ".join(parts) if not parts.is_empty() else "No scrap this time"
+	var wid: StringName = mech.weapon if mech else Game.weapon
+	var wname := String(Game.weapon_info(wid)["name"]).to_upper()
+	var ml := Game.mastery_level(wid)
+	(box.find_child("Mastery", true, false) as Label).text = "%s  MASTERED" % wname if Game.is_mastered(wid) \
+		else "%s mastery LV %d  -  %d%% to LV %d" % [wname, ml, roundi(Game.mastery_fraction(wid) * 100.0), ml + 1]
+	var amount := box.find_child("Amount", true, false) as Label
+	var bank := box.find_child("Bank", true, false) as Label
+	var start := Game.scrap - got
+	amount.text = "+0"
+	bank.text = "HANGAR TOTAL  %s" % Game.fmt_int(start)
+	box.show()
+	var step := [0]
+	var count := func(v: float) -> void:
+		amount.text = "+" + Game.fmt_int(roundi(v))
+		bank.text = "HANGAR TOTAL  %s" % Game.fmt_int(start + roundi(v))
+		var s := int(v / maxf(float(got), 1.0) * 12.0)
+		if s > step[0]:
+			step[0] = s
+			Sfx.play(&"coin", -19.0, 0.05)
+	var tw := create_tween()
+	tw.tween_interval(0.25)
+	tw.tween_method(count, 0.0, float(got), clampf(0.7 + got / 4000.0, 0.8, 1.8)).set_trans(Tween.TRANS_CUBIC) \
+		.set_ease(Tween.EASE_OUT)
+	tw.tween_callback(func() -> void:
+		Sfx.play(&"coin", -7.0, 0.0)
+		amount.pivot_offset = amount.size / 2.0
+		amount.scale = Vector2.ONE * 1.3
+		create_tween().tween_property(amount, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
 
 
+## Unlock announcement for results screens ("" when nothing new).
 func _unlock_text() -> String:
 	if Game.new_unlocks.is_empty():
 		return ""
@@ -602,13 +1010,16 @@ func _show_game_over() -> void:
 	_pause_panel.hide()
 	if Game.is_endless():
 		var best := Game.endless_best
-		_over_stats.text = "Survived %d wave%s   (Best %d%s)\nLevel %d    Time %s    Kills %d%s" % [
+		_over_stats.text = "Survived %d wave%s   (Best %d%s)\nLevel %d    Time %s    Kills %d%s%s" % [
 			Game.endless_wave, "" if Game.endless_wave == 1 else "s", best,
 			"  NEW RECORD!" if Game.endless_wave > Game.endless_best_at_start else "", Upgrades.level,
-			_fmt_time(Game.run_time), Game.kills, _unlock_text() + _scrap_text()]
+			_fmt_time(Game.run_time), Game.kills, _threat_text(), _unlock_text()]
 	else:
 		_over_stats.text = "Level %d    Time %s    Kills %d%s" % [Upgrades.level, _fmt_time(Game.run_time), Game.kills,
-			_scrap_text()]
+			_threat_text()]
+	_show_scrap_results(_over_scrap)
+	_show_goals(_over_goals)
+	_hide_contract_toast()
 	_retry_boss_btn.visible = Game.can_retry_boss()
 	var retry := _over_panel.find_child("Btn0", true, false) as Button
 	if not Game.is_endless():
@@ -624,8 +1035,11 @@ func _show_victory() -> void:
 	if Upgrades.choosing:
 		await level_menu.closed
 	_ended = true
-	_win_stats.text = "Level %d    Time %s    Kills %d%s" % [Upgrades.level, _fmt_time(Game.run_time), Game.kills,
-		_unlock_text() + _scrap_text()]
+	_win_stats.text = "Level %d    Time %s    Kills %d%s%s" % [Upgrades.level, _fmt_time(Game.run_time), Game.kills,
+		_threat_text(), _unlock_text()]
+	_show_scrap_results(_win_scrap)
+	_show_goals(_win_goals)
+	_hide_contract_toast()
 	_next_btn.visible = Game.has_next_arena()
 	_win_panel.show()
 	(_win_panel.find_child("Btn0" if _next_btn.visible else "Btn1", true, false) as Button).grab_focus()
@@ -644,8 +1058,35 @@ func _process(delta: float) -> void:
 	_t += delta
 	if mech:
 		_hp_shown = lerpf(_hp_shown, mech.hp / mech.max_hp, 1.0 - exp(-6.0 * delta))
+	_update_scrap(delta)
 	_bars.queue_redraw()
 	_update_blackout(delta)
+
+
+## LIVE SCRAP ticker: follow the scrap that has landed this run (Game.run_scrap_landed). Each gain bumps
+## the counter and feeds the "+N" pop; gains closer than 0.5 s merge into one pop (a stream of chips
+## climbs "+10, +20, +40..."), and a wave / arena bonus starts its own labelled pop.
+func _update_scrap(delta: float) -> void:
+	var now := Game.run_scrap_landed()
+	var gain := now - _scrap_seen
+	_scrap_seen = now
+	if gain > 0.001:
+		if _scrap_pop_t > 0.5 or _scrap_next_label != "":
+			_scrap_pop = 0.0
+			_scrap_pop_label = _scrap_next_label
+		_scrap_next_label = ""
+		_scrap_pop += gain
+		_scrap_pop_t = 0.0
+		_scrap_bump = 1.0
+	elif gain < 0.0:
+		_scrap_shown = now  # banked / new run: snap
+	_scrap_pop_t += delta
+	_scrap_bump = move_toward(_scrap_bump, 0.0, delta * 3.5)
+	_scrap_shown = move_toward(_scrap_shown, now, maxf(absf(now - _scrap_shown) * 7.0, 30.0) * delta)
+
+
+func _on_scrap_bonus(_amount: float, label: String) -> void:
+	_scrap_next_label = label
 
 
 ## BLACKOUT twist: fade the darkness in / out and keep the light pool on the mech.
@@ -695,15 +1136,22 @@ func _draw_bars() -> void:
 	if Game.is_endless():
 		place = "ENDLESS  WAVE %d  (BEST %d)" % [maxi(Game.endless_wave + 1, 1), Game.endless_best]
 	var info := "%s   %s   KILLS %d" % [place, _fmt_time(Game.run_time), Game.kills]
-	var iy := 134.0 if Controls.device == Controls.Device.TOUCH and not Layout.portrait else 28.0
+	var iy := _run_info_y()
 	c.draw_string_outline(font, Vector2(vp.x - 420, iy), info, HORIZONTAL_ALIGNMENT_RIGHT, 400, 14, 5, Color(0, 0, 0, 0.8))
 	c.draw_string(font, Vector2(vp.x - 420, iy), info, HORIZONTAL_ALIGNMENT_RIGHT, 400, 14, Color(0.8, 0.9, 1.0))
 	# Difficulty tag under it (not in the ranges, where enemies don't scale).
 	if arena:
 		var d: Dictionary = Game.DIFFICULTIES[Game.difficulty]
 		var tag := String(d["name"]).to_upper()
-		c.draw_string_outline(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, 5, Color(0, 0, 0, 0.8))
-		c.draw_string(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, d["color"])
+		# THREAT tier after it, in the threat colour.
+		var tw0 := 0.0
+		if Game.threat_level() > 0:
+			var th := "THREAT %d" % Game.threat_level()
+			tw0 = font.get_string_size(th, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x + 10.0
+			c.draw_string_outline(font, Vector2(vp.x - 420, iy + 18), th, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, 5, Color(0, 0, 0, 0.8))
+			c.draw_string(font, Vector2(vp.x - 420, iy + 18), th, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, Game.THREAT_COLOR)
+		c.draw_string_outline(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400 - tw0, 13, 5, Color(0, 0, 0, 0.8))
+		c.draw_string(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400 - tw0, 13, d["color"])
 		# Endless twist badge.
 		if Game.is_endless() and Game.TWISTS.has(Game.endless_twist):
 			var tw: Dictionary = Game.TWISTS[Game.endless_twist]
@@ -711,6 +1159,101 @@ func _draw_bars() -> void:
 			c.draw_string_outline(font, Vector2(vp.x - 420, iy + 36), txt, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, 5, Color(0, 0, 0, 0.8))
 			c.draw_string(font, Vector2(vp.x - 420, iy + 36), txt, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13,
 				Color(tw["color"], 0.75 + 0.25 * sin(_t * 3.0)))
+	# LIVE SCRAP ticker (real runs only), under the run info; a SCRAP FRENZY timer beside it.
+	if Game.scrap_enabled and not _ended:
+		var left := _draw_scrap(c, font, vp.x - 20.0, _scrap_baseline())
+		if Game.frenzy_t > 0.0:
+			_draw_frenzy(c, font, left - 8.0, _scrap_baseline())
+
+
+## Baseline of the run info line (top-right; below the touch buttons' row on landscape touch screens).
+func _run_info_y() -> float:
+	return 134.0 if Controls.device == Controls.Device.TOUCH and not Layout.portrait else 28.0
+
+
+## Baseline of the scrap ticker: under the run info, the difficulty tag and (Endless) the twist badge.
+func _scrap_baseline() -> float:
+	var lines := 1 if Game.is_endless() and Game.TWISTS.has(Game.endless_twist) else 0
+	return _run_info_y() + 18.0 + 18.0 * lines + 32.0
+
+
+## The scrap ticker: a gold-edged plate (cut corners like the status card) holding "SCRAP", a spinning
+## hex nut and the count (thousands separated, flashing white as it grows), right-aligned at `right`.
+## The "+N" pop rises from just under it and fades. Returns the plate's left edge.
+func _draw_scrap(c: Control, font: Font, right: float, y: float) -> float:
+	var txt := Game.fmt_int(roundi(_scrap_shown))
+	var fs := 20
+	var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var cw := font.get_string_size("SCRAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+	var w := 12.0 + cw + 10.0 + 18.0 + 8.0 + maxf(tw, 24.0) + 12.0
+	var o := Vector2(right - w, y - 21.0)
+	var sz := Vector2(w, 28.0)
+	var cut := 7.0
+	var plate := PackedVector2Array([o, o + Vector2(sz.x - cut, 0), o + Vector2(sz.x, cut), o + sz, o + Vector2(cut, sz.y),
+		o + Vector2(0, sz.y - cut)])
+	c.draw_colored_polygon(plate, Color(0.06, 0.045, 0.01, 0.72).lerp(Color(0.3, 0.22, 0.04, 0.8), _scrap_bump * 0.6))
+	var edge := plate.duplicate()
+	edge.append(plate[0])
+	c.draw_polyline(edge, Color(SCRAP_GOLD, 0.45 + 0.4 * _scrap_bump), 1.5, true)
+	var x := o.x + 12.0
+	c.draw_string(font, Vector2(x, y - 3.0), "SCRAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(SCRAP_GOLD, 0.8))
+	x += cw + 10.0
+	_draw_nut(c, Vector2(x + 9.0, y - 7.0), 7.5 * (1.0 + 0.3 * _scrap_bump), _t * 1.5)
+	x += 18.0 + 8.0
+	var col := SCRAP_GOLD.lerp(Color.WHITE, 0.6 * _scrap_bump)
+	c.draw_string_outline(font, Vector2(x, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 5, Color(0, 0, 0, 0.85))
+	c.draw_string(font, Vector2(x, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	if _scrap_pop >= 0.5 and _scrap_pop_t < SCRAP_POP_TIME:
+		var k := _scrap_pop_t / SCRAP_POP_TIME
+		var a := clampf((1.0 - k) * 2.5, 0.0, 1.0)
+		var ptxt := "+" + Game.fmt_int(roundi(_scrap_pop)) + ("   " + _scrap_pop_label if _scrap_pop_label != "" else "")
+		var pfs := 17 if _scrap_pop_label != "" else 15
+		var pw := font.get_string_size(ptxt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs).x
+		var pp := Vector2(right - pw - 4.0, y + 26.0 - 10.0 * ease(k, 0.4))
+		c.draw_string_outline(font, pp, ptxt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs, 5, Color(0, 0, 0, 0.85 * a))
+		c.draw_string(font, pp, ptxt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs, Color(1.0, 0.93, 0.55, a))
+	return o.x
+
+
+## SCRAP FRENZY timer (Gold Salvager prize): a hot orange plate "FRENZY x7  12s" left of the scrap ticker,
+## pulsing, with a bar along its foot that drains with the time left.
+func _draw_frenzy(c: Control, font: Font, right: float, y: float) -> void:
+	var txt := "FRENZY x%d" % roundi(Game.FRENZY_MULT)
+	var secs := "%ds" % ceili(Game.frenzy_t)
+	var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+	var sw := font.get_string_size(secs, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+	var w := 12.0 + tw + 10.0 + sw + 12.0
+	var o := Vector2(right - w, y - 21.0)
+	var sz := Vector2(w, 28.0)
+	var cut := 7.0
+	var pulse := 0.5 + 0.5 * sin(_t * 9.0)
+	var plate := PackedVector2Array([o, o + Vector2(sz.x - cut, 0), o + Vector2(sz.x, cut), o + sz, o + Vector2(cut, sz.y),
+		o + Vector2(0, sz.y - cut)])
+	c.draw_colored_polygon(plate, Color(0.32, 0.12, 0.0, 0.85).lerp(Color(0.62, 0.3, 0.02, 0.92), pulse * 0.6))
+	var edge := plate.duplicate()
+	edge.append(plate[0])
+	c.draw_polyline(edge, Color(1.0, 0.72, 0.2, 0.65 + 0.35 * pulse), 2.0, true)
+	var frac := clampf(Game.frenzy_t / Game.FRENZY_TIME, 0.0, 1.0)
+	c.draw_rect(Rect2(o.x + 6.0, o.y + sz.y - 5.0, (w - 12.0) * frac, 3.0), Color(1.0, 0.9, 0.45))
+	var x := o.x + 12.0
+	c.draw_string_outline(font, Vector2(x, y - 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, 5, Color(0, 0, 0, 0.85))
+	c.draw_string(font, Vector2(x, y - 1.0), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1.0, 0.94, 0.55).lerp(Color.WHITE, pulse * 0.4))
+	c.draw_string(font, Vector2(x + tw + 10.0, y - 2.0), secs, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1.0, 0.85, 0.6))
+
+
+## Gold hex nut (the scrap icon, same as the chips the robots drop).
+func _draw_nut(c: CanvasItem, p: Vector2, r: float, spin: float) -> void:
+	var hex := PackedVector2Array()
+	for i in 6:
+		hex.append(p + Vector2.from_angle(spin + i * TAU / 6.0) * r)
+	c.draw_circle(p, r * 1.6, Color(SCRAP_GOLD, 0.12))
+	c.draw_colored_polygon(hex, SCRAP_GOLD)
+	c.draw_colored_polygon(PackedVector2Array([p, hex[0], hex[1]]), SCRAP_GOLD.lightened(0.45))
+	c.draw_colored_polygon(PackedVector2Array([p, hex[3], hex[4]]), SCRAP_GOLD.darkened(0.25))
+	var ring := hex.duplicate()
+	ring.append(hex[0])
+	c.draw_polyline(ring, Color(0.42, 0.27, 0.05), 1.2, true)
+	c.draw_circle(p, r * 0.36, Color(0.42, 0.27, 0.05))
 
 
 func _text(font: Font, pos: Vector2, s: String, size: int, col: Color) -> void:
@@ -816,10 +1359,25 @@ func _draw_status(c: Control, font: Font) -> void:
 		c.draw_string(font, Vector2(bar.position.x, bar.end.y - 1), od_txt, HORIZONTAL_ALIGNMENT_RIGHT, bar.size.x - 4, 10,
 			Color.WHITE)
 
-	# Bottom row: equipped weapon (+ kits / boost / beam on keyboard & gamepad).
+	# Bottom row: equipped weapon (+ kits / boost / beam on keyboard & gamepad) with its WEAPON MASTERY:
+	# "M3" after the name ("MASTERY 3" on touch screens, where the row is free); a MASTERED weapon's name
+	# is gold with a star badge.
 	var row_y := o.y + size.y - 13
-	var wname := String(Game.weapon_info(mech.weapon)["name"]).to_upper()
-	_text(font, Vector2(x0, row_y), wname, 11, Color(0.75, 0.85, 1.0))
+	var wid := mech.weapon
+	var wname := String(Game.weapon_info(wid)["name"]).to_upper()
+	var nx := x0
+	if Game.is_mastered(wid):
+		MASTERY_PIPS.draw_star(c, Vector2(x0 + 5.0, row_y - 4.0), 5.5, SCRAP_GOLD)
+		nx += 14.0
+	_text(font, Vector2(nx, row_y), wname, 11, SCRAP_GOLD if Game.is_mastered(wid) else Color(0.75, 0.85, 1.0))
+	var ml := Game.mastery_level(wid)
+	if ml > 0 and not Game.is_mastered(wid):
+		var tag := ("MASTERY %d" if touch else "M%d") % ml
+		var tx := nx + font.get_string_size(wname, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 7.0
+		# (keyboard / gamepad: stop short of the repair kit boxes on the right of this row)
+		var room := x0 + bw if touch else x0 + bw - 78.0 - (mech.repair_charges_max - 1) * 16.0
+		if tx + font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x < room - 4.0:
+			_text(font, Vector2(tx, row_y), tag, 10, Color(1.0, 0.85, 0.45))
 	if touch:
 		return
 	var cy := row_y - 9
@@ -882,7 +1440,7 @@ func _draw_enemy_arrows(c: Control, font: Font, vp: Vector2) -> void:
 	var enemies := get_tree().get_nodes_in_group("enemies")
 	var alive := 0
 	for e in enemies:
-		if e is Enemy and not e.dead:
+		if e is Enemy and not e.dead and not e.is_in_group("salvagers"):
 			alive += 1
 	var few := alive <= ARROW_FEW
 	var xf := c.get_viewport().get_canvas_transform()
@@ -891,6 +1449,10 @@ func _draw_enemy_arrows(c: Control, font: Font, vp: Vector2) -> void:
 	var pulse := 0.5 + 0.5 * sin(_t * 6.0)
 	for e in enemies:
 		if not (e is Enemy) or e.dead:
+			continue
+		# GOLD SALVAGER: a big pulsing gold arrow with its distance (its JACKPOT drones get none).
+		var gold: bool = e.is_in_group("salvagers")
+		if gold and e.get("mini"):
 			continue
 		var p: Vector2 = xf * e.global_position
 		var r: float = e.hit_radius * xf.get_scale().x
@@ -906,11 +1468,12 @@ func _draw_enemy_arrows(c: Control, font: Font, vp: Vector2) -> void:
 				at.y = STATUS_CARD.end.y + 12.0
 			else:
 				at.x = STATUS_CARD.end.x + 12.0
-		var is_boss := e is WardenBoss
-		var col: Color = e.get("accent") if is_boss else ARROW_COLORS.get(e.get_script().get_global_name(), Color(1.0, 0.4, 0.35))
+		var is_boss := e is WardenBoss or gold
+		var col: Color = SCRAP_GOLD if gold else (e.get("accent") if is_boss
+			else ARROW_COLORS.get(e.get_script().get_global_name(), Color(1.0, 0.4, 0.35)))
 		var size := 24.0 if is_boss else (19.0 if few else 14.0)
 		var alpha := 0.65 + 0.35 * pulse if few or is_boss else 0.75
-		if few:
+		if few or gold:
 			size += 3.0 * pulse
 		var side := dir.orthogonal()
 		var tip := at + dir * size

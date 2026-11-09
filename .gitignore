@@ -4,3 +4,11 @@ build/
 # Raw Higgsfield source renders (~500 MB): only the asset tools read these; the game uses the
 # processed copies in assets/hq/.
 assets/hq/raw/
+
+# Halo Forge Blender work files (250 MB .blend, raw renders); the scripts in art_src/halo_forge/tools are kept
+art_src/halo_forge/*.blend
+art_src/halo_forge/*.blend1
+art_src/halo_forge/raw/
+art_src/halo_forge/turntable_new/
+art_src/halo_forge/*.txt
+art_src/halo_forge/backup_old_gundam/turntable/

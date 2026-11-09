@@ -71,6 +71,15 @@ static func draw(ci: CanvasItem, id: StringName, c: Vector2, s: float, col: Colo
 			ci.draw_circle(c + Vector2(0, s * 0.45), s * 0.22, Color(1.0, 0.5, 0.2))
 			ci.draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.9), Vector2(s * 0.26, s * 1.1)), col, false, w)
 			ci.draw_rect(Rect2(c + Vector2(-s * 0.05, -s * 0.3), Vector2(s * 0.1, s * 0.6)), Color(1.0, 0.5, 0.2))
+		&"salvage_protocol":
+			# A gold scrap nut with a rising chevron (more scrap).
+			var nut := PackedVector2Array()
+			for i in 6:
+				nut.append(c + Vector2(0, s * 0.18) + Vector2.from_angle(i * TAU / 6.0) * s * 0.62)
+			ci.draw_colored_polygon(nut, col)
+			ci.draw_circle(c + Vector2(0, s * 0.18), s * 0.22, Color(0.3, 0.2, 0.04))
+			ci.draw_polyline(PackedVector2Array([c + Vector2(-s * 0.5, -s * 0.55), c + Vector2(0, -s * 0.98),
+				c + Vector2(s * 0.5, -s * 0.55)]), Color(1.0, 0.97, 0.75), w * 1.4, true)
 		&"magnet":
 			ci.draw_arc(c + Vector2(0, -s * 0.05), s * 0.6, 0, PI, 20, col, w * 2.2, true)
 			for x in [-0.6, 0.6]:

@@ -4,6 +4,25 @@ extends Node
 
 ## Weapons just unlocked mid-run by beating a wave (the HUD shows a toast).
 signal weapon_unlocked(names: Array[String])
+## Scrap paid out without a chip (wave / arena bonuses): the HUD ticker's "+N" pop says what it was for.
+signal scrap_bonus(amount: float, label: String)
+## A weapon's mastery reached a new level mid-run (the HUD shows a MASTERY UP toast).
+signal mastery_up(weapon_id: StringName, level: int)
+## GOLD SALVAGER (enemies/gold_salvager.gd): one showed up / was shot down (`prize` = &"frenzy", &"lucky",
+## &"xp", &"overdrive" or &"jackpot"; `amount` = scrap it paid at once) / got away. The HUD announces them.
+signal salvager_spotted
+signal salvager_caught(prize: StringName, amount: float)
+signal salvager_escaped
+## THREAT TIERS: a run on Extreme was won at `tier` (0 = plain Extreme): an arena's boss beaten, or Endless
+## wave THREAT_ENDLESS_WAVE survived. `bounty` = scrap the weapon's bounty paid (0 = none / claimed before),
+## `opened` = it unlocked the next tier.
+signal threat_won(tier: int, bounty: int, opened: bool)
+## For the Contracts (autoload/contracts.gd): an arena's boss went down, a wave was beaten, a run's scrap
+## was banked, a Hangar level was bought.
+signal arena_won(index: int)
+signal wave_won
+signal run_banked(amount: int, parts: Dictionary)
+signal hangar_bought(id: StringName)
 
 const MAIN_MENU := "res://ui/main_menu.tscn"
 const TEST_RANGE := "res://environment/test_range.tscn"
@@ -24,11 +43,12 @@ const CUSTOMIZE := "res://ui/customize.tscn"
 ## (hue/sat/val for the shader; "none" = original paint); energy = shots, muzzle flash and visor
 ## glow; booster = thruster flames and boost afterimages.
 const ARMOR: Array[Dictionary] = [
-	{"name": "Blue", "color": Color(0.16, 0.36, 0.95), "none": true},
+	# Paint recolours the Halo Forge's gold trim (shaders/hit_flash.gdshader); index 0 keeps it gold.
+	{"name": "Gold", "color": Color(0.95, 0.7, 0.12), "none": true},
 	{"name": "Crimson", "color": Color(0.85, 0.12, 0.12), "hue": 0.99, "sat": 1.05, "val": 0.95},
 	{"name": "Emerald", "color": Color(0.12, 0.62, 0.3), "hue": 0.38, "sat": 0.95, "val": 0.8},
 	{"name": "Stealth", "color": Color(0.14, 0.15, 0.18), "hue": 0.62, "sat": 0.12, "val": 0.42},
-	{"name": "Gold", "color": Color(0.95, 0.7, 0.12), "hue": 0.11, "sat": 1.0, "val": 1.1},
+	{"name": "Blue", "color": Color(0.16, 0.36, 0.95), "hue": 0.61, "sat": 1.0, "val": 0.95},
 ]
 const ENERGY: Array[Dictionary] = [
 	{"name": "Pink", "color": Color(1.0, 0.35, 0.8)},
@@ -44,7 +64,16 @@ const BOOSTER: Array[Dictionary] = [
 	{"name": "Orange", "color": Color(1.0, 0.55, 0.15)},
 	{"name": "White", "color": Color(0.95, 0.97, 1.0)},
 ]
-const DEFAULT_LOOK := {"armor": 0, "energy": 1, "booster": 0}
+## Body colour: repaints the Halo Forge's white armour plates (shaders/hit_flash.gdshader `body_recolor`,
+## showcase_recolor.gdshader); index 0 keeps them white.
+const BODY: Array[Dictionary] = [
+	{"name": "White", "color": Color(0.93, 0.94, 0.96), "none": true},
+	{"name": "Graphite", "color": Color(0.36, 0.38, 0.42)},
+	{"name": "Navy", "color": Color(0.24, 0.36, 0.66)},
+	{"name": "Crimson", "color": Color(0.74, 0.16, 0.18)},
+	{"name": "Sand", "color": Color(0.84, 0.74, 0.54)},
+]
+const DEFAULT_LOOK := {"armor": 0, "energy": 1, "booster": 0, "body": 0}
 ## Primary weapons (chosen in the main menu's Armory). Each unlocks once `waves` waves have been beaten
 ## in total (campaign + Endless, counted in `waves_beaten`), or - for a weapon with `beat_arena` - once
 ## that arena is cleared (its boss beaten). Unlocks are permanent (New Game keeps them). `melee` weapons are handled by player/weapons/melee_kit.gd. `stats` = [damage, speed, range]
@@ -98,6 +127,43 @@ const DIFFICULTIES: Array[Dictionary] = [
 		"boss_hp": 1.8, "bombard": 1.7, "xp": 0.45, "heal": 0.6, "elite": 0.1, "xp_curve": 1.6, "scrap": 1.7,
 		"desc": "Brutal swarms with gold ELITES, huge bosses, slow levelling, weak repairs."},
 ]
+## THREAT TIERS (past Extreme; Hades' Heat / Brotato's Danger levels): on Extreme, THREAT 1-10 each add one
+## more condition (cumulative) and +THREAT_SCRAP scrap. Win a run on Extreme to open THREAT 1, and a run
+## at THREAT N to open N+1 ("win" = beat an arena's boss, or survive Endless wave THREAT_ENDLESS_WAVE).
+## The first win at each tier with each weapon pays a one-time BOUNTY (BOUNTY_SCRAP x tier scrap).
+## Picked on the Loadout screen (ui/armory_page.gd); every multiplier goes through diff(), so all the
+## systems that read the difficulty follow along. Keys: hp / damage / speed / bombard / boss_hp / heal
+## multiply, `elite` adds to the elite chance, `escort` = elite guards that drop in with every boss.
+const THREAT_MAX := 10
+const THREAT_SCRAP := 0.25
+const THREAT_ENDLESS_WAVE := 10
+const BOUNTY_SCRAP := 1000
+const THREAT_COLOR := Color(1.0, 0.36, 0.22)
+const THREAT_TIERS: Array[Dictionary] = [
+	{"name": "ARMORED", "desc": "Robots have +20% HP.", "hp": 1.2},
+	{"name": "ELITE TIDE", "desc": "+8% chance a robot is a gold elite.", "elite": 0.08},
+	{"name": "HEAVY ORDNANCE", "desc": "Robots hit 15% harder.", "damage": 1.15},
+	{"name": "BOMBARDMENT", "desc": "Artillery falls 60% more often.", "bombard": 1.6},
+	{"name": "BOSS ESCORT", "desc": "Bosses bring 3 elite guards and +25% HP.", "boss_hp": 1.25, "escort": 3},
+	{"name": "SCARCE REPAIRS", "desc": "Every repair heals 35% less.", "heal": 0.65},
+	{"name": "OVERCLOCKED", "desc": "Robots move 12% faster.", "speed": 1.12},
+	{"name": "FORTIFIED", "desc": "Robots have another +25% HP.", "hp": 1.25},
+	{"name": "ELITE LEGION", "desc": "Another +8% chance of gold elites.", "elite": 0.08},
+	{"name": "APEX", "desc": "Robots hit 20% harder, bosses +25% HP.", "damage": 1.2, "boss_hp": 1.25},
+]
+## Chosen tier (only counts on Extreme, see threat_level), highest tier open, highest tier won, and the
+## bounties claimed ("weapon:tier" -> true). Saved.
+var threat := 0
+var threat_unlocked := 0
+var threat_best := 0
+var bounties := {}
+## Best difficulty each arena was cleared on (arena index -> DIFFICULTIES index; the Contracts read it).
+var arena_best_diff := {}
+## CONTRACTS (autoload/contracts.gd keeps the logic; the progress lives here so it saves with the rest):
+## lifetime counters, and the contracts completed / claimed.
+var contract_stats := {}
+var contracts_done: Array[StringName] = []
+var contracts_claimed: Array[StringName] = []
 
 ## Endless mode fights on the open painted maps (one picked at random per run).
 const ENDLESS_MAPS: Array[String] = [
@@ -191,29 +257,50 @@ var _endless_scene := ""
 ## x the difficulty's "scrap" and the Salvage Rights upgrade). It's held in `run_scrap` and banked into
 ## `scrap` when the run ends (results screen), when you leave for the menu, or when the next run starts.
 ## Scrap buys permanent HANGAR upgrades and mech CHASSIS (ui/hangar_page.gd).
-## id -> name, what one level does, max level, cost of each level.
+## id -> name, what one level does, max level, cost of each level, and `mk`: what every MK level past
+## the max adds (ENDLESS HANGAR: a maxed row keeps going as MK II, MK III... forever, each MK level +2%
+## to the row's stat - see hangar_mk() - at HANGAR_MK_COST x the last price).
+## Every scrap number is x10 since save version 2 (SAVE_VERSION; older saves are converted on load).
 const HANGAR := {
-	&"frame": {"name": "Reinforced Frame", "desc": "+10 max HP per level", "max": 5, "cost": [40, 80, 140, 220, 320]},
-	&"calibration": {"name": "Weapon Calibration", "desc": "+5% damage per level", "max": 5, "cost": [50, 100, 160, 240, 340]},
-	&"servos": {"name": "Servo Motors", "desc": "+4% move speed per level", "max": 3, "cost": [40, 90, 160]},
-	&"analytics": {"name": "Combat Analytics", "desc": "+6% XP per level", "max": 3, "cost": [70, 140, 230]},
-	&"kits": {"name": "Spare Repair Kits", "desc": "+1 repair kit per level", "max": 2, "cost": [120, 260]},
-	&"head_start": {"name": "Head Start", "desc": "Start every run with a free upgrade pick (per level)", "max": 2, "cost": [150, 350]},
-	&"last_stand": {"name": "Last Stand", "desc": "Once per arena, survive a fatal hit with 1 HP", "max": 1, "cost": [250]},
-	&"salvage_rights": {"name": "Salvage Rights", "desc": "+10% scrap per level", "max": 3, "cost": [60, 120, 200]},
-	&"rerolls": {"name": "Tactical Uplink", "desc": "+1 level-up reroll per run (per level)", "max": 3, "cost": [100, 200, 300]},
-	&"banishes": {"name": "Purge Protocol", "desc": "+1 level-up banish per run (per level)", "max": 2, "cost": [150, 300]},
+	&"frame": {"name": "Reinforced Frame", "desc": "+10 max HP per level", "max": 5,
+		"cost": [400, 800, 1400, 2200, 3200], "mk": "+2% max HP"},
+	&"calibration": {"name": "Weapon Calibration", "desc": "+5% damage per level", "max": 5,
+		"cost": [500, 1000, 1600, 2400, 3400], "mk": "+2% damage"},
+	&"servos": {"name": "Servo Motors", "desc": "+4% move speed per level", "max": 3, "cost": [400, 900, 1600],
+		"mk": "+2% move speed"},
+	&"analytics": {"name": "Combat Analytics", "desc": "+6% XP per level", "max": 3, "cost": [700, 1400, 2300],
+		"mk": "+2% XP"},
+	&"kits": {"name": "Spare Repair Kits", "desc": "+1 repair kit per level", "max": 2, "cost": [1200, 2600],
+		"mk": "+2% repair kit healing"},
+	&"head_start": {"name": "Head Start", "desc": "Start every run with a free upgrade pick (per level)", "max": 2,
+		"cost": [1500, 3500], "mk": "+2% chance of one more free pick", "mk_cap": 1.0},
+	&"last_stand": {"name": "Last Stand", "desc": "Once per arena, survive a fatal hit with 1 HP", "max": 1,
+		"cost": [2500], "mk": "+2% max HP left when it saves you", "mk_cap": 0.5},
+	&"salvage_rights": {"name": "Salvage Rights", "desc": "+10% scrap per level", "max": 3, "cost": [600, 1200, 2000],
+		"mk": "+2% scrap"},
+	&"rerolls": {"name": "Tactical Uplink", "desc": "+1 level-up reroll per run (per level)", "max": 3,
+		"cost": [1000, 2000, 3000], "mk": "+2% chance a reroll is free", "mk_cap": 0.5},
+	&"banishes": {"name": "Purge Protocol", "desc": "+1 level-up banish per run (per level)", "max": 2,
+		"cost": [1500, 3000], "mk": "+2% chance a banish is free", "mk_cap": 0.5},
+	# Locked until the "Gold Rush" contract is done (`lock` = contract id, see hangar_locked).
+	&"beacon": {"name": "Salvager Beacon", "desc": "Gold Salvagers show up 12% more often per level", "max": 3,
+		"cost": [1500, 3000, 5000], "mk": "+2% SCRAP FRENZY time", "lock": &"gold_rush"},
 }
+## ENDLESS HANGAR: each MK level adds this much (a fraction) to its row's stat (chance-type rows stop at
+## their `mk_cap`; the stat rows never stop)...
+const HANGAR_MK_STEP := 0.02
+## ...and costs this much more than the level before it (MK II = the last listed cost x1.15).
+const HANGAR_MK_COST := 1.15
 ## Mech chassis (Hangar): multipliers on the standard frame. `ability` is the frame's signature trick.
 const CHASSIS: Array[Dictionary] = [
 	{"id": &"standard", "name": "VX-7 Standard", "cost": 0, "hp": 1.0, "speed": 1.0, "boost_cd": 1.0,
 		"boost_speed": 1.0, "taken": 1.0, "scale": 1.0, "color": Color(0.45, 0.75, 1.0),
 		"ability": "ADAPTIVE CORE: level-ups offer 4 upgrade cards instead of 3.", "desc": "The frame you know: solid armor, solid speed."},
-	{"id": &"striker", "name": "VX-5 Striker", "cost": 250, "hp": 0.75, "speed": 1.18, "boost_cd": 0.6,
+	{"id": &"striker", "name": "VX-5 Striker", "cost": 2500, "hp": 0.75, "speed": 1.18, "boost_cd": 0.6,
 		"boost_speed": 1.15, "taken": 1.0, "scale": 0.82, "color": Color(0.3, 1.0, 0.85),
 		"ability": "AFTERBURNER: boost slices through robots, and every kill recharges your boost faster.",
 		"desc": "Light and fast: -25% HP, +18% speed, boost recharges 40% faster."},
-	{"id": &"bulwark", "name": "VX-9 Bulwark", "cost": 350, "hp": 1.5, "speed": 0.86, "boost_cd": 1.2,
+	{"id": &"bulwark", "name": "VX-9 Bulwark", "cost": 3500, "hp": 1.5, "speed": 0.86, "boost_cd": 1.2,
 		"boost_speed": 0.9, "taken": 0.8, "scale": 1.25, "color": Color(1.0, 0.65, 0.3),
 		"ability": "SIEGE MODE: hold still to brace (+30% damage, -30% damage taken); boost rams robots aside.",
 		"desc": "Heavy armor: +50% HP, takes 20% less damage, but slower."},
@@ -228,8 +315,54 @@ var chassis_owned: Array[StringName] = [&"standard"]
 ## (real campaign / Endless runs do; the tutorial and the ranges don't).
 var run_scrap := 0.0
 var scrap_enabled := false
-## What the last bank_scrap() added (the results screen shows it).
+## What the last bank_scrap() added (the results screen shows it), split like run_scrap_parts.
 var last_banked := 0
+var last_parts := {}
+
+## LIVE SCRAP: what one robot / wave / boss / arena clear pays (x the multipliers in earn_scrap). A kill
+## pays its XP value / 3 x10 (at least SCRAP_KILL), bosses SCRAP_BOSS on top.
+const SCRAP_KILL := 10.0
+const SCRAP_PER_XP := 10.0 / 3.0
+const SCRAP_BOSS := 250.0
+const SCRAP_WAVE := 50.0
+const SCRAP_CLEAR := 400.0
+## Order + labels of the results screen's breakdown (the `part` given to earn_scrap / credit_scrap).
+const SCRAP_PARTS := [[&"kills", "Kills"], [&"waves", "Waves"], [&"boss", "Boss"], [&"arena", "Arena clear"],
+	[&"gold", "Gold Salvager"], [&"bounty", "Bounty"]]
+## GOLD SALVAGER prize SCRAP FRENZY: every scrap gain x FRENZY_MULT for FRENZY_TIME seconds (the extra is
+## filed under "gold"). `frenzy_t` = seconds left (counts down only while the game runs).
+const FRENZY_MULT := 7.0
+const FRENZY_TIME := 20.0
+var frenzy_t := 0.0
+## Gold Salvager spawn spacing: the Hangar's Salvager Beacon makes them 12% more frequent per level.
+const BEACON_STEP := 0.12
+const SCRAP_CHIP := preload("res://environment/props/scrap_chip.gd")
+## This run's scrap by source (keys from SCRAP_PARTS).
+var run_scrap_parts := {}
+## Kill scrap is credited at once, but its SCRAP CHIPS take a moment to fly to the mech: this much of
+## run_scrap is still in the air (the HUD ticker shows run_scrap minus it, so it rolls up as they land).
+var scrap_in_flight := 0.0
+## Bumped whenever the run's scrap is banked / reset, so chips left over from an earlier run are ignored.
+var _scrap_epoch := 0
+
+## Save file layout version: 2 = scrap x10 (older banks are multiplied on load, see _load).
+const SAVE_VERSION := 2
+
+## WEAPON MASTERY: kills in real runs feed the equipped weapon's mastery (the robot's XP value, bosses
+## capped at MASTERY_BOSS_XP). Levels 1-10 on a rising curve; every level is +2% damage with that weapon
+## (mech.gd scales its primary fire), LV 5 adds FINISHER (its hits on robots under 35% HP land 25%
+## harder, see Enemy.take_damage) and LV 10 is MASTERED (gold name badge in the HUD and the Armory).
+const MASTERY_MAX := 10
+## Total mastery XP for each level (index 0 = LV 1).
+const MASTERY_XP: Array[int] = [30, 75, 140, 230, 360, 550, 830, 1230, 1820, 2670]
+const MASTERY_DAMAGE := 0.02
+const MASTERY_FINISHER_LEVEL := 5
+const MASTERY_FINISHER_HP := 0.35
+const MASTERY_FINISHER_MULT := 1.25
+const MASTERY_BOSS_XP := 30
+## weapon id -> mastery XP (saved).
+var mastery := {}
+var _mastery_dirty := false
 
 ## Per-run stats (reset when an arena starts).
 var kills := 0
@@ -252,7 +385,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--look="):  # debug: try a look without saving it
 			var v := a.trim_prefix("--look=").split(",")
-			look = {"armor": int(v[0]), "energy": int(v[1]), "booster": int(v[2])}
+			look = {"armor": int(v[0]), "energy": int(v[1]), "booster": int(v[2]), "body": int(v[3]) if v.size() > 3 else 0}
 		elif a.begins_with("--weapon="):  # debug: try a weapon without saving it
 			weapon = StringName(a.trim_prefix("--weapon="))
 		elif a.begins_with("--difficulty="):  # debug: 0 easy, 1 normal, 2 hard, 3 extreme (not saved)
@@ -265,10 +398,21 @@ func _ready() -> void:
 			scrap = int(a.trim_prefix("--scrap="))
 		elif a.begins_with("--chassis="):  # debug: fly a chassis without buying it (not saved)
 			chassis = StringName(a.trim_prefix("--chassis="))
-		elif a.begins_with("--hangar="):  # debug: --hangar=frame:3,last_stand:1 (not saved)
+		elif a.begins_with("--hangar="):  # debug: --hangar=frame:3,last_stand:1 (not saved; past the max = MK levels)
 			for part in a.trim_prefix("--hangar=").split(","):
 				var kv := part.split(":")
 				hangar[StringName(kv[0])] = int(kv[1])
+		elif a.begins_with("--mastery="):  # debug: --mastery=blaster:600,sword:2670 (weapon mastery XP; use --temp-save)
+			for part in a.trim_prefix("--mastery=").split(","):
+				var kv := part.split(":")
+				mastery[StringName(kv[0])] = int(kv[1])
+		elif a.begins_with("--threat="):  # debug (use with --temp-save): pick + open THREAT N (Extreme only)
+			threat = clampi(int(a.trim_prefix("--threat=")), 0, THREAT_MAX)
+			threat_unlocked = maxi(threat_unlocked, threat)
+		elif a.begins_with("--contract-stat="):  # debug (use --temp-save): --contract-stat=kills=120,w:blaster=40
+			for part in a.trim_prefix("--contract-stat=").split(","):
+				var kv := part.rsplit("=", true, 1)
+				contract_stats[kv[0]] = int(kv[1])
 	Combat.enemy_killed.connect(_on_enemy_killed)
 	_apply_frame_pacing()
 	# (test / capture runs keep their window: they pass --temp-save)
@@ -344,11 +488,23 @@ func _apply_frame_pacing() -> void:
 	Engine.max_fps = rate
 
 
+## SCRAP FRENZY counts down only while the game runs (not in the level-up menu or the pause menu).
+func _process(delta: float) -> void:
+	if frenzy_t > 0.0 and not get_tree().paused:
+		frenzy_t = maxf(frenzy_t - delta, 0.0)
+
+
 func _on_enemy_killed(e: Node) -> void:
 	kills += 1
-	# Scrap: a third of the robot's XP value, bosses +25 on top.
-	if scrap_enabled and e is Enemy:
-		earn_scrap(maxf(1.0, Upgrades.xp_value(e) / 3.0) + (25.0 if e.is_in_group("boss") else 0.0))
+	if not scrap_enabled or not (e is Enemy):
+		return
+	# Scrap: a third of the robot's XP value (x10), bosses SCRAP_BOSS on top - flown to the mech as chips.
+	var boss := e.is_in_group("boss")
+	var got := earn_scrap(maxf(SCRAP_KILL, Upgrades.xp_value(e) * SCRAP_PER_XP) + (SCRAP_BOSS if boss else 0.0),
+		&"boss" if boss else &"kills")
+	_drop_scrap((e as Node2D).global_position, got, 12 if boss else clampi(ceili(got / 12.0), 1, 5))
+	# Weapon mastery for whatever the mech is wielding.
+	add_mastery(weapon, mini(Upgrades.xp_value(e), MASTERY_BOSS_XP))
 
 
 func _notification(what: int) -> void:
@@ -358,41 +514,260 @@ func _notification(what: int) -> void:
 
 # --- hangar ---------------------------------------------------------------------------------------------
 
-## Adds scrap to this run (difficulty and Salvage Rights multipliers applied).
-func earn_scrap(amount: float) -> void:
-	if scrap_enabled:
-		run_scrap += amount * diff("scrap") * (1.0 + 0.1 * hangar_level(&"salvage_rights")) * twist_value("scrap")
+## Adds scrap to this run (scrap_mult applied), filed under `part` (one of SCRAP_PARTS) for the results
+## screen. During a SCRAP FRENZY the gain is x FRENZY_MULT, the extra filed under "gold". Returns what was
+## actually added.
+func earn_scrap(amount: float, part := &"kills") -> float:
+	if not scrap_enabled:
+		return 0.0
+	var got := amount * scrap_mult()
+	_file_scrap(got, part)
+	if frenzy_t > 0.0:
+		var extra := got * (FRENZY_MULT - 1.0)
+		_file_scrap(extra, &"gold")
+		got += extra
+	return got
 
 
-## Moves this run's scrap into the bank (and saves). Returns what was added.
+## Every multiplier on earned scrap: difficulty (+ Threat), Salvage Rights (+ MK), the Endless twist, the
+## Contracts' row bonuses and the SALVAGE PROTOCOL level-up card.
+func scrap_mult() -> float:
+	return diff("scrap") * (1.0 + 0.1 * hangar_level(&"salvage_rights") + hangar_mk_bonus(&"salvage_rights")) \
+		* twist_value("scrap") * Contracts.scrap_mult() * Upgrades.salvage_protocol_mult()
+
+
+## Scrap paid as it is (Gold Salvager prizes, Threat bounties): no multipliers. Returns what was added (0
+## outside real runs).
+func credit_scrap(amount: float, part: StringName) -> float:
+	if not scrap_enabled or amount <= 0.0:
+		return 0.0
+	_file_scrap(amount, part)
+	return amount
+
+
+func _file_scrap(amount: float, part: StringName) -> void:
+	run_scrap += amount
+	run_scrap_parts[part] = float(run_scrap_parts.get(part, 0.0)) + amount
+
+
+## GOLD SALVAGER prize: SCRAP FRENZY for FRENZY_TIME s (+2% per Salvager Beacon MK level); a second one
+## while it runs adds the time on top.
+func start_frenzy() -> void:
+	frenzy_t += FRENZY_TIME * (1.0 + hangar_mk_bonus(&"beacon"))
+
+
+## Gold Salvager spacing multiplier (Salvager Beacon: 12% more often per level).
+func salvager_interval_mult() -> float:
+	return 1.0 - BEACON_STEP * hangar_level(&"beacon")
+
+
+## Sprays already credited scrap at `pos` as `chips` gold chips that fly to the mech.
+func drop_scrap(pos: Vector2, amount: float, chips: int) -> void:
+	_drop_scrap(pos, amount, chips)
+
+
+## A bonus with no chips (wave / arena clear): credited at once, and the HUD pop names it.
+func _scrap_bonus(amount: float, part: StringName, label: String) -> void:
+	var got := earn_scrap(amount, part)
+	if got > 0.0:
+		scrap_bonus.emit(got, label)
+
+
+## Sprays `amount` of (already credited) scrap at `pos` as `chips` gold chips that fly to the mech.
+func _drop_scrap(pos: Vector2, amount: float, chips: int) -> void:
+	if amount <= 0.0:
+		return
+	scrap_in_flight += amount
+	var world := Combat.world()
+	for i in chips:
+		var c: Node2D = SCRAP_CHIP.new()
+		c.value = amount / chips
+		c.epoch = _scrap_epoch
+		c.position = pos
+		c.pop = Vector2.from_angle(randf() * TAU) * randf_range(70.0, 160.0 + chips * 14.0)
+		world.add_child.call_deferred(c)
+
+
+## A scrap chip reached the mech (or vanished with its scene): it no longer counts as in flight.
+func land_scrap(amount: float, epoch: int) -> void:
+	if epoch == _scrap_epoch:
+		scrap_in_flight = maxf(scrap_in_flight - amount, 0.0)
+
+
+## What the HUD's scrap ticker shows: this run's scrap minus the chips still flying in.
+func run_scrap_landed() -> float:
+	return maxf(run_scrap - scrap_in_flight, 0.0)
+
+
+## Moves this run's scrap into the bank (and saves). Returns what was added; last_parts keeps its
+## breakdown (whole numbers that add up to it) for the results screen.
 func bank_scrap() -> int:
 	last_banked = roundi(run_scrap)
+	last_parts = _whole_parts(run_scrap_parts, last_banked)
 	run_scrap = 0.0
-	if last_banked > 0:
+	run_scrap_parts.clear()
+	scrap_in_flight = 0.0
+	_scrap_epoch += 1
+	if last_banked > 0 or _mastery_dirty:
 		scrap += last_banked
+		if last_banked > 0:
+			run_banked.emit(last_banked, last_parts)
 		save()
 	return last_banked
 
 
+## Rounds each part, then puts the rounding left-over on the biggest, so the parts sum to `total`.
+static func _whole_parts(parts: Dictionary, total: int) -> Dictionary:
+	var out := {}
+	var sum := 0
+	var big: Variant = null
+	for k in parts:
+		out[k] = roundi(float(parts[k]))
+		sum += int(out[k])
+		if big == null or float(parts[k]) > float(parts[big]):
+			big = k
+	if big != null:
+		out[big] = int(out[big]) + total - sum
+	return out
+
+
+## Base level of `id`, capped at the row's max (levels bought past it are MK levels, see hangar_mk).
 func hangar_level(id: StringName) -> int:
-	return int(hangar.get(id, 0))
+	var l := int(hangar.get(id, 0))
+	return mini(l, int(HANGAR[id]["max"])) if HANGAR.has(id) else l
 
 
-## Cost of the next level of `id` (-1 when maxed).
-func hangar_cost(id: StringName) -> int:
-	var l := hangar_level(id)
+## ENDLESS HANGAR: MK levels bought past the row's max (1 = MK II, 2 = MK III...).
+func hangar_mk(id: StringName) -> int:
+	return maxi(int(hangar.get(id, 0)) - int(HANGAR[id]["max"]), 0) if HANGAR.has(id) else 0
+
+
+## The row's MK bonus as a fraction (+2% per MK level, up to the row's `mk_cap` if it has one).
+func hangar_mk_bonus(id: StringName) -> float:
+	var b := HANGAR_MK_STEP * hangar_mk(id)
+	return minf(b, float(HANGAR[id]["mk_cap"])) if HANGAR.has(id) and HANGAR[id].has("mk_cap") else b
+
+
+## Most MK levels a capped row can take (-1 = no limit).
+func hangar_mk_max(id: StringName) -> int:
 	var info: Dictionary = HANGAR[id]
-	return -1 if l >= int(info["max"]) else int(info["cost"][l])
+	return ceili(float(info["mk_cap"]) / HANGAR_MK_STEP - 0.001) if info.has("mk_cap") else -1
+
+
+## "MK II" for the first MK level, "MK III" for the next... ("" before any).
+func hangar_mk_name(id: StringName, extra := 0) -> String:
+	var mk := hangar_mk(id) + extra
+	return "" if mk <= 0 else "MK " + roman(mk + 1)
+
+
+## Cost of the next level of `id`: the listed costs, then MK levels forever, each HANGAR_MK_COST times
+## the one before (rounded to 10). -1 only when a capped row (`mk_cap`) is full.
+func hangar_cost(id: StringName) -> int:
+	var info: Dictionary = HANGAR[id]
+	var l := int(hangar.get(id, 0))
+	var costs: Array = info["cost"]
+	if l < int(info["max"]):
+		return int(costs[l])
+	var mk := l - int(info["max"]) + 1
+	if hangar_mk_max(id) >= 0 and mk > hangar_mk_max(id):
+		return -1
+	return roundi(float(costs[-1]) * pow(HANGAR_MK_COST, mk) / 10.0) * 10
 
 
 func buy_hangar(id: StringName) -> bool:
 	var c := hangar_cost(id)
-	if c < 0 or scrap < c:
+	if c < 0 or scrap < c or hangar_locked(id):
 		return false
 	scrap -= c
-	hangar[id] = hangar_level(id) + 1
+	hangar[id] = int(hangar.get(id, 0)) + 1
+	hangar_bought.emit(id)
 	save()
 	return true
+
+
+## A Hangar row with a `lock` (a contract id) stays locked until that contract is done.
+func hangar_locked(id: StringName) -> bool:
+	return HANGAR.has(id) and HANGAR[id].has("lock") and not Contracts.is_done(HANGAR[id]["lock"])
+
+
+## Roman numerals (MK names); plain digits from 4000 up.
+static func roman(n: int) -> String:
+	if n <= 0 or n >= 4000:
+		return str(n)
+	var out := ""
+	for p: Array in [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"], [50, "L"], [40, "XL"],
+			[10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"]]:
+		while n >= int(p[0]):
+			out += String(p[1])
+			n -= int(p[0])
+	return out
+
+
+## 12345 -> "12,345" (scrap amounts).
+static func fmt_int(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
+
+
+# --- weapon mastery --------------------------------------------------------------------------------------
+
+func mastery_xp(id: StringName) -> int:
+	return int(mastery.get(id, 0))
+
+
+func mastery_level(id: StringName) -> int:
+	var x := mastery_xp(id)
+	var l := 0
+	while l < MASTERY_MAX and x >= MASTERY_XP[l]:
+		l += 1
+	return l
+
+
+## [XP into the current level, XP the level needs] (both 0 once mastered).
+func mastery_progress(id: StringName) -> Vector2i:
+	var l := mastery_level(id)
+	if l >= MASTERY_MAX:
+		return Vector2i.ZERO
+	var lo := 0 if l == 0 else MASTERY_XP[l - 1]
+	return Vector2i(mastery_xp(id) - lo, MASTERY_XP[l] - lo)
+
+
+## How far into its current mastery level `id` is (1 when mastered).
+func mastery_fraction(id: StringName) -> float:
+	var p := mastery_progress(id)
+	return 1.0 if p.y <= 0 else clampf(float(p.x) / p.y, 0.0, 1.0)
+
+
+## Damage multiplier for `id`'s own attacks: +2% per mastery level.
+func mastery_damage_mult(id: StringName) -> float:
+	return 1.0 + MASTERY_DAMAGE * mastery_level(id)
+
+
+## LV 5 perk: FINISHER (hits on robots under MASTERY_FINISHER_HP of their HP deal x1.25).
+func has_finisher(id: StringName) -> bool:
+	return mastery_level(id) >= MASTERY_FINISHER_LEVEL
+
+
+## LV 10: MASTERED (gold name badge).
+func is_mastered(id: StringName) -> bool:
+	return mastery_level(id) >= MASTERY_MAX
+
+
+## Adds mastery XP to `id` (saved when the run banks, or right away on a level-up).
+func add_mastery(id: StringName, amount: int) -> void:
+	if amount <= 0 or is_mastered(id) or not WEAPONS.any(func(w: Dictionary) -> bool: return w["id"] == id):
+		return
+	var before := mastery_level(id)
+	mastery[id] = mastery_xp(id) + amount
+	_mastery_dirty = true
+	var now := mastery_level(id)
+	if now > before:
+		save()
+		mastery_up.emit(id, now)
 
 
 func chassis_info(id: StringName = &"") -> Dictionary:
@@ -502,6 +877,9 @@ func record_endless_wave(wave: int) -> Array[String]:
 	if wave > endless_best:
 		endless_best = wave
 		save()
+	if wave == THREAT_ENDLESS_WAVE and scrap_enabled and is_extreme():
+		_threat_win()
+		save()
 	return check_unlocks()
 
 
@@ -541,14 +919,17 @@ func set_look(new_look: Dictionary) -> void:
 	save()
 
 
-## Applies the armor paint to a ShaderMaterial using shaders/hit_flash.gdshader.
-func apply_armor(mat: ShaderMaterial, armor_index := -1) -> void:
+## Applies the trim paint and the body colour to a ShaderMaterial using shaders/hit_flash.gdshader.
+func apply_armor(mat: ShaderMaterial, armor_index := -1, body_index := -1) -> void:
 	var a: Dictionary = ARMOR[clampi(armor_index if armor_index >= 0 else look["armor"], 0, ARMOR.size() - 1)]
 	mat.set_shader_parameter("recolor", not a.get("none", false))
 	if not a.get("none", false):
 		mat.set_shader_parameter("target_hue", a["hue"])
 		mat.set_shader_parameter("sat_mult", a["sat"])
 		mat.set_shader_parameter("val_mult", a["val"])
+	var b: Dictionary = BODY[clampi(body_index if body_index >= 0 else int(look.get("body", 0)), 0, BODY.size() - 1)]
+	mat.set_shader_parameter("body_recolor", not b.get("none", false))
+	mat.set_shader_parameter("body_color", b["color"])
 
 
 func to_customize() -> void:
@@ -621,11 +1002,77 @@ func to_gun_range() -> void:
 
 ## Returns the names of weapons this unlocked.
 func mark_cleared() -> Array[String]:
-	earn_scrap(40.0)
+	_scrap_bonus(SCRAP_CLEAR, &"arena", "ARENA CLEAR")
 	if not cleared.has(arena_index):
 		cleared.append(arena_index)
-		save()
+	if scrap_enabled and difficulty > int(arena_best_diff.get(arena_index, -1)):
+		arena_best_diff[arena_index] = difficulty
+	arena_won.emit(arena_index)
+	_threat_win()
+	save()
 	return check_unlocks()
+
+
+# --- threat tiers ----------------------------------------------------------------------------------------
+
+func is_extreme() -> bool:
+	return difficulty == DIFFICULTIES.size() - 1
+
+
+## The THREAT tier in effect (0 unless the difficulty is Extreme).
+func threat_level() -> int:
+	return clampi(threat, 0, THREAT_MAX) if is_extreme() else 0
+
+
+## Loadout screen: pick a tier (up to the highest one open).
+func set_threat(t: int) -> void:
+	threat = clampi(t, 0, mini(threat_unlocked, THREAT_MAX))
+	save()
+
+
+static func bounty_key(id: StringName, tier: int) -> String:
+	return "%s:%d" % [id, tier]
+
+
+func bounty_claimed(id: StringName, tier: int) -> bool:
+	return bounties.has(bounty_key(id, tier))
+
+
+## Highest THREAT tier won with weapon `id` (0 = none yet).
+func weapon_threat_best(id: StringName) -> int:
+	var best := 0
+	for t in range(1, THREAT_MAX + 1):
+		if bounty_claimed(id, t):
+			best = t
+	return best
+
+
+## Elite guards that drop in with every boss at the current threat (BOSS ESCORT).
+func threat_escort() -> int:
+	var n := 0
+	for i in threat_level():
+		n += int(THREAT_TIERS[i].get("escort", 0))
+	return n
+
+
+## A run on Extreme was won (an arena's boss beaten, or Endless wave THREAT_ENDLESS_WAVE survived): opens the
+## next THREAT tier, records the best, and pays the weapon's one-time BOUNTY for this tier.
+func _threat_win() -> void:
+	if not scrap_enabled or not is_extreme():
+		return
+	var t := threat_level()
+	var opened := false
+	if t >= threat_unlocked and threat_unlocked < THREAT_MAX:
+		threat_unlocked = t + 1
+		opened = true
+	threat_best = maxi(threat_best, t)
+	var bounty := 0
+	if t >= 1 and not bounty_claimed(weapon, t):
+		bounties[bounty_key(weapon, t)] = true
+		bounty = BOUNTY_SCRAP * t
+		credit_scrap(bounty, &"bounty")
+		scrap_bonus.emit(float(bounty), "BOUNTY")
+	threat_won.emit(t, bounty, opened)
 
 
 # --- weapons -------------------------------------------------------------------------------------------
@@ -659,7 +1106,8 @@ func is_melee(id: StringName) -> bool:
 ## (they're also queued in new_unlocks for the results screen).
 func record_wave_cleared() -> Array[String]:
 	waves_beaten += 1
-	earn_scrap(5.0)
+	_scrap_bonus(SCRAP_WAVE, &"waves", "WAVE")
+	wave_won.emit()
 	var fresh := check_unlocks()
 	if fresh.is_empty():
 		save()
@@ -692,9 +1140,21 @@ func check_unlocks() -> Array[String]:
 
 # --- settings / save -------------------------------------------------------------------------------------
 
-## Current difficulty's multiplier `key` (count, hp, damage, speed, boss_hp, bombard).
+## Current difficulty's multiplier `key` (count, hp, damage, speed, boss_hp, bombard, heal, elite, scrap...),
+## with the THREAT tiers in effect on top (see THREAT_TIERS): `elite` adds, `scrap` gets +THREAT_SCRAP per
+## tier, the rest multiply.
 func diff(key: String) -> float:
-	return DIFFICULTIES[difficulty][key]
+	var v: float = DIFFICULTIES[difficulty][key]
+	var t := threat_level()
+	if t <= 0:
+		return v
+	if key == "scrap":
+		return v * (1.0 + THREAT_SCRAP * t)
+	for i in t:
+		var tier: Dictionary = THREAT_TIERS[i]
+		if tier.has(key):
+			v = v + float(tier[key]) if key == "elite" else v * float(tier[key])
+	return v
 
 
 func difficulty_name() -> String:
@@ -762,8 +1222,28 @@ func save() -> void:
 	cfg.set_value("progress", "tutorial_done", tutorial_done)
 	cfg.set_value("progress", "endless_first_boss", _last_first_boss)
 	cfg.set_value("settings", "radio_voice", radio_voice)
+	cfg.set_value("progress", "save_version", SAVE_VERSION)
 	cfg.set_value("hangar", "scrap", scrap)
 	cfg.set_value("hangar", "upgrades", hangar)
+	var mxp := {}
+	for id in mastery:
+		mxp[String(id)] = int(mastery[id])
+	cfg.set_value("mastery", "xp", mxp)
+	_mastery_dirty = false
+	cfg.set_value("progress", "threat", threat)
+	cfg.set_value("progress", "threat_unlocked", threat_unlocked)
+	cfg.set_value("progress", "threat_best", threat_best)
+	cfg.set_value("progress", "bounties", bounties.keys())
+	cfg.set_value("progress", "arena_best_diff", arena_best_diff)
+	cfg.set_value("contracts", "stats", contract_stats)
+	var done_names: Array[String] = []
+	for id in contracts_done:
+		done_names.append(String(id))
+	cfg.set_value("contracts", "done", done_names)
+	var claimed_names: Array[String] = []
+	for id in contracts_claimed:
+		claimed_names.append(String(id))
+	cfg.set_value("contracts", "claimed", claimed_names)
 	cfg.set_value("hangar", "chassis", String(chassis))
 	var owned: Array[String] = []
 	for id in chassis_owned:
@@ -812,6 +1292,30 @@ func _load() -> void:
 	_last_first_boss = str(cfg.get_value("progress", "endless_first_boss", ""))
 	radio_voice = bool(cfg.get_value("settings", "radio_voice", true))
 	scrap = int(cfg.get_value("hangar", "scrap", 0))
+	# Saves from before scrap went x10 (version 1): scale the bank to match the new prices. The file
+	# only says version 2 once it's saved with the scaled number, so this can never apply twice.
+	if int(cfg.get_value("progress", "save_version", 1)) < 2:
+		scrap *= 10
+	var saved_mastery: Dictionary = cfg.get_value("mastery", "xp", {})
+	for k in saved_mastery:
+		mastery[StringName(k)] = maxi(int(saved_mastery[k]), 0)
+	threat_unlocked = clampi(int(cfg.get_value("progress", "threat_unlocked", 0)), 0, THREAT_MAX)
+	threat = clampi(int(cfg.get_value("progress", "threat", 0)), 0, threat_unlocked)
+	threat_best = clampi(int(cfg.get_value("progress", "threat_best", 0)), 0, THREAT_MAX)
+	bounties.clear()
+	for k in cfg.get_value("progress", "bounties", []):
+		bounties[str(k)] = true
+	arena_best_diff.clear()
+	var best_diff: Dictionary = cfg.get_value("progress", "arena_best_diff", {})
+	for k in best_diff:
+		arena_best_diff[int(k)] = int(best_diff[k])
+	contract_stats = (cfg.get_value("contracts", "stats", {}) as Dictionary).duplicate()
+	contracts_done.clear()
+	for n in cfg.get_value("contracts", "done", []):
+		contracts_done.append(StringName(n))
+	contracts_claimed.clear()
+	for n in cfg.get_value("contracts", "claimed", []):
+		contracts_claimed.append(StringName(n))
 	var saved_hangar: Dictionary = cfg.get_value("hangar", "upgrades", {})
 	for k in saved_hangar:
 		if HANGAR.has(StringName(k)):
@@ -849,6 +1353,8 @@ func _reset_run() -> void:
 	kills = 0
 	run_time = 0.0
 	endless_wave = 0
+	frenzy_t = 0.0
+	Contracts.start_run()
 
 
 func _change(path: String) -> void:

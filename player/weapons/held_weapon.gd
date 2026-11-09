@@ -19,22 +19,22 @@ extends Node2D
 ## pixels (256 x 256 cells, the mech facing up). Measured from the painted rifle by tools/measure_fists.gd
 ## (run it again if assets/sprites/gundam_sheet.png changes). The left fist is the mirror image.
 const FIST := {
-	&"idle": [Vector2(180.7, 105.7), Vector2(180.6, 105.7), Vector2(180.6, 105.7), Vector2(180.6, 105.7), Vector2(180.7, 105.7), Vector2(180.7, 105.7), Vector2(180.8, 105.7), Vector2(180.7, 105.7)],
-	&"boost": [Vector2(180.4, 91.4), Vector2(180.4, 91.4), Vector2(180.4, 91.4), Vector2(180.4, 91.4), Vector2(180.6, 91.4), Vector2(180.6, 91.4)],
-	&"bank_left": [Vector2(178.3, 104.5), Vector2(178.3, 104.5), Vector2(178.3, 104.5), Vector2(178.3, 104.5), Vector2(178.2, 104.6), Vector2(178.2, 104.6)],
-	&"bank_right": [Vector2(185.6, 96.9), Vector2(185.6, 96.9), Vector2(185.6, 96.9), Vector2(185.6, 96.9), Vector2(184.9, 97.9), Vector2(184.9, 97.9)],
-	&"dash": [Vector2(180.7, 105.7), Vector2(179.5, 104.7), Vector2(180.4, 91.4), Vector2(176.9, 100.5), Vector2(180.9, 105.7), Vector2(180.7, 105.7)],
-	&"fire": [Vector2(182.5, 101.9), Vector2(182.6, 102.9), Vector2(182.5, 101.9), Vector2(182.5, 101.9)],
-	&"aim": [Vector2(180.7, 105.7), Vector2(182.0, 102.9), Vector2(182.3, 101.9), Vector2(182.6, 101.9), Vector2(182.5, 101.9), Vector2(182.5, 101.9)],
+	&"idle": [Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(180.0, 106.9), Vector2(179.9, 106.9), Vector2(180.0, 106.9)],
+	&"boost": [Vector2(181.7, 90.6), Vector2(181.6, 90.6), Vector2(181.6, 90.6), Vector2(181.7, 90.6), Vector2(181.7, 90.7), Vector2(181.7, 90.7)],
+	&"bank_left": [Vector2(178.6, 112.8), Vector2(178.7, 112.8), Vector2(178.7, 112.8), Vector2(178.6, 112.8), Vector2(178.6, 112.8), Vector2(178.6, 112.8)],
+	&"bank_right": [Vector2(175.6, 104.0), Vector2(175.6, 104.0), Vector2(175.6, 104.0), Vector2(175.6, 104.0), Vector2(175.5, 103.9), Vector2(175.5, 103.9)],
+	&"dash": [Vector2(179.8, 106.9), Vector2(178.0, 109.8), Vector2(181.7, 90.6), Vector2(178.7, 98.7), Vector2(179.9, 106.9), Vector2(179.8, 106.9)],
+	&"fire": [Vector2(180.7, 106.0), Vector2(180.6, 107.0), Vector2(180.6, 106.0), Vector2(180.7, 106.0)],
+	&"aim": [Vector2(179.8, 106.9), Vector2(180.4, 107.0), Vector2(180.8, 106.0), Vector2(180.7, 106.0), Vector2(180.7, 106.0), Vector2(180.7, 106.0)],
 }
 const RIFLE_TIP := {
-	&"idle": [Vector2(207.7, 19.0), Vector2(207.8, 19.0), Vector2(207.9, 19.0), Vector2(207.8, 19.0), Vector2(207.7, 19.0), Vector2(207.7, 18.0), Vector2(207.5, 18.0), Vector2(207.7, 18.0)],
-	&"boost": [Vector2(210.4, 30.0), Vector2(210.9, 30.0), Vector2(210.9, 30.0), Vector2(210.4, 30.0), Vector2(210.3, 29.0), Vector2(210.4, 29.0)],
-	&"bank_left": [Vector2(213.1, 20.0), Vector2(213.1, 21.0), Vector2(213.1, 21.0), Vector2(213.1, 20.0), Vector2(212.7, 20.0), Vector2(212.7, 20.0)],
-	&"bank_right": [Vector2(195.8, 20.0), Vector2(195.7, 20.0), Vector2(195.7, 20.0), Vector2(195.8, 20.0), Vector2(196.6, 19.0), Vector2(196.6, 19.0)],
-	&"dash": [Vector2(207.7, 19.0), Vector2(208.7, 20.0), Vector2(210.4, 30.0), Vector2(211.3, 25.0), Vector2(207.3, 18.0), Vector2(207.7, 19.0)],
-	&"fire": [Vector2(202.6, 0.0), Vector2(202.6, 0.0), Vector2(202.6, 0.0), Vector2(202.6, 0.0)],
-	&"aim": [Vector2(207.7, 19.0), Vector2(204.0, 4.0), Vector2(202.6, 0.0), Vector2(202.4, 0.0), Vector2(202.6, 0.0), Vector2(202.6, 0.0)],
+	&"idle": [Vector2(197.4, 15.0), Vector2(197.5, 16.0), Vector2(197.5, 16.0), Vector2(197.5, 16.0), Vector2(197.4, 15.0), Vector2(197.0, 15.0), Vector2(197.2, 14.0), Vector2(197.0, 15.0)],
+	&"boost": [Vector2(201.8, 36.0), Vector2(201.8, 37.0), Vector2(201.8, 37.0), Vector2(201.8, 36.0), Vector2(201.6, 35.0), Vector2(201.2, 36.0)],
+	&"bank_left": [Vector2(206.0, 17.0), Vector2(206.0, 18.0), Vector2(206.0, 18.0), Vector2(206.0, 17.0), Vector2(205.5, 17.0), Vector2(205.5, 17.0)],
+	&"bank_right": [Vector2(186.8, 17.0), Vector2(186.7, 18.0), Vector2(186.7, 18.0), Vector2(186.8, 17.0), Vector2(187.1, 16.0), Vector2(187.1, 16.0)],
+	&"dash": [Vector2(197.4, 15.0), Vector2(198.7, 19.0), Vector2(201.8, 36.0), Vector2(201.3, 29.0), Vector2(197.2, 13.0), Vector2(197.4, 15.0)],
+	&"fire": [Vector2(191.8, 0.0), Vector2(191.9, 0.0), Vector2(191.8, 0.0), Vector2(191.8, 0.0)],
+	&"aim": [Vector2(197.4, 15.0), Vector2(193.7, 0.0), Vector2(191.4, 0.0), Vector2(191.6, 0.0), Vector2(191.8, 0.0), Vector2(191.8, 0.0)],
 }
 ## The sprite is centred on its 256 x 256 cell.
 const CELL_CENTER := Vector2(128, 128)

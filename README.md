@@ -23,7 +23,8 @@ leap-slam) and the Slagspitter (lobs molten globs; its furnace tank is weak from
 (4 with the VX-7 Standard) from 23: Target Lock, Triple Shot, Defense Shield, Piercing Rounds, Rapid
 Fire, Power Core, Armor Plating, Thrusters, Orbit Blades, Explosive Rounds, Salvage Repair, Heat Sink,
 Scavenger, Critical Targeting, Bit Drones, Micro-Missile Pod, Arc Emitter, Impulse Burst, Reactive
-Armor, Cryo Rounds, Redline, Reactor Overcharge and Thermal Amplifier. Two upgrades you've invested in
+Armor, Cryo Rounds, Redline, Reactor Overcharge and Thermal Amplifier (a 24th, Salvage Protocol: +15%
+scrap per level, joins once the Jackpot contract is done). Two upgrades you've invested in
 unlock a gold COMBO card (9 combos, e.g. Cluster Missiles, Storm Bits, Shatter, Executioner). Under the
 cards: REROLL (2 per run, +1 per NEXT ARENA), BANISH (1 per run: that upgrade never shows up again) and
 SKIP (+20 HP instead); the Hangar sells more rerolls and banishes. Max level 20; leveling slows down
@@ -32,6 +33,22 @@ after level 5, 10 and 15. Upgrades carry over when you press NEXT ARENA.
 **Hangar chassis:** VX-7 Standard (4 upgrade cards per level-up), VX-5 Striker (fast; boosting slices
 robots and kills recharge the boost), VX-9 Bulwark (heavy; boost rams robots, and SIEGE MODE braces it
 when you stand still: +30% damage, -30% damage taken).
+
+**Gold Salvager:** every 2-3 minutes of waves a gold drone pops up near you and flees for 11 seconds.
+Shoot it down for a random prize: SCRAP FRENZY (all scrap x7 for 20 s), LUCKY (15% of the run's scrap at
+once), XP SURGE, a full Overdrive, or rarely a JACKPOT of little gold drones that each pay scrap. The
+Hangar's Salvager Beacon (opened by the Gold Rush contract) makes them show up more often.
+
+**Threat tiers:** win a run on Extreme (beat an arena's boss, or reach Endless wave 10) to open THREAT 1,
+then each tier opens the next, up to THREAT 10. Pick the tier on the Loadout screen. Every tier adds one
+condition on top of the ones before (Armored, Elite Tide, Heavy Ordnance, Bombardment, Boss Escort, Scarce
+Repairs, Overclocked, Fortified, Elite Legion, Apex) and +25% scrap, and the first win at each tier with
+each weapon pays a one-time bounty (1,000 scrap x the tier). Weapon cards show their best tier.
+
+**Contracts (Hangar > CONTRACTS):** 40 goals in 5 rows (Rookie, Pilot, Veteran, Ace, Legend) that finish
+on their own as you play (a toast mid-run, a list on the results screen). Claim each one's scrap in the
+Hangar; claiming a whole row switches on its permanent bonus (+5% scrap, +5% damage, +1 reroll a run, +5%
+XP, +10% scrap). Gold Rush opens the Salvager Beacon Hangar row and Jackpot the Salvage Protocol card.
 
 **Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close),
 fullscreen (also F11 / Alt+Enter), CONTROLS (rebind every keyboard / mouse action), and on touch
@@ -74,7 +91,7 @@ Bastion and the armored Tidebreaker crab (all spawnable in the Weapon Range too)
 - `player/` - the mech, its camera (aim lead + shake), boost ring, weapons (guns, beam cannon, melee kit)
 - `enemies/` - Scrap Hound (chaser), Scrap Gunner (shooter), Blade Striker, Aegis Guardian, Lancer, Heavy Tank (tank); bosses: Warden, `bosses/` Ronin + Seraph
 - `environment/` - arena builder, arena scenes, tiles, props (cover, crates, pits, doors...), hazards, encounter zones, parallax skyline
-- `ui/` - HUD, menus (Armory, Gun Range panel), touch controls
+- `ui/` - HUD, menus (title lobby: `main_menu.gd` + `lobby_kit.gd` / `lobby_widgets.gd`; Armory, Hangar, Gun Range panel), touch controls
 - `tools/` - tileset generator, automated tests, autopilot, debug runner
 - `assets/hq/raw/` - source art for the tools only. It has a `.gdignore`, so Godot never imports or exports it. Big painted maps and the Customize turntable import as lossy WebP (small download, works on every platform).
 
@@ -90,3 +107,9 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --gun-range --touch --attach=res://tools/touch_test.gd --temp-save` checks the touch controls (auto-aim, FIRE button, move stick)
 - `godot --headless --path . -- --arena=6 --no-intro --attach=res://tools/forge_test.gd --temp-save` checks the Volcanic Forge robots and the VULCAN boss
 - `godot --headless --path . -- --gun-range --attach=res://tools/energy_sword_test.gd --temp-save` checks the Energy Sword (unlock, held art, combo + CRESCENT NOVA)
+- `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
+- `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena
+- `godot --headless --path . -- --temp-save --scrap=4200 --attach=res://tools/lobby_test.gd --lobby-nav-test` checks keyboard / gamepad navigation on the title lobby (add `--portrait` for the phone layout)
+
+## Credits
+- Fonts: Chakra Petch and Barlow Condensed, SIL Open Font License 1.1 (`assets/fonts/OFL.txt`)

@@ -183,7 +183,7 @@ func _ready() -> void:
 	hit_radius *= _body_scale
 	boost_speed *= float(_chassis["boost_speed"])
 	# Hangar: Reinforced Frame (+10 HP a level) and Spare Repair Kits.
-	_base_max_hp = max_hp * float(_chassis["hp"]) + 10.0 * Game.hangar_level(&"frame")
+	_base_max_hp = (max_hp * float(_chassis["hp"]) + 10.0 * Game.hangar_level(&"frame")) * (1.0 + Game.hangar_mk_bonus(&"frame"))
 	max_hp = _base_max_hp + Upgrades.max_hp_bonus()
 	hp = max_hp
 	repair_charges_max += Game.hangar_level(&"kits")
@@ -286,7 +286,7 @@ func _physics_process(delta: float) -> void:
 	if Controls.is_firing() and _fire_cd <= 0.0 and _boost_left <= 0.0 and not beam.is_busy():
 		_fire_cd = 1.0 / (_weapon_rate() * Upgrades.fire_rate_mult() * (2.0 if od else 1.0) * _overclock()
 			* (1.0 + (Upgrades.redline_rate() if redline else 0.0)))
-		_fire_primary(dmg)
+		_fire_primary(dmg * Game.mastery_damage_mult(weapon))
 	if Input.is_action_pressed("fire_secondary") and _secondary_cd <= 0.0 and _boost_left <= 0.0 and not beam.is_busy():
 		_secondary_cd = secondary_cooldown * (0.6 if od else 1.0)
 		_fire_secondary(dmg)
@@ -640,7 +640,7 @@ func _self_repair() -> void:
 		return
 	repair_charges -= 1
 	_repair_cd = 1.0
-	var amount := repair_amount * Game.diff("heal")
+	var amount := repair_amount * Game.diff("heal") * (1.0 + Game.hangar_mk_bonus(&"kits"))
 	hp = minf(hp + amount, max_hp)
 	Combat.shockwave(global_position, 80.0, Color(0.4, 1.0, 0.5), 0.4)
 	Combat.damage_number(global_position, amount, Color(0.5, 1.0, 0.6), self)
@@ -844,7 +844,7 @@ func _apply_damage(amount: float) -> void:
 	# Hangar LAST STAND: once per arena, a fatal hit leaves 1 HP and a moment of invulnerability.
 	if hp <= 0.0 and not _last_stand_used and Game.hangar_level(&"last_stand") > 0:
 		_last_stand_used = true
-		hp = 1.0
+		hp = maxf(1.0, max_hp * Game.hangar_mk_bonus(&"last_stand"))
 		_invuln = 1.6
 		Combat.shockwave(global_position, 220.0, Color(1.0, 0.85, 0.3), 0.5)
 		Combat.slowmo(0.3, 0.8)

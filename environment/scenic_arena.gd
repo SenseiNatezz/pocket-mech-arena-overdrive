@@ -53,6 +53,15 @@ var _k := 1.0
 var _occluders: Array[Polygon2D] = []
 var _occluder_world: Array[PackedVector2Array] = []
 var _boss_started := false
+## GOLD SALVAGER (enemies/gold_salvager.gd): while the waves of a real run are on, one every
+## SALVAGER_EVERY seconds (the first after SALVAGER_FIRST), never two at once; the Hangar's Salvager Beacon
+## shortens the wait (Game.salvager_interval_mult). `-- --salvager=S`: the first one after S seconds.
+const SALVAGER := preload("res://enemies/gold_salvager.gd")
+const SALVAGER_FIRST := Vector2(70.0, 110.0)
+const SALVAGER_EVERY := Vector2(120.0, 180.0)
+var _salvager_t := 0.0
+## THREAT BOSS ESCORT: the kinds of the elite guards that drop in with a boss (cycled).
+const ESCORT_KINDS: Array[String] = ["striker", "shooter", "tank"]
 
 @onready var world: Node2D = $World
 @onready var nav_region: NavigationRegion2D = $Navigation
@@ -98,6 +107,7 @@ func _process(delta: float) -> void:
 		return
 	Game.run_time += delta
 	_storm_tick(delta)
+	_salvager_tick(delta)
 	_rescue_t -= delta
 	if _rescue_t <= 0.0:
 		_rescue_t = 0.5
@@ -346,6 +356,10 @@ func _add_weather(cam: Camera2D) -> void:
 # --- flow --------------------------------------------------------------------------------------------------
 
 func _setup_flow() -> void:
+	_salvager_t = randf_range(SALVAGER_FIRST.x, SALVAGER_FIRST.y) * Game.salvager_interval_mult()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--salvager="):
+			_salvager_t = a.trim_prefix("--salvager=").to_float()
 	zone = EncounterZone.new()
 	var size: Vector2 = _layout.image_size * _k
 	zone.zone_size = size
@@ -437,8 +451,49 @@ func _start_boss() -> void:
 	Combat.shake(0.8)
 	b.connect("defeated", _on_boss_defeated)
 	boss_started.emit(b)
+	_spawn_escort(b.position)
 	# Dying from here on offers RETRY BOSS (starts the arena straight at this fight).
 	Game.save_boss_checkpoint()
+
+
+## THREAT BOSS ESCORT (Game.threat_escort): elite guards warp in around a boss as it lands (they count toward
+## an Endless boss wave; a campaign boss's death takes them down with it).
+func _spawn_escort(at: Vector2) -> void:
+	var n := Game.threat_escort()
+	for i in n:
+		var pos := at + Vector2.from_angle(TAU * i / n + 0.4) * 190.0
+		if not is_open(pos, 40.0):
+			pos = at + Vector2.from_angle(TAU * i / n + 0.4) * 100.0
+		zone.spawn_guard(ESCORT_KINDS[i % ESCORT_KINDS.size()], pos)
+
+
+## GOLD SALVAGER timer (waves only, real runs only, one at a time).
+func _salvager_tick(delta: float) -> void:
+	if not Game.scrap_enabled or zone == null or not zone.is_running:
+		return
+	_salvager_t -= delta
+	if _salvager_t > 0.0:
+		return
+	_salvager_t = randf_range(SALVAGER_EVERY.x, SALVAGER_EVERY.y) * Game.salvager_interval_mult()
+	if get_tree().get_nodes_in_group("salvagers").is_empty():
+		spawn_salvager()
+
+
+## Sends a Gold Salvager in on open floor near (not on top of) the pilot. Its HP grows with the pilot level.
+func spawn_salvager() -> Enemy:
+	var mech := world.get_node_or_null("Mech") as Mech
+	if mech == null or mech.dead or zone == null:
+		return null
+	var near: Array[Vector2] = []
+	for p in zone.spawn_points:
+		var d := p.distance_to(mech.global_position)
+		if d > 380.0 and d < 620.0:
+			near.append(p)
+	var s: Enemy = SALVAGER.new()
+	s.max_hp = (150.0 + 30.0 * Upgrades.level) * sqrt(Game.diff("hp"))
+	s.position = near.pick_random() if not near.is_empty() else zone._pick_spawn_point()
+	world.add_child(s)
+	return s
 
 
 func _on_boss_defeated() -> void:
@@ -583,6 +638,7 @@ func _drop_endless_boss(k: int, at: Vector2) -> void:
 	Combat.shake(0.8)
 	b.connect("defeated", _on_endless_boss_defeated)
 	boss_started.emit(b)
+	_spawn_escort(b.position)
 
 
 ## Boss down: its escort goes with it, the pilot gets patched up for the next stretch, and a free

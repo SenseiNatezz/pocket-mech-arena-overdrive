@@ -14,13 +14,18 @@ extends Node2D
 ##              flurry  Dual Sabers: the right hand cuts, then the left, then both cross in an X.
 ##              draw    Katana: held low behind; a lightning draw cut across the front and a long held
 ##                      follow-through; "iaido" keeps it low through the dash, then one blinding cut.
-##              jab     Spear: levelled forward; lunging stabs, every other one twirled on the way back;
-##                      "charge" braces the point through the whole dash.
-##              chop    Axe (and the slam / cleave finishers): back over the shoulder, then over the top
-##                      and down in front, foreshortened while raised (shorter, wider).
+##              pierce2 / sweep   Spear (MeleeKit._spear_move): a TWIN STAB (two quick stabs, each with
+##                      a piercing streak) and a SWEEP (swung wide like a staff, then twirled back);
+##                      "charge" twirls it once, then braces the point through the whole dash.
+##              cleave / axe_whirl / leap   Energy Axe (MeleeKit._axe_move): heaved over the shoulder into
+##                      a diagonal CLEAVE that bites (and cracks) the ground, a WHIRLWIND spin, and the LEAP
+##                      SLAM finisher (the mech springs up - the Body grows - and crashes down). Its head
+##                      glows hot through the wind-ups and sheds embers ("hot").
+##              chop    the Greatsword's cleave finisher: back over the shoulder, then over the top and
+##                      down in front, foreshortened while raised (shorter, wider).
 ##              heavy   Greatsword: off the shoulder, an accelerating sweep whose weight carries the body
 ##                      round in a long follow-through.
-##              spin    Scythe (held across the back) / Dual Sabers' whirl: a wind-up, then the whole
+##              spin    Scythe (held out to the front-right) / Dual Sabers' whirl: a wind-up, then the whole
 ##                      mech whirls round with the blade.
 ##            The Energy Sword has its own set (_cel_pose): "thrust" lunge, "xcut", "moon", "spin".
 ##            swing() returns when the blow lands (LAND), so MeleeKit hits as the blade gets there.
@@ -31,12 +36,22 @@ extends Node2D
 ##            (a hit-pause for the blade only, so game timing and tests are unaffected).
 ##   CEL      weapons with "cel" (the Energy Sword) swap the textured ribbon and X-cut sprite for the
 ##            hand-drawn cel smear and cross flash in player/weapons/energy_sword_fx.gd.
+##   BEAM     weapons with "beam" (Beam Saber, Dual Beam Sabers) draw only the hilt from the art; the blade
+##            is a Gundam-style beam (player/weapons/beam_blade.gdshader: white-hot needle core, saturated
+##            halo, emitter flare, hum) that ignites out of the emitter when drawn.
 
 const HUE_SHADER := preload("res://player/weapons/blade_hue.gdshader")
+const BEAM_SHADER := preload("res://player/weapons/beam_blade.gdshader")
+## Beam weapons: the top of the hilt (the emitter) as a fraction of the art height from the bottom, the
+## ignition time, and the quad margin around the beam for its glow (px).
+const BEAM_HILT := 0.315
+const IGNITE_TIME := 0.07
+const BEAM_MARGIN := 36.0
 const TRAIL_ENERGY := preload("res://assets/hq/fx/slash_trail_energy.png")
 const TRAIL_HEAVY := preload("res://assets/hq/fx/slash_trail_heavy.png")
 const TRAIL_THRUST := preload("res://assets/hq/fx/slash_trail_thrust.png")
 const IMPACT := preload("res://assets/hq/fx/slash_impact.png")
+const GLOW := preload("res://assets/fx/glow.tres")
 
 ## Rest pose: blade angled this far to the right of the aim, drawn at this fraction of its length.
 const REST_ANGLE := 0.45
@@ -52,13 +67,27 @@ const TWIST_MAX := 0.6
 const LUNGE := 10.0
 const THRUST_SURGE := 0.25
 ## Thrust-type swings (no swept ribbon; a piercing streak instead).
-const THRUSTS := ["thrust", "jab", "charge"]
-## Heavier swings take longer than the attack's designed life (x).
-const SLOW := {"chop": 1.15, "heavy": 1.1}
+const THRUSTS := ["thrust", "jab", "charge", "pierce2"]
+## Thrusts with more than one stab: when each stab starts, as a fraction of the swing (each fires a streak).
+const STABS := {"pierce2": [0.05, 0.31]}
+## The Spear's TWIN STAB: its second stab lands here (the first at LAND).
+const PIERCE2_SECOND := 0.4
+## Heavier swings take longer than the attack's designed life (x), and may run up to MAX_DUR seconds
+## (default 0.5): the Axe's big moves live on their wind-up.
+const SLOW := {"chop": 1.15, "heavy": 1.1, "cleave": 1.25, "axe_whirl": 1.2, "leap": 1.45}
+const MAX_DUR := {"cleave": 0.62, "axe_whirl": 0.6, "leap": 0.8}
 ## When the blow lands, as a fraction of the swing: as the blade sweeps through the target (the chops and
 ## heavy sweeps well into their swing, after the wind-up), so the hit-pause catches the blade on contact.
 const LAND := {"arc": 0.18, "flurry": 0.18, "draw": 0.13, "thrust": 0.2, "jab": 0.2, "spin": 0.15, "chop": 0.55,
-	"heavy": 0.42, "iaido": 0.6}
+	"heavy": 0.42, "iaido": 0.6, "pierce2": 0.15, "sweep": 0.23, "cleave": 0.52, "axe_whirl": 0.42, "leap": 0.56}
+## "hot" weapons (Energy Axe): the head's centre as a fraction of the art height from the bottom (heat glow and
+## embers come off it), and its idle glow.
+const HEAD_AT := 0.8
+const IDLE_HEAT := 0.3
+## Leap slam: how much bigger the mech gets at the top of the hop (seen from above = nearer the camera; its
+## shadow stays on the ground) and how much it squashes on landing.
+const HOP := 0.24
+const SQUASH := 0.1
 const TRAIL_LIFE := 0.12
 const TRAIL_SUBSTEPS := 4
 ## Where along the blade the ribbon starts (fraction of blade length from the hilt).
@@ -69,9 +98,15 @@ const HOLD := 0.22
 ## Where the fist closes on each weapon, as a fraction of its art height from the bottom (measured from
 ## assets/hq/weapons/*.png): swords at the top of the grip just under the guard / emitter, so the blade
 ## comes straight out of the fist (the rest of the grip and the pommel stick out behind the hand);
-## long-hafted weapons a way up the shaft.
-const GRIP_AT := {"beam_saber": 0.2, "katana": 0.19, "spear": 0.28, "axe": 0.22, "scythe": 0.3, "greatsword": 0.23,
+## long-hafted weapons a way up the shaft (the scythe near the end of its snath, for the reach).
+const GRIP_AT := {"beam_saber": 0.2, "katana": 0.19, "spear": 0.28, "axe": 0.22, "scythe": 0.16, "greatsword": 0.23,
 	"energy_sword": 0.13}
+## Energy weapons' glowing part (TrailLayer._shape_glow), as a fraction of the art height from the bottom
+## where it starts: the Katana's blade, the Spear's head, the Scythe's head and curved blade.
+const GLOW_FROM := {"katana": 0.31, "spear": 0.64, "scythe": 0.7}
+## Art whose handle isn't down the middle of the picture: the handle's centre, in art px from the left.
+## (The Beam Scythe's shaft runs down its left side, x 37-42 of 126, with the blade curving off to the right.)
+const GRIP_X := {"scythe": 39.5}
 ## Cel smears: recorded only during the strike, gone again quickly.
 const CEL_TRAIL_LIFE := 0.12
 ## Energy Sword art: the bottom CEL_HILT of the picture is the hilt (drawn from the art); the blade
@@ -109,15 +144,35 @@ var _dur := 0.2
 var _start := [0.0, 0.0]
 # Trail samples per blade: [time, grip, angle, ext].
 var _trail := [[], []]
-var _streak := {}
+## Thrust streaks in flight: {from, dir, t, len, life, seed}.
+var _streaks: Array = []
 var _fx: Node2D
 var _started := false
 var _flashes := 0
 var _hold := 0.0
-## Where the fist holds the current weapon, as a fraction of its art height from the bottom (GRIP_AT).
+## Where the fist holds the current weapon, as a fraction of its art height from the bottom (GRIP_AT), and
+## across it in art px (GRIP_X; -1 = the middle of the art).
 var _grip_at := 0.12
+var _grip_x := -1.0
 ## Cel-drawn weapon (Energy Sword): cel smear + cross flash instead of the ribbon / X-cut sprite.
 var _cel := false
+## "hot" weapon (Energy Axe): head heat 0..1 (glow + embers), its target this frame, and the embers
+## [position, velocity, age, life, size].
+var _hot := false
+var _heat := 0.0
+var _heat_target := 0.0
+var _embers: Array = []
+var _ember_t := 0.0
+## Leap slam: hop height 0..1 and landing squash 0..1 this frame (scale the Body), and whether the Body's
+## scale is currently changed by the rig.
+var _hop := 0.0
+var _squash := 0.0
+var _scaled := false
+## Beam weapon (sabers): code-drawn beam (BeamLayer); 0..1 ignition progress, beam width scale.
+var _beam := false
+var _ignite := 0.0
+var _beam_w := 1.0
+var _beam_layer: Node2D
 var _smear: Node2D
 ## Energy Sword sparks: [position, velocity, age, life, size].
 var _motes: Array = []
@@ -141,6 +196,9 @@ func _ready() -> void:
 	_smear = EnergySwordFx.CelSmear.new()
 	_smear.rig = self
 	add_child(_smear)
+	_beam_layer = BeamLayer.new()
+	_beam_layer.rig = self
+	add_child(_beam_layer)
 
 
 ## Plays one attack. `life` is the visual length the attack was designed for. Returns the seconds until the
@@ -153,17 +211,39 @@ func swing(w: Dictionary, mode: String, dir: Vector2, length: float, life: float
 	_sw = {"mode": mode, "dir": dir, "half": minf(w["half"], 1.5), "side": side, "turns": turns, "twin": twin,
 		"hand": int(opts.get("hand", -1)), "big": bool(opts.get("big", false))}
 	var interval := 1.0 / (float(w["rate"]) * Upgrades.fire_rate_mult())
-	_dur = clampf(minf(life * 1.15 * float(SLOW.get(mode, 1.0)), interval * 0.95), 0.12, 0.5)
+	_dur = clampf(minf(life * 1.15 * float(SLOW.get(mode, 1.0)), interval * 0.95), 0.12, float(MAX_DUR.get(mode, 0.5)))
 	_t = 0.0
 	_start = [_angle[0], _angle[1]]
 	_flashes = 0
 	# (cel swings animate their own follow-through and recovery)
 	_hold = 0.0 if w.get("cel", false) else HOLD
-	# (cel weapons draw their own lunge streak, EnergySwordFx.lunge)
-	if mode in THRUSTS and not w.get("cel", false):
-		_streak = {"from": mech.global_position + dir * ARM, "dir": dir, "t": 0.0, "len": length * 1.25,
-			"life": clampf(_dur * 1.4, 0.22, 0.4)}
+	# Thrusts fire a piercing streak as each stab starts (cel weapons draw their own, EnergySwordFx.lunge).
+	_sw["stabs"] = STABS.get(mode, [0.0]) if mode in THRUSTS and not w.get("cel", false) else []
+	_sw["next_stab"] = 0
+	_sw["length"] = length
 	return _dur * float(LAND.get(mode, 0.0))
+
+
+## Seconds from the start of the current swing to `frac` of it (a second blow landing, a sound).
+func land_time(frac: float) -> float:
+	return _dur * frac
+
+
+## Where a "hot" weapon's head is now (blade 0), in world space.
+func head_pos(b := 0) -> Vector2:
+	var size := _tex.get_size()
+	var s: float = _length * float(_ext[b]) / (size.y * (1.0 - _grip_at))
+	return _grip[b] + Vector2.from_angle(_angle[b]) * (HEAD_AT - _grip_at) * size.y * s
+
+
+## Ground cracks where a heavy blow lands: dark fissures glowing `color` (fading), on the floor.
+static func crack(pos: Vector2, radius: float, color: Color, lines := 7) -> void:
+	var c := GroundCrack.new()
+	c.position = pos
+	c.radius = radius
+	c.color = color
+	c.lines = lines
+	Combat.world().add_child(c)
 
 
 ## Hit feedback: an X-cut flash on the target and a short freeze of the swing.
@@ -198,18 +278,28 @@ func _process(delta: float) -> void:
 	visible = show
 	_fx.visible = show
 	_smear.visible = show
+	_beam_layer.visible = show and _beam
 	if not show and is_instance_valid(mech):
 		mech.swing_twist = 0.0
 		mech.body.position = Vector2.ZERO
 		_twist = 0.0
+		if _scaled and not mech.dead and not mech.is_falling():
+			mech.body.scale = Vector2.ONE * mech._body_scale
+		_scaled = false
 	if not show:
 		_sw = {}
 		_trail = [[], []]
-		_streak = {}
+		_streaks.clear()
+		_embers.clear()
 		_started = false
+		_ignite = 0.0
+		_heat = 0.0
 		return
 	if id != _id:
 		_equip(id)
+	# Beams ignite out of the emitter (tip first) whenever the weapon comes out.
+	_ignite = minf(_ignite + delta / IGNITE_TIME, 1.0)
+	_beam_layer.visible = _beam
 	var blades := 2 if _twin() else 1
 	# Hit-pause: the blade (and its trail) hold still for a moment - still in the fist.
 	if _hitstop > 0.0:
@@ -218,6 +308,7 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		_fx.queue_redraw()
 		_smear.queue_redraw()
+		_beam_layer.queue_redraw()
 		return
 	_time += delta
 	_striking = false
@@ -225,6 +316,9 @@ func _process(delta: float) -> void:
 	_lunge = Vector2.ZERO
 	_wide[0] = 1.0
 	_wide[1] = 1.0
+	_hop = 0.0
+	_squash = 0.0
+	_heat_target = IDLE_HEAT if _hot else 0.0
 	if not _sw.is_empty():
 		_t += delta
 		var k := clampf(_t / _dur, 0.0, 1.0)
@@ -236,6 +330,14 @@ func _process(delta: float) -> void:
 					_swing_pose(b, k)
 				else:
 					_rest_pose(b, delta)
+		# Each stab of a thrust fires its piercing streak as it starts.
+		var stabs: Array = _sw.get("stabs", [])
+		var ns: int = _sw.get("next_stab", 0)
+		if ns < stabs.size() and k >= float(stabs[ns]):
+			_sw["next_stab"] = ns + 1
+			var sd: Vector2 = _sw["dir"]
+			_streaks.append({"from": mech.global_position + sd * ARM, "dir": sd, "t": 0.0,
+				"len": float(_sw["length"]) * 1.25, "life": clampf(_dur * 1.4, 0.22, 0.4), "seed": randi()})
 		if _t >= _dur:
 			_sw = {}
 			_hold_twist = _twist_target
@@ -254,6 +356,10 @@ func _process(delta: float) -> void:
 	_twist = wrapf(lerp_angle(_twist, _twist_target, 1.0 - exp(-25.0 * delta)), -PI, PI)
 	mech.swing_twist = _twist
 	mech.body.position = mech.body.position.lerp(_lunge, 1.0 - exp(-30.0 * delta))
+	# Leap slam: the Body grows as the mech springs up and squashes as it lands (the fist goes with it).
+	if _hop > 0.0 or _squash > 0.0 or _scaled:
+		mech.body.scale = Vector2.ONE * mech._body_scale * (1.0 + HOP * _hop - SQUASH * _squash)
+		_scaled = _hop > 0.0 or _squash > 0.0
 	_to_fists(blades)
 	# Record the trail while the blade is moving through an attack (and let it fade after). Cel swings
 	# only smear during the fast strike, never the wind-up or recovery.
@@ -263,14 +369,15 @@ func _process(delta: float) -> void:
 			tr.append([_time, _grip[b], _angle[b], _ext[b]])
 		while not tr.is_empty() and _time - tr[0][0] > (CEL_TRAIL_LIFE if _cel else TRAIL_LIFE):
 			tr.pop_front()
-	if not _streak.is_empty():
-		_streak["t"] += delta
-		if _streak["t"] >= _streak["life"]:
-			_streak = {}
+	for s: Dictionary in _streaks:
+		s["t"] += delta
+	_streaks = _streaks.filter(func(s: Dictionary) -> bool: return s["t"] < s["life"])
 	_update_motes(delta)
+	_update_heat(delta)
 	queue_redraw()
 	_fx.queue_redraw()
 	_smear.queue_redraw()
+	_beam_layer.queue_redraw()
 
 
 ## Energy Sword: sparks peel off the blade edges and drift away, fading.
@@ -293,6 +400,28 @@ func _update_motes(delta: float) -> void:
 	_motes = _motes.filter(func(m: Array) -> bool: return m[2] < m[3])
 
 
+## "hot" weapons (Energy Axe): the head heats up through a wind-up and swing (the poses set _heat_target) and
+## cools at rest to a low smoulder; embers stream off it, more the hotter it is, and drift up and fade.
+func _update_heat(delta: float) -> void:
+	if not _hot:
+		_embers.clear()
+		_heat = 0.0
+		return
+	_heat = move_toward(_heat, _heat_target, delta * (5.0 if _heat_target > _heat else 1.6))
+	_ember_t -= delta
+	var rate := 5.0 + 55.0 * _heat * _heat
+	while _ember_t <= 0.0:
+		_ember_t += 1.0 / rate
+		var at := head_pos() + Vector2.from_angle(randf() * TAU) * randf_range(2.0, 16.0)
+		var vel := Vector2.from_angle(randf() * TAU) * randf_range(10.0, 50.0 + 90.0 * _heat)
+		_embers.append([at, vel, 0.0, randf_range(0.3, 0.7), randf_range(1.6, 3.4) * (0.7 + 0.5 * _heat)])
+	for e: Array in _embers:
+		e[0] += e[1] * delta
+		e[1] *= 1.0 - 2.5 * delta
+		e[2] += delta
+	_embers = _embers.filter(func(e: Array) -> bool: return e[2] < e[3])
+
+
 func _twin() -> bool:
 	return MeleeKit.WEAPONS[_id].get("twin_rest", false) or _id == &"dual_sabers"
 
@@ -302,7 +431,13 @@ func _equip(id: StringName) -> void:
 	var w: Dictionary = MeleeKit.WEAPONS[id]
 	_tex = load("res://assets/hq/weapons/%s.png" % w["tex"])
 	_grip_at = GRIP_AT.get(String(w["tex"]), 0.12)
+	_grip_x = GRIP_X.get(String(w["tex"]), -1.0)
 	_cel = w.get("cel", false)
+	_beam = w.get("beam", false)
+	_beam_w = float(w.get("beam_w", 1.0))
+	_ignite = 0.0
+	_hot = w.get("hot", false)
+	_embers.clear()
 	_length = w["reach"] * 0.95
 	_setup(w)
 	if w.get("hue", 0.0) != 0.0:
@@ -328,8 +463,8 @@ func _fist(b: int) -> Vector2:
 	return mech.body.to_global(HeldWeapon.fist(mech, 1.0 if b == 0 else -1.0))
 
 
-## Rest: the weapon where it's held between attacks (MeleeKit "rest": out front, levelled, at the side, low
-## behind, on the shoulder, across the back; the off-hand blade mirrored), easing there.
+## Rest: the weapon where it's held between attacks (MeleeKit "rest": out front, levelled, out to the side,
+## low behind, on the shoulder; the off-hand blade mirrored), easing there.
 func _rest_pose(b: int, delta: float) -> void:
 	var sgn := 1.0 if b == 0 else -1.0
 	var t := 1.0 - exp(-9.0 * delta)
@@ -379,8 +514,8 @@ func _swing_pose(b: int, k: float) -> void:
 				_ext[b] = lerpf(_ext[b], 0.8, sin(u * PI))
 			_lunge = dir * push * LUNGE
 		"charge":
-			# Spear CHARGE: a quick draw back, then braced - the point levelled at the target through the
-			# whole dash - and back.
+			# Spear CHARGE: the spear whirls once round in the fist as the mech launches, then it's braced -
+			# the point levelled at the target through the whole dash - and back.
 			var push := 1.0
 			if k < 0.1:
 				push = lerpf(0.0, -0.4, k / 0.1)
@@ -388,9 +523,49 @@ func _swing_pose(b: int, k: float) -> void:
 				push = lerpf(-0.4, 1.0, _ease_out((k - 0.1) / 0.1))
 			elif k > 0.75:
 				push = lerpf(1.0, 0.0, smoothstep(0.75, 1.0, k))
-			_angle[b] = d
-			_ext[b] = 1.0 + THRUST_SURGE * 1.3 * maxf(push, 0.0)
+			var twirl := _ease_in_out(minf(k / 0.2, 1.0))
+			_angle[b] = d + side * TAU * twirl
+			_ext[b] = (1.0 + THRUST_SURGE * 1.3 * maxf(push, 0.0)) * (1.0 - 0.3 * sin(twirl * PI))
 			_lunge = dir * push * LUNGE * 1.3
+		"pierce2":
+			# Spear TWIN STAB: draw back, stab, snap halfway back, stab again harder (both land: LAND and
+			# PIERCE2_SECOND), then ease back. The point weaves across between the two stabs.
+			var push := 0.0
+			if k < 0.05:
+				push = lerpf(0.0, -0.3, k / 0.05)
+			elif k < 0.17:
+				push = lerpf(-0.3, 1.0, _ease_out((k - 0.05) / 0.12))
+			elif k < 0.31:
+				push = lerpf(1.0, 0.1, _ease_in_out((k - 0.17) / 0.14))
+			elif k < 0.42:
+				push = lerpf(0.1, 1.15, _ease_out((k - 0.31) / 0.11))
+			else:
+				push = lerpf(1.15, 0.0, smoothstep(0.5, 1.0, k))
+			_angle[b] = d + 0.08 * side * (1.0 - 2.0 * smoothstep(0.2, 0.33, k))
+			_ext[b] = 1.0 + THRUST_SURGE * maxf(push, 0.0)
+			_lunge = dir * push * LUNGE
+			_twist_target = 0.12 * side * (1.0 - 2.0 * smoothstep(0.2, 0.33, k))
+		"sweep":
+			# Spear SWEEP: swung wide like a staff - out to one side, a fast flat sweep across the front at
+			# full reach (the blow lands as it crosses), then it keeps its momentum and twirls round once in
+			# the fist back to levelled.
+			var ext := 1.05
+			if k < 0.15:
+				var u := _ease_in_out(k / 0.15)
+				_angle[b] = lerp_angle(_start[b], d - 1.3 * side, u)
+				ext = lerpf(_rest_ext(), 0.92, u)
+				_twist_target = -0.35 * side * u
+			elif k < 0.5:
+				var e := _ease_out((k - 0.15) / 0.35)
+				_angle[b] = d + lerpf(-1.3, 1.25, e) * side
+				_twist_target = lerpf(-0.35, 0.45, e) * side
+			else:
+				var u := _ease_in_out((k - 0.5) / 0.5)
+				_angle[b] = d + side * lerpf(1.25, TAU, u)
+				ext = lerpf(1.05, _rest_ext(), u) * (1.0 - 0.3 * sin(u * PI))
+				_twist_target = 0.45 * side * (1.0 - u)
+			_ext[b] = ext
+			_lunge = dir * 5.0 * sin(clampf((k - 0.1) / 0.5, 0.0, 1.0) * PI)
 		"draw":
 			# Katana: a lightning draw cut from wherever the blade is (low behind on the right at rest) across
 			# the front to the far side, a long held follow-through (zanshin), then back low. It cuts away
@@ -462,6 +637,143 @@ func _swing_pose(b: int, k: float) -> void:
 			_wide[b] = wide
 			_twist_target = tw * heavy
 			_lunge = dir * push * LUNGE * heavy
+		"cleave":
+			# Axe CLEAVE: heaved up high over the right shoulder (seen from above: foreshortened, the head
+			# heating up) and the torso coils away; a beat at the top; then a brutal diagonal cut over and
+			# down across the front to the far side (the blow lands as it crosses), where the axe bites into
+			# the ground and shudders; then it's wrenched free back toward the shoulder.
+			var hi := 2.35
+			var lo := -0.95
+			var a := d
+			var ext := 1.0
+			var wide := 1.0
+			var tw := 0.0
+			var push := 0.0
+			if k < 0.36:
+				var u := _ease_in_out(k / 0.36)
+				a = lerp_angle(_start[b], d + hi, u)
+				ext = lerpf(_rest_ext(), 0.6, u)
+				wide = 1.0 + 0.35 * u
+				tw = 0.45 * u
+				push = -0.45 * u
+				_heat_target = 1.0
+			elif k < 0.42:
+				var u := (k - 0.36) / 0.06
+				a = d + hi + 0.12 * sin(u * PI)
+				ext = 0.6
+				wide = 1.35
+				tw = 0.45 + 0.08 * sin(u * PI)
+				push = -0.45
+				_heat_target = 1.0
+			elif k < 0.54:
+				var e := pow((k - 0.42) / 0.12, 1.8)
+				a = d + lerpf(hi, lo, e)
+				ext = lerpf(0.6, 1.1, e) - 0.25 * sin(e * PI)
+				wide = lerpf(1.35, 1.0, e) + 0.2 * sin(e * PI)
+				tw = lerpf(0.45, -0.5, e)
+				push = lerpf(-0.45, 1.0, e)
+				_heat_target = 1.0
+			elif k < 0.76:
+				var u := (k - 0.54) / 0.22
+				a = d + lo + 0.05 * sin(u * 40.0) * (1.0 - u)
+				ext = 1.06
+				tw = -0.5
+				push = 1.0 - 0.3 * u
+				_heat_target = 0.75
+			else:
+				var u := _ease_in_out((k - 0.76) / 0.24)
+				a = d + lerpf(lo, _rest_angle(), u)
+				ext = lerpf(1.06, _rest_ext(), u)
+				tw = lerpf(-0.5, 0.0, u)
+				push = lerpf(0.7, 0.0, u)
+			_angle[b] = a
+			_ext[b] = ext
+			_wide[b] = wide
+			_twist_target = tw
+			_lunge = dir * push * LUNGE
+		"axe_whirl":
+			# Axe WHIRLWIND: hauled out to one side, then the whole mech spins once and a bit with the axe
+			# held out at full reach (the blow lands all round as it comes past), and staggers to a stop.
+			var a0 := d + 1.3 * side
+			var spin := TAU + 0.5
+			var a := a0
+			var ext := 1.0
+			if k < 0.22:
+				var u := _ease_in_out(k / 0.22)
+				a = lerp_angle(_start[b], a0, u)
+				ext = lerpf(_rest_ext(), 0.85, u)
+				_heat_target = 1.0
+			elif k < 0.78:
+				var e := _ease_in_out((k - 0.22) / 0.56)
+				a = a0 - side * spin * e
+				ext = 1.12 + 0.08 * sin(e * PI)
+				_heat_target = 1.0
+			else:
+				var u := _ease_out((k - 0.78) / 0.22)
+				a = lerp_angle(a0 - side * spin, mech.aim_dir.angle() + _rest_angle(), u)
+				ext = lerpf(1.12, _rest_ext(), u)
+				_heat_target = 0.6
+			_angle[b] = a
+			_ext[b] = ext
+			# The whole mech turns with the axe.
+			if k < 0.8:
+				_twist_target = angle_difference(mech.aim_dir.angle() + _rest_angle(), a)
+			_lunge = dir * 3.0 * sin(clampf((k - 0.22) / 0.56, 0.0, 1.0) * PI)
+		"leap":
+			# Axe LEAP SLAM: the mech springs up (seen from above it grows; its shadow stays on the ground)
+			# hauling the axe back over its head, hangs for a beat, then crashes down behind the axe, which
+			# comes over the top into the ground in front (the blow lands there); a squash on landing, the
+			# axe shudders in the ground, then it's wrenched out.
+			var back := PI * 0.92
+			var a := d
+			var ext := 1.0
+			var wide := 1.0
+			var push := 0.0
+			var tw := 0.0
+			if k < 0.38:
+				var u := _ease_out(k / 0.38)
+				_hop = u
+				a = lerp_angle(_start[b], d + back, _ease_in_out(k / 0.38))
+				ext = lerpf(_rest_ext(), 0.42, u)
+				wide = 1.0 + 0.45 * u
+				push = -0.3 * u
+				tw = 0.25 * u
+				_heat_target = 1.0
+			elif k < 0.47:
+				_hop = 1.0
+				a = d + back
+				ext = 0.42
+				wide = 1.45
+				push = -0.3
+				tw = 0.25
+				_heat_target = 1.0
+			elif k < 0.56:
+				var e := pow((k - 0.47) / 0.09, 2.0)
+				_hop = 1.0 - e
+				a = d + back * (1.0 - e)
+				ext = lerpf(0.42, 1.15, e)
+				wide = lerpf(1.45, 1.0, e)
+				push = lerpf(-0.3, 1.2, e)
+				tw = lerpf(0.25, -0.1, e)
+				_heat_target = 1.0
+			elif k < 0.8:
+				var u := (k - 0.56) / 0.24
+				_squash = maxf(0.0, 1.0 - u * 3.0)
+				a = d + 0.04 * sin(u * 30.0) * (1.0 - u)
+				ext = 1.12
+				push = 1.2 - 0.4 * u
+				tw = -0.1
+				_heat_target = 0.8
+			else:
+				var u := _ease_in_out((k - 0.8) / 0.2)
+				a = d + lerpf(0.0, _rest_angle(), u)
+				ext = lerpf(1.12, _rest_ext(), u)
+				push = lerpf(0.8, 0.0, u)
+			_angle[b] = a
+			_ext[b] = ext
+			_wide[b] = wide
+			_twist_target = tw
+			_lunge = dir * push * LUNGE * 1.4
 		"heavy":
 			# Greatsword: a momentum sweep. Off the shoulder into a wind-up on the side the blade is on, an
 			# accelerating sweep across the front (the blow lands mid-sweep), and its weight carries the
@@ -530,7 +842,7 @@ func _swing_pose(b: int, k: float) -> void:
 			_angle[b] = a
 			_ext[b] = 1.0 + 0.35 * sin(strike * PI)
 		"spin":
-			# Scythe (from across the back) / Dual Sabers' whirl: a short wind-up the other way, then the whole
+			# Scythe / Dual Sabers' whirl: a short wind-up the other way, then the whole
 			# mech whirls round with the blade, which surges out mid-whirl; the off-hand blade points opposite.
 			var turns: float = _sw["turns"]
 			var a: float = _start[0] - 0.6 * side * _ease_in_out(minf(k / 0.15, 1.0))
@@ -681,13 +993,13 @@ func _draw() -> void:
 
 
 ## `length` = how far the weapon reaches beyond the fist. The art is scaled so that part matches, and
-## drawn so the fist (`grip`) sits on the middle of the handle (_grip_at), with the pommel / shaft end
-## behind the hand. The rig draws BELOW the mech, so the mech's fist covers the handle it holds.
+## drawn so the fist (`grip`) sits on the handle (_grip_at up it, _grip_x across it), with the pommel /
+## shaft end behind the hand. The rig draws BELOW the mech, so the mech's fist covers the handle it holds.
 ## Cel weapons (Energy Sword) draw only the hilt from the art; the blade is drawn in code with a real point.
 func _draw_blade(grip: Vector2, angle: float, length: float, wide := 1.0) -> void:
 	var size := _tex.get_size()
 	var s := length / (size.y * (1.0 - _grip_at))
-	var at := Vector2(-size.x / 2, -size.y * (1.0 - _grip_at))
+	var at := Vector2(-(_grip_x if _grip_x >= 0.0 else size.x / 2), -size.y * (1.0 - _grip_at))
 	if _cel:
 		var hilt := Rect2(Vector2(-size.x / 2, size.y * (_grip_at - CEL_HILT)), Vector2(size.x, size.y * CEL_HILT))
 		var src := Rect2(0, size.y * (1.0 - CEL_HILT), size.x, size.y * CEL_HILT)
@@ -704,6 +1016,16 @@ func _draw_blade(grip: Vector2, angle: float, length: float, wide := 1.0) -> voi
 		draw_texture_rect_region(_tex, hilt, src)
 		draw_set_transform(Vector2.ZERO)
 		return
+	if _beam:
+		# Beam weapons: only the hilt comes from the art (its painted blade is skipped); BeamLayer draws the beam.
+		var bh := Rect2(Vector2(-size.x / 2, size.y * (_grip_at - BEAM_HILT)), Vector2(size.x, size.y * BEAM_HILT))
+		var bsrc := Rect2(0, size.y * (1.0 - BEAM_HILT), size.x, size.y * BEAM_HILT)
+		draw_set_transform(grip + Vector2(6, 9), angle + PI / 2, Vector2(s, s))
+		draw_texture_rect_region(_tex, bh, bsrc, Color(0, 0, 0, 0.3))
+		draw_set_transform(grip, angle + PI / 2, Vector2(s, s))
+		draw_texture_rect_region(_tex, bh, bsrc)
+		draw_set_transform(Vector2.ZERO)
+		return
 	# Soft ground shadow, then the weapon (art points up, handle at the bottom; `wide` widens it).
 	draw_set_transform(grip + Vector2(6, 9), angle + PI / 2, Vector2(s * wide, s))
 	draw_texture(_tex, at, Color(0, 0, 0, 0.3))
@@ -715,6 +1037,18 @@ func _draw_blade(grip: Vector2, angle: float, length: float, wide := 1.0) -> voi
 ## Energy Sword blade half-width for a weapon drawn `length` long (thinner when held at rest).
 func _cel_half_width(length: float) -> float:
 	return clampf(length * 0.042, 4.5, 8.0)
+
+
+## Beam weapons: the emitter (where the beam leaves the hilt), the direction, and the beam's length for
+## blade `b` (growing out of the emitter while it ignites).
+func _beam_blade(b: int) -> Array:
+	var size := _tex.get_size()
+	var length: float = _length * _ext[b]
+	var s := length / (size.y * (1.0 - _grip_at))
+	var d := Vector2.from_angle(_angle[b])
+	var off := (BEAM_HILT - _grip_at) * size.y * s
+	var grow := 1.0 - pow(1.0 - _ignite, 3.0)
+	return [_grip[b] + d * off, d, maxf(length - off, 0.0) * grow]
 
 
 ## Blade base (guard) and length for blade `b` (cel weapons), for the glow layer.
@@ -758,15 +1092,54 @@ class TrailLayer extends Node2D:
 						p - Vector2(0, sz * 0.35)]), Color(col.lightened(0.5), 0.9 * (1.0 - k)))
 					draw_colored_polygon(PackedVector2Array([p + Vector2(0, sz), p + Vector2(sz * 0.35, 0), p - Vector2(0, sz),
 						p - Vector2(sz * 0.35, 0)]), Color(col.lightened(0.5), 0.9 * (1.0 - k)))
-			# Energy blades glow faintly all the time.
-			elif r._energy:
-				var tip: Vector2 = r._grip[b] + Vector2.from_angle(r._angle[b]) * r._length * r._ext[b]
-				var base: Vector2 = r._grip[b] + Vector2.from_angle(r._angle[b]) * r._length * r._ext[b] * 0.25
-				draw_line(base, tip, Color(col, 0.22), 16.0, true)
-				draw_line(base, tip, Color(col.lightened(0.5), 0.35), 5.0, true)
+			# Energy blades glow all the time, hugging their own shape (beams glow in BeamLayer; hot heads
+			# glow below).
+			elif r._energy and not r._beam and not r._hot:
+				_shape_glow(r, b, col)
 			_ribbon(r, r._trail[b], col)
-		if not r._streak.is_empty():
-			_draw_streak(r, col)
+		if r._hot:
+			_draw_heat(r, col)
+		for s: Dictionary in r._streaks:
+			_draw_streak(s, col)
+
+	## Energy weapons' glow: only the energy part of the art (GLOW_FROM up to the tip) is drawn again in the
+	## weapon colour, additively, nudged out in a ring of directions - a soft halo that follows the blade's
+	## own outline (no straight bar over the shaft), breathing slowly.
+	func _shape_glow(r: Node2D, b: int, col: Color) -> void:
+		var tex: Texture2D = r._tex
+		var size := tex.get_size()
+		var from: float = float(GLOW_FROM.get(String(MeleeKit.WEAPONS[r._id]["tex"]), 0.3))
+		var length: float = r._length * float(r._ext[b])
+		var s: float = length / (size.y * (1.0 - r._grip_at))
+		var gx: float = r._grip_x if r._grip_x >= 0.0 else size.x / 2.0
+		var src := Rect2(0, 0, size.x, size.y * (1.0 - from))
+		var dst := Rect2(-gx, -size.y * (1.0 - r._grip_at), size.x, size.y * (1.0 - from))
+		var pulse := 0.85 + 0.15 * sin(r._time * 5.0)
+		draw_set_transform(r._grip[b], r._angle[b] + PI / 2, Vector2(s * float(r._wide[b]), s))
+		for ring in [[2.5, 0.08], [5.5, 0.045]]:
+			for k in 8:
+				var o := Vector2.from_angle(TAU * k / 8.0) * (float(ring[0]) / s)
+				draw_texture_rect_region(tex, Rect2(dst.position + o, dst.size), src, Color(col, float(ring[1]) * pulse))
+		draw_texture_rect_region(tex, dst, src, Color(col.lightened(0.35), 0.16 * pulse))
+		draw_set_transform(Vector2.ZERO)
+
+	## "hot" weapons: the head glows (white-hot core, coloured bloom, breathing) by its heat, and the embers.
+	func _draw_heat(r: Node2D, col: Color) -> void:
+		var h: float = r._heat
+		var p: Vector2 = r.head_pos()
+		var pulse := 0.85 + 0.15 * sin(r._time * 11.0)
+		var rad := (22.0 + 26.0 * h) * pulse
+		draw_texture_rect(GLOW, Rect2(p - Vector2(rad, rad) * 1.6, Vector2(rad, rad) * 3.2), false, Color(col, 0.18 + 0.4 * h))
+		draw_texture_rect(GLOW, Rect2(p - Vector2(rad, rad) * 0.7, Vector2(rad, rad) * 1.4), false,
+			Color(col.lerp(Color(1, 0.95, 0.75), h), 0.25 + 0.55 * h))
+		for e: Array in r._embers:
+			var k: float = e[2] / e[3]
+			var sz: float = e[4] * (1.0 - k * 0.6)
+			var q: Vector2 = e[0]
+			var c := Color(1.0, 0.9, 0.55).lerp(col, minf(k * 1.6, 1.0))
+			c.a = 0.95 * (1.0 - k)
+			draw_colored_polygon(PackedVector2Array([q + Vector2(sz, 0), q + Vector2(0, sz), q - Vector2(sz, 0),
+				q - Vector2(0, sz)]), c)
 
 	func _ribbon(r: Node2D, tr: Array, col: Color) -> void:
 		# Cel weapons draw their own smear (EnergySwordFx.CelSmear).
@@ -809,25 +1182,84 @@ class TrailLayer extends Node2D:
 				continue
 			draw_polygon(poly, pc, puv, tex)
 
-	func _draw_streak(r: Node2D, col: Color) -> void:
-		var s: Dictionary = r._streak
+	## A thrust's piercing streak: a needle of light shooting out along the stab (coloured glow, white-hot
+	## core, sharp point), speed lines racing past it, and a shock ring + star flash where the point stops.
+	func _draw_streak(s: Dictionary, col: Color) -> void:
 		var k: float = s["t"] / s["life"]
-		var grow := clampf(k / 0.3, 0.0, 1.0)
-		var fade := 1.0 - clampf((k - 0.35) / 0.65, 0.0, 1.0)
+		var grow := clampf(k / 0.25, 0.0, 1.0)
+		var fade := 1.0 - clampf((k - 0.3) / 0.7, 0.0, 1.0)
 		var d: Vector2 = s["dir"]
+		var n := d.orthogonal()
 		var from: Vector2 = s["from"]
-		var to: Vector2 = from + d * s["len"] * (0.4 + 0.6 * _ease(grow))
-		# The texture's core line sits at v=0.86 (it's cropped for the sweep ribbons), so centre that
-		# band on the thrust line: a wide coloured glow, then a narrower white-hot core on top.
-		var uv := PackedVector2Array([Vector2(0, 0.72), Vector2(1, 0.72), Vector2(1, 1.0), Vector2(0, 1.0)])
-		for layer in [[58.0, Color(col, fade)], [24.0, Color(1, 1, 1, fade * 0.9)]]:
-			var n: Vector2 = d.orthogonal() * float(layer[0])
-			var poly := PackedVector2Array([from - n, to - n, to + n, from + n])
-			var c: Color = layer[1]
-			draw_polygon(poly, PackedColorArray([c, c, c, c]), uv, TRAIL_THRUST)
+		var length: float = s["len"]
+		var to: Vector2 = from + d * length * (0.35 + 0.65 * _ease(grow))
+		var mid: Vector2 = from.lerp(to, 0.8)
+		for layer in [[9.0, Color(col, 0.45 * fade)], [4.5, Color(col.lightened(0.4), 0.8 * fade)],
+				[1.8, Color(1, 1, 1, fade)]]:
+			var w: float = layer[0] * (0.6 + 0.4 * fade)
+			draw_colored_polygon(PackedVector2Array([from - n * w * 0.35, mid - n * w, to, mid + n * w,
+				from + n * w * 0.35]), layer[1])
+		# Speed lines racing along beside it.
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(s["seed"])
+		for i in 4:
+			var off := rng.randf_range(10.0, 22.0) * (1.0 if i % 2 == 0 else -1.0)
+			var a := rng.randf_range(0.1, 0.45) + 0.35 * k
+			var b := a + rng.randf_range(0.25, 0.4)
+			draw_line(from + d * length * a + n * off, from + d * length * minf(b, 1.0) + n * off,
+				Color(col.lightened(0.5), 0.55 * fade), 1.4, true)
+		# Where the point stops: a flattened shock ring round the spear line, and a star flash.
+		if k < 0.6:
+			var u := k / 0.6
+			draw_set_transform(to, d.angle(), Vector2(0.4, 1.0))
+			draw_arc(Vector2.ZERO, 8.0 + 22.0 * u, 0.0, TAU, 28, Color(col.lightened(0.3), 0.8 * (1.0 - u)), 2.5, true)
+			draw_set_transform(Vector2.ZERO)
+			var st := 14.0 * (1.0 - u)
+			# (skipped once it has shrunk to a dot: a collapsed polygon can't be triangulated)
+			if st > 0.6:
+				draw_colored_polygon(PackedVector2Array([to + d * st * 1.6, to + n * st * 0.22, to - d * st * 0.5,
+					to - n * st * 0.22]), Color(1, 1, 1, 0.9 * (1.0 - u)))
+				draw_colored_polygon(PackedVector2Array([to + n * st, to + d * st * 0.22, to - n * st,
+					to - d * st * 0.22]), Color(1, 1, 1, 0.9 * (1.0 - u)))
 
 	static func _ease(x: float) -> float:
 		return 1.0 - pow(1.0 - x, 3.0)
+
+
+## Beam weapons' blades (additive, above the mech): one quad per blade around the beam, shaded by
+## player/weapons/beam_blade.gdshader. UV = world px (x from the emitter along the beam, y across it over the
+## width scale); COLOR = beam colour, alpha = beam length / 512.
+class BeamLayer extends Node2D:
+	var rig: Node2D
+
+	func _ready() -> void:
+		top_level = true
+		z_index = 2
+		var m := ShaderMaterial.new()
+		m.shader = BEAM_SHADER
+		material = m
+
+	func _draw() -> void:
+		var r = rig
+		if r._tex == null or not r._beam:
+			return
+		var col: Color = r._color
+		var ws: float = r._beam_w
+		for b in (2 if r._twin() else 1):
+			var bb: Array = r._beam_blade(b)
+			var base: Vector2 = bb[0]
+			var d: Vector2 = bb[1]
+			var len: float = minf(bb[2], 500.0)
+			if len < 2.0:
+				continue
+			var m := BEAM_MARGIN
+			var n := d.orthogonal() * m * ws
+			var back := base - d * m
+			var front := base + d * (len + m)
+			var c := Color(col.r, col.g, col.b, len / 512.0)
+			draw_polygon(PackedVector2Array([back - n, front - n, front + n, back + n]),
+				PackedColorArray([c, c, c, c]),
+				PackedVector2Array([Vector2(-m, -m), Vector2(len + m, -m), Vector2(len + m, m), Vector2(-m, m)]))
 
 
 ## X-cut hit flash: pops in fast, then shrinks and fades.
@@ -854,3 +1286,86 @@ class ImpactFlash extends Sprite2D:
 		var pop := 0.55 + 0.45 * minf(k / 0.2, 1.0) - 0.25 * maxf(k - 0.4, 0.0)
 		scale = Vector2.ONE * (size / 512.0) * 2.0 * pop
 		modulate.a = 0.85 * (1.0 - k * k)
+
+
+## Where a heavy axe blow lands: dark fissures radiating out of a scorch, glowing hot in the weapon colour
+## (the glow cools in about a second, the cracks fade after ~2.5 s). On the floor, under robots and mech.
+class GroundCrack extends Node2D:
+	const LIFE := 2.6
+	var color := Color(1.0, 0.55, 0.15)
+	var radius := 120.0
+	var lines := 7
+	var cracks: Array = []
+	var t := 0.0
+	var _glow: Node2D
+
+	func _ready() -> void:
+		z_index = -6
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		for i in lines:
+			var ang := TAU * i / lines + rng.randf_range(-0.3, 0.3)
+			var reach := radius * rng.randf_range(0.5, 1.0)
+			var pts := PackedVector2Array([Vector2.from_angle(ang) * radius * 0.12])
+			var r := radius * 0.12
+			while r < reach:
+				r = minf(r + rng.randf_range(radius * 0.08, radius * 0.16), reach)
+				ang += rng.randf_range(-0.32, 0.32)
+				pts.append(Vector2.from_angle(ang) * r)
+			cracks.append(pts)
+			# Some fissures fork.
+			if pts.size() > 3 and rng.randf() < 0.55:
+				var j := rng.randi_range(1, pts.size() - 2)
+				var fork := PackedVector2Array([pts[j]])
+				var fa := pts[j].angle() + rng.randf_range(0.4, 0.8) * (1.0 if rng.randf() < 0.5 else -1.0)
+				var fr := pts[j].length()
+				for m in rng.randi_range(2, 3):
+					fr += rng.randf_range(radius * 0.07, radius * 0.13)
+					fa += rng.randf_range(-0.3, 0.3)
+					fork.append(Vector2.from_angle(fa) * fr)
+				cracks.append(fork)
+		_glow = CrackGlow.new()
+		_glow.crack = self
+		add_child(_glow)
+
+	func _process(delta: float) -> void:
+		t += delta
+		if t >= LIFE:
+			queue_free()
+			return
+		queue_redraw()
+		_glow.queue_redraw()
+
+	func _draw() -> void:
+		var fade := 1.0 - smoothstep(LIFE * 0.55, LIFE, t)
+		draw_circle(Vector2.ZERO, radius * 0.3, Color(0.06, 0.03, 0.02, 0.42 * fade))
+		draw_circle(Vector2.ZERO, radius * 0.18, Color(0.04, 0.02, 0.01, 0.5 * fade))
+		for pts: PackedVector2Array in cracks:
+			_taper(self, pts, 5.0, 1.2, Color(0.05, 0.03, 0.02, 0.8 * fade))
+
+	## A fissure: segment by segment, from `w0` wide at its start to `w1` at its end.
+	static func _taper(ci: CanvasItem, pts: PackedVector2Array, w0: float, w1: float, c: Color) -> void:
+		var n := pts.size() - 1
+		for i in n:
+			ci.draw_line(pts[i], pts[i + 1], c, lerpf(w0, w1, float(i) / maxf(n - 1, 1)), true)
+
+
+## GroundCrack's hot glow (additive): the fissures glow white-yellow then the weapon colour, cooling off.
+class CrackGlow extends Node2D:
+	var crack: Node2D
+
+	func _ready() -> void:
+		var add := CanvasItemMaterial.new()
+		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		material = add
+
+	func _draw() -> void:
+		var hot := 1.0 - smoothstep(0.0, 1.2, crack.t)
+		if hot <= 0.0:
+			return
+		var col: Color = crack.color
+		draw_texture_rect(GLOW, Rect2(Vector2(-1, -1) * crack.radius * 0.5, Vector2.ONE * crack.radius), false,
+			Color(col, 0.5 * hot))
+		for pts: PackedVector2Array in crack.cracks:
+			GroundCrack._taper(self, pts, 4.0, 1.0, Color(col, 0.75 * hot))
+			GroundCrack._taper(self, pts, 1.6, 0.5, Color(1.0, 0.92, 0.65, hot))

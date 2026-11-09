@@ -5,7 +5,7 @@ extends Node
 ##   --arena-test                full arena flow test (waves, hazards, pits, boss, victory)
 ##   --autoplay                  an AI pilots the mech (for preview captures)
 ##   --playtest-report           log wave/level/HP/perf every 5 s + a summary (--playtest-time=S)
-##   --attach=RES_PATH           attach any tool script to the arena / range scene (one-off checks)
+##   --attach=RES_PATH           attach any tool script to the arena / range / main menu scene (one-off checks)
 ##   --swing-capture=DIR         (with --gun-range) contact sheets of every melee swing + finisher
 ##   --boss                      skip the waves and go straight to the boss
 ##   --goto-map=FX,FY            (painted arenas) put the mech at a fraction of the map, e.g. 0.5,0.05
@@ -14,6 +14,9 @@ extends Node
 ##   --endless                   start directly in Endless mode
 ##   --tutorial                  start the tutorial   (--tutorial-test: play it through automatically)
 ##   --upgrade-test              level-up / upgrade / weapon test (run with the test range scene)
+##   --incremental-test          live scrap / endless Hangar / weapon mastery test (test range scene)
+##   --goals-test                Gold Salvager / Threat tiers / Contracts test (test range scene)
+##   --goals-arena-test          ...their arena side: Salvager spawning + Threat boss escort (use with --arena=N)
 ##   --endless-test              Endless mode flow test (use with --endless)
 ##   --weapon=ID                 try a primary weapon (blaster, sniper, sword, gatling) without saving
 ##   --temp-save                 use a throwaway save file (tests use this)
@@ -38,7 +41,7 @@ func _ready() -> void:
 			Game.to_gun_range.call_deferred()
 		elif a.begins_with("--shot="):
 			_shot(a.trim_prefix("--shot="), _arg_float("--shot-time=", 1.5))
-	set_process(_args.has("--smoke-test") or _args.has("--arena-test") or _args.has("--upgrade-test") or _args.has("--endless-test") or _args.has("--gun-range-test") or "--swing-capture=" in " ".join(_args) or _args.has("--tutorial-test") or _args.has("--difficulty-test") or _args.has("--boss-retry-test") or "--upgrades=" in " ".join(_args) or "--level-up=" in " ".join(_args) or _args.has("--autoplay") or "--attach=" in " ".join(_args) or _args.has("--playtest-report") or _args.has("--boss") or _args.has("--beam-demo") or "--showcase=" in " ".join(_args) or _args.has("--prop-probe") or "--goto-map" in " ".join(_args))
+	set_process(_args.has("--smoke-test") or _args.has("--arena-test") or _args.has("--upgrade-test") or _args.has("--incremental-test") or _args.has("--goals-test") or _args.has("--goals-arena-test") or _args.has("--endless-test") or _args.has("--gun-range-test") or "--swing-capture=" in " ".join(_args) or _args.has("--tutorial-test") or _args.has("--difficulty-test") or _args.has("--boss-retry-test") or "--upgrades=" in " ".join(_args) or "--level-up=" in " ".join(_args) or _args.has("--autoplay") or "--attach=" in " ".join(_args) or _args.has("--playtest-report") or _args.has("--boss") or _args.has("--beam-demo") or "--showcase=" in " ".join(_args) or _args.has("--prop-probe") or "--goto-map" in " ".join(_args))
 
 
 func _process(_delta: float) -> void:
@@ -51,6 +54,12 @@ func _process(_delta: float) -> void:
 		_attach(scene, "res://tools/smoke_test.gd")
 	if _args.has("--upgrade-test") and scene.name == "TestRange":
 		_attach(scene, "res://tools/upgrade_test.gd")
+	if _args.has("--incremental-test") and scene.name == "TestRange":
+		_attach(scene, "res://tools/incremental_test.gd")
+	if _args.has("--goals-test") and scene.name == "TestRange":
+		_attach(scene, "res://tools/goals_test.gd")
+	if _args.has("--goals-arena-test") and is_arena:
+		_attach(scene, "res://tools/goals_arena_test.gd")
 	if _args.has("--endless-test") and is_arena and Game.is_endless():
 		_attach(scene, "res://tools/endless_test.gd")
 	if _args.has("--tutorial-test") and scene.name == "Tutorial":
@@ -69,7 +78,7 @@ func _process(_delta: float) -> void:
 	if _args.has("--arena-test") and is_arena:
 		_attach(scene, "res://tools/scenic_test.gd" if scene.has_method("is_open") else "res://tools/arena_test.gd")
 	for a in _args:
-		if a.begins_with("--attach=") and (is_arena or scene.name in ["TestRange", "GunRange", "Tutorial"]):
+		if a.begins_with("--attach=") and (is_arena or scene.name in ["TestRange", "GunRange", "Tutorial", "MainMenu"]):
 			_attach(scene, a.trim_prefix("--attach="))
 	if _args.has("--playtest-report") and (is_arena or scene.name in ["TestRange", "GunRange"]):
 		_attach(scene, "res://tools/playtest_report.gd")

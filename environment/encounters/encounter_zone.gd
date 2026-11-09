@@ -261,7 +261,17 @@ func _telegraph_spawn(kind: String) -> void:
 	get_tree().create_timer(0.7, false).timeout.connect(_spawn.bind(kind, pos))
 
 
-func _spawn(kind: String, pos: Vector2) -> void:
+## THREAT BOSS ESCORT: an ELITE `kind` warps in at `pos` (telegraphed like any spawn) and joins the current
+## wave (so an Endless boss wave waits for it; after a campaign wave is over it simply roams).
+func spawn_guard(kind: String, pos: Vector2) -> void:
+	reserve()
+	for k in 3:
+		get_tree().create_timer(k * 0.22, false).timeout.connect(func() -> void:
+			Combat.shockwave(pos, 70.0 - k * 15.0, Enemy.ELITE_GOLD, 0.3))
+	get_tree().create_timer(0.7, false).timeout.connect(_spawn.bind(kind, pos, true))
+
+
+func _spawn(kind: String, pos: Vector2, force_elite := false) -> void:
 	_pending -= 1
 	if not ENEMIES.has(kind):
 		push_warning("Unknown enemy kind '%s'" % kind)
@@ -279,7 +289,7 @@ func _spawn(kind: String, pos: Vector2) -> void:
 		e.armor_fraction = armor_fraction()
 	# ELITES (gold aura, x2 HP, faster, harder-hitting): Extreme from the start, every difficulty late in
 	# Endless (see elite_chance).
-	if randf() < elite_chance():
+	if force_elite or randf() < elite_chance():
 		e.make_elite()
 	e.died.connect(_on_enemy_died)
 	_alive.append(e)
@@ -429,4 +439,5 @@ func elite_chance() -> float:
 		if wave >= from:
 			c = maxf(c, 0.05 + 0.015 * (wave - from))
 	c += Game.twist_value("elite_add", 0.0)
-	return clampf(c, 0.0, 0.4)
+	# (THREAT tiers raise Game.diff("elite"), and the ceiling with it)
+	return clampf(c, 0.0, 0.4 + maxf(Game.diff("elite") - float(Game.DIFFICULTIES[Game.difficulty]["elite"]), 0.0))

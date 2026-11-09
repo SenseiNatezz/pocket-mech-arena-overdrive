@@ -1,10 +1,12 @@
 shader_type canvas_item;
-// Customize-screen Gundam: repaints the saturated BLUE armor panels and the MAGENTA energy glow
-// (eyes + beam saber) of the showcase render independently, keeping all shading.
+// Customize-screen mech (Halo Forge): repaints the GOLD trim (armor_color) and the WHITE armour plates
+// (body_color) of the showcase render independently, keeping all shading.
 // Targets are plain colors; low-saturation targets (black / white) are handled via value.
 
 uniform vec4 armor_color : source_color = vec4(0.16, 0.36, 0.95, 1.0);
 uniform bool armor_original = true;
+uniform vec4 body_color : source_color = vec4(1.0);
+uniform bool body_original = true;
 uniform vec4 energy_color : source_color = vec4(1.0, 0.35, 0.8, 1.0);
 uniform float flash : hint_range(0.0, 1.0) = 0.0;
 
@@ -37,11 +39,18 @@ void fragment() {
 	vec4 c = texture(TEXTURE, UV) * COLOR;
 	vec3 hsv = rgb2hsv(c.rgb);
 	float sat = smoothstep(0.28, 0.45, hsv.y);
-	float armor = smoothstep(0.55, 0.59, hsv.x) * (1.0 - smoothstep(0.71, 0.75, hsv.x)) * sat;
-	float energy = smoothstep(0.76, 0.8, hsv.x) * (1.0 - smoothstep(0.96, 0.99, hsv.x)) * sat;
+	// Halo Forge: armor paint = the yellow-gold trim. Its visor / core glows stay the design's blue (the
+	// default energy colour is pink), so the energy colour no longer repaints the mech itself.
+	float armor = smoothstep(0.05, 0.08, hsv.x) * (1.0 - smoothstep(0.17, 0.2, hsv.x)) * sat;
+	float energy = 0.0;
 	vec3 rgb = c.rgb;
 	if (!armor_original) {
 		rgb = mix(rgb, paint(hsv, armor_color.rgb, 0.85), armor);
+	}
+	if (!body_original) {
+		// The white plates: low saturation and bright (the dark joints and outlines stay), shaded as before.
+		float white = (1.0 - smoothstep(0.1, 0.22, hsv.y)) * smoothstep(0.42, 0.62, hsv.z);
+		rgb = mix(rgb, body_color.rgb * clamp(hsv.z / 0.9, 0.0, 1.25), white);
 	}
 	rgb = mix(rgb, paint(hsv, energy_color.rgb, 0.95), energy);
 	COLOR = vec4(mix(rgb, vec3(1.0), flash), c.a);

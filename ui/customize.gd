@@ -7,15 +7,16 @@ extends Control
 ## Choices stay pending until APPLY (saved and used in battle); BACK discards them.
 
 const BG := preload("res://assets/hq/customize_bg.jpg")
-## 360-degree turntable: a dense 2D frame sequence cut from a Higgsfield turntable video
-## (assets/hq/turntable/frame_NNN.png, tools/build_turntable.gd). Frame 0 = front, then turning
-## clockwise seen from above. Frames are shown one at a time (no crossfade = no ghosting).
+## 360-degree turntable: 120 frames rendered from the Halo Forge's 3D model (assets/hq/turntable/
+## frame_NNN.png, art_src/halo_forge/tools/render_turntable.py: brighter showcase shading, cropped to the
+## mech). Frame 0 = front, then turning clockwise seen from above; neighbouring frames blend (3 degrees
+## apart, so no ghosting).
 const TURNTABLE_DIR := "res://assets/hq/turntable/"
 ## Drag sensitivity (radians per pixel) and keyboard step (15 degrees).
 const DRAG_SPEED := 0.006
 const STEP := TAU / 24.0
-## Canvas point under the feet (all frames share the same canvas and baseline).
-const FEET := Vector2(280, 548)
+## Frame point under the feet (all frames share the same canvas and baseline; render_turntable.py prints it).
+const FEET := Vector2(336, 526)
 const SHOWCASE_SHADER := preload("res://shaders/showcase_recolor.gdshader")
 const FLASH_SHADER := preload("res://shaders/hit_flash.gdshader")
 const FRAMES := preload("res://assets/sprites/gundam_frames.tres")
@@ -67,16 +68,21 @@ class Swatch:
 			draw_arc(c, r + 6, _pulse * 2.0, _pulse * 2.0 + TAU * 0.8, 40, Color(CYAN, 0.9), 2.0, true)
 
 var _look := {}
-var _swatches := {"armor": [], "energy": [], "booster": []}
+var _swatches := {"body": [], "armor": [], "energy": [], "booster": []}
 var _art: TextureRect
 var _mech: Sprite2D
 var _mech_next: Sprite2D
-## Turntable frames load on demand and only the most recent VIEW_CACHE stay in memory: the frames are
-## lossy WebP (small download, works on every platform) and all 192 at once would need ~240 MB of
-## texture memory - too much for phones.
+## Turntable frames stream in on a background thread: the PREFETCH frames either side of the one shown are
+## requested ahead of the turn, so turning never waits on a disk load (until a frame is ready, the last one
+## stays up). Only VIEW_CACHE frames stay in memory, the ones furthest round the turn are dropped first: the
+## frames are lossy WebP (small download, works on every platform) and all of them at once would be too
+## much texture memory for phones.
 const VIEW_CACHE := 48
+const PREFETCH := 10
 var _view_paths: PackedStringArray = []
 var _view_cache := {}
+var _view_requested := {}
+var _last_view: Texture2D
 var _idle_t := 0.0
 var _spin_speed := 0.6
 var _shown_rot := 0.0
@@ -145,24 +151,26 @@ func _ready() -> void:
 
 	# Left panel.
 	_panel(Rect2(40, 118, 480, 540), PANEL_BG)
-	_swatch_section("ARMOR PAINT", "armor", Game.ARMOR, 130)
-	_swatch_section("ENERGY COLOR", "energy", Game.ENERGY, 222)
-	_swatch_section("BOOSTER COLOR", "booster", Game.BOOSTER, 314)
-	_panel(Rect2(56, 408, 448, 128), Color(0.03, 0.07, 0.15, 0.85))
-	_label("PREVIEW", 13, Color(0.7, 0.8, 0.9), Vector2(68, 413))
+	# Body = the white armour plates, trim = the gold trim (Game.BODY / Game.ARMOR).
+	_swatch_section("BODY COLOR", "body", Game.BODY, 126)
+	_swatch_section("TRIM COLOR", "armor", Game.ARMOR, 202)
+	_swatch_section("ENERGY COLOR", "energy", Game.ENERGY, 278)
+	_swatch_section("BOOSTER COLOR", "booster", Game.BOOSTER, 354)
+	_panel(Rect2(56, 432, 448, 106), Color(0.03, 0.07, 0.15, 0.85))
+	_label("PREVIEW", 13, Color(0.7, 0.8, 0.9), Vector2(68, 435))
 	var anims: Array[StringName] = [&"idle", &"dash", &"fire", &"bank_left"]
 	for i in 4:
 		var box := Panel.new()
-		box.position = Vector2(64 + i * 110, 434)
-		box.size = Vector2(102, 96)
+		box.position = Vector2(64 + i * 110, 454)
+		box.size = Vector2(102, 78)
 		box.clip_contents = true
 		box.add_theme_stylebox_override("panel", _box(Color(0.05, 0.1, 0.2, 0.9), Color(0.3, 0.5, 0.75, 0.5), 6))
 		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(box)
 		var glow := Sprite2D.new()
 		glow.texture = GLOW
-		glow.position = Vector2(51, 56)
-		glow.scale = Vector2.ONE * 0.9
+		glow.position = Vector2(51, 46)
+		glow.scale = Vector2.ONE * 0.8
 		var add := CanvasItemMaterial.new()
 		add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 		glow.material = add
@@ -172,8 +180,8 @@ func _ready() -> void:
 		s.sprite_frames = FRAMES
 		s.play(anims[i])
 		s.frame = i * 2
-		s.position = Vector2(51, 50)
-		s.scale = Vector2.ONE * 0.4
+		s.position = Vector2(51, 40)
+		s.scale = Vector2.ONE * 0.36
 		s.rotation = [0.0, -0.5, 0.35, 0.8][i]
 		var m := ShaderMaterial.new()
 		m.shader = FLASH_SHADER
@@ -193,11 +201,11 @@ func _ready() -> void:
 	apply.pressed.connect(_apply)
 
 	# Current setup.
-	_panel(Rect2(700, 552, 540, 112), PANEL_BG)
-	_label("CURRENT SETUP", 20, Color(0.93, 0.96, 1.0), Vector2(720, 556))
-	var names := ["ARMOR PAINT", "ENERGY COLOR", "BOOSTER COLOR"]
-	for i in 3:
-		var y := 588 + i * 25
+	_panel(Rect2(700, 530, 540, 134), PANEL_BG)
+	_label("CURRENT SETUP", 20, Color(0.93, 0.96, 1.0), Vector2(720, 534))
+	var names := ["BODY COLOR", "TRIM COLOR", "ENERGY COLOR", "BOOSTER COLOR"]
+	for i in 4:
+		var y := 562 + i * 24
 		var dot := ColorRect.new()
 		dot.position = Vector2(722, y + 5)
 		dot.size = Vector2(14, 14)
@@ -216,18 +224,18 @@ func _ready() -> void:
 		key.add_theme_stylebox_override("normal", _box(Color(0.08, 0.14, 0.26), Color(0.4, 0.6, 0.85, 0.7), 4, 6))
 		_label(hints[i][1], 15, Color(0.8, 0.88, 0.96), Vector2(x + 74, 681))
 
-	_status = _label("", 14, Color(0.5, 1.0, 0.7), Vector2(720, 520))
+	_status = _label("", 14, Color(0.5, 1.0, 0.7), Vector2(720, 500))
 	for c in get_children():
 		if c is Control:
 			_land_pos[c] = (c as Control).position
 	Layout.changed.connect(_apply_layout)
 	_apply_layout(Layout.portrait)
 	_refresh()
-	_swatches["armor"][_look["armor"]].grab_focus()
+	_swatches["body"][_look["body"]].grab_focus()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--look="):
 			var v := a.trim_prefix("--look=").split(",")
-			_look = {"armor": int(v[0]), "energy": int(v[1]), "booster": int(v[2])}
+			_look = {"armor": int(v[0]), "energy": int(v[1]), "booster": int(v[2]), "body": int(v[3]) if v.size() > 3 else 0}
 			_refresh()
 	modulate.a = 0.0
 	create_tween().tween_property(self, "modulate:a", 1.0, 0.35)
@@ -282,12 +290,12 @@ func _label(txt: String, fs: int, col: Color, pos: Vector2) -> Label:
 
 
 func _swatch_section(title: String, key: String, options: Array[Dictionary], y: float) -> void:
-	_panel(Rect2(56, y, 448, 86), Color(0.03, 0.07, 0.15, 0.85))
-	_label(title, 18, Color(0.9, 0.94, 1.0), Vector2(72, y + 4))
+	_panel(Rect2(56, y, 448, 70), Color(0.03, 0.07, 0.15, 0.85))
+	_label(title, 16, Color(0.9, 0.94, 1.0), Vector2(72, y + 2))
 	for i in options.size():
 		var s := Swatch.new(options[i]["color"])
-		s.position = Vector2(66 + i * 84, y + 26)
-		s.size = Vector2(60, 60)
+		s.position = Vector2(66 + i * 84, y + 18)
+		s.size = Vector2(60, 52)
 		s.tooltip_text = options[i]["name"]
 		s.pressed.connect(func() -> void:
 			_look[key] = i
@@ -325,18 +333,21 @@ func _refresh() -> void:
 		for i in _swatches[key].size():
 			_swatches[key][i].selected = i == _look[key]
 	var armor: Dictionary = Game.ARMOR[_look["armor"]]
+	var body: Dictionary = Game.BODY[_look["body"]]
 	var energy: Color = Game.ENERGY[_look["energy"]]["color"]
 	var booster: Color = Game.BOOSTER[_look["booster"]]["color"]
 	_mech_mat.set_shader_parameter("armor_original", armor.get("none", false))
 	_mech_mat.set_shader_parameter("armor_color", armor["color"])
+	_mech_mat.set_shader_parameter("body_original", body.get("none", false))
+	_mech_mat.set_shader_parameter("body_color", body["color"])
 	_mech_mat.set_shader_parameter("energy_color", energy)
 	for i in _thumbs.size():
-		Game.apply_armor(_thumb_mats[i], _look["armor"])
+		Game.apply_armor(_thumb_mats[i], _look["armor"], _look["body"])
 		var glow := _thumbs[i].get_parent().get_node("Glow") as Sprite2D
 		glow.modulate = Color(booster, 0.35) if i != 2 else Color(energy, 0.45)
-	var rows := [[armor["name"], armor["color"]], [Game.ENERGY[_look["energy"]]["name"], energy],
-		[Game.BOOSTER[_look["booster"]]["name"], booster]]
-	for i in 3:
+	var rows := [[body["name"], body["color"]], [armor["name"], armor["color"]],
+		[Game.ENERGY[_look["energy"]]["name"], energy], [Game.BOOSTER[_look["booster"]]["name"], booster]]
+	for i in 4:
 		_setup_values[i].text = str(rows[i][0]).to_upper()
 		_setup_dots[i].color = rows[i][1]
 	_flash = 0.35
@@ -354,7 +365,7 @@ func _back() -> void:
 
 func _randomize() -> void:
 	_look = {"armor": randi() % Game.ARMOR.size(), "energy": randi() % Game.ENERGY.size(),
-		"booster": randi() % Game.BOOSTER.size()}
+		"booster": randi() % Game.BOOSTER.size(), "body": randi() % Game.BODY.size()}
 	Sfx.play(&"select", -6.0)
 	_refresh()
 
@@ -427,13 +438,13 @@ func _input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_flash = move_toward(_flash, 0.0, delta * 2.0)
-	# Real turntable: 16 drawn angles of the Gundam; dragging spins it all the way around (360),
-	# and it slowly turns by itself when left alone. Neighbouring angles blend briefly mid-turn.
+	# Real turntable: 120 rendered angles of the mech; dragging spins it all the way around (360),
+	# and it slowly turns by itself when left alone. Neighbouring angles blend into each other.
 	_idle_t += delta
 	if _dragging != 1 and (_idle_t > 2.5 or _demo):
 		_rot += delta * (1.05 if _demo else _spin_speed)
 	if _demo and _t > 6.0 and _look["armor"] == 0:
-		_look = {"armor": 1, "energy": 3, "booster": 3}
+		_look = {"armor": 1, "energy": 3, "booster": 3, "body": 2}
 		_refresh()
 	# Momentum after a flick, then ease the shown angle toward the target (fluid, no snapping).
 	if _dragging != 1 and absf(_spin_vel) > 0.01:
@@ -443,14 +454,22 @@ func _process(delta: float) -> void:
 	# Follow the drag 1:1 while dragging (no trailing lag); ease only for keyboard steps.
 	_shown_rot = _rot if _dragging == 1 else lerpf(_shown_rot, _rot, 1.0 - exp(-16.0 * delta))
 	var count := _view_paths.size()
-	# Video frames turn the front toward screen-left as they advance; drag right = front moves right.
-	var i := roundi(fposmod(-_shown_rot / TAU, 1.0) * count) % count
+	# Frames turn the front toward screen-left as they advance; drag right = front moves right. The turn is
+	# smooth: between two neighbouring frames (3 degrees apart) the next one fades in over the current one.
+	var f := fposmod(-_shown_rot / TAU, 1.0) * count
+	var i := int(f) % count
+	var blend := f - floorf(f)
 	_mech.texture = _view(i)
-	_mech_next.visible = false
+	var nxt: Texture2D = _view_cache.get((i + 1) % count)
+	_mech_next.visible = nxt != null and blend > 0.02
+	if _mech_next.visible:
+		_mech_next.texture = nxt
+		_mech_next.modulate.a = blend
 	var s := MECH_SCALE * _zoom
 	var feet := Vector2(MECH_POS.x, FEET_Y) + _offset + Vector2(0, sin(_t * 1.4) * 5.0)
-	_mech.position = feet
-	_mech.scale = Vector2(s, s)
+	for spr: Sprite2D in [_mech, _mech_next]:
+		spr.position = feet
+		spr.scale = Vector2(s, s)
 	_mech_mat.set_shader_parameter("flash", _flash * 0.25)
 	_stage.queue_redraw()
 	position = ((get_viewport_rect().size - size) / 2.0).floor()
@@ -500,10 +519,49 @@ func _ellipse_ring(c: Vector2, rx: float, ry: float, col: Color, w: float) -> vo
 	_stage.draw_polyline(pts, col, w, true)
 
 
-## Turntable frame `i`, loaded on first use; the oldest cached frame is dropped past VIEW_CACHE.
+## Turntable frame `i` if it's loaded, else the last frame shown while it streams in (only the very first
+## frame is loaded on the spot). Also keeps the frames around `i` coming.
 func _view(i: int) -> Texture2D:
-	if not _view_cache.has(i):
-		if _view_cache.size() >= VIEW_CACHE:
-			_view_cache.erase(_view_cache.keys()[0])
-		_view_cache[i] = load(_view_paths[i])
-	return _view_cache[i]
+	_prefetch(i)
+	if not _view_cache.has(i) and _last_view == null:
+		_store_view(i, load(_view_paths[i]))
+	if _view_cache.has(i):
+		_last_view = _view_cache[i]
+	return _last_view
+
+
+## Requests the frames within PREFETCH of `i` on a background thread and collects the finished ones.
+func _prefetch(i: int) -> void:
+	var count := _view_paths.size()
+	for d in range(-PREFETCH, PREFETCH + 1):
+		var j := posmod(i + d, count)
+		if _view_cache.has(j):
+			continue
+		var path := _view_paths[j]
+		if not _view_requested.has(j):
+			if ResourceLoader.load_threaded_request(path) == OK:
+				_view_requested[j] = true
+			continue
+		match ResourceLoader.load_threaded_get_status(path):
+			ResourceLoader.THREAD_LOAD_LOADED:
+				_store_view(j, ResourceLoader.load_threaded_get(path) as Texture2D)
+			ResourceLoader.THREAD_LOAD_FAILED, ResourceLoader.THREAD_LOAD_INVALID_RESOURCE:
+				_view_requested.erase(j)
+
+
+## Caches frame `i`, dropping the cached frame furthest round the turn from it past VIEW_CACHE.
+func _store_view(i: int, tex: Texture2D) -> void:
+	_view_requested.erase(i)
+	if tex == null:
+		return
+	if _view_cache.size() >= VIEW_CACHE:
+		var count := _view_paths.size()
+		var far := -1
+		var far_d := -1
+		for k: int in _view_cache:
+			var dd := mini(posmod(k - i, count), posmod(i - k, count))
+			if dd > far_d:
+				far_d = dd
+				far = k
+		_view_cache.erase(far)
+	_view_cache[i] = tex

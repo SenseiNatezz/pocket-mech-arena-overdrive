@@ -21,20 +21,23 @@ const STRIKE_DELAY := 0.075
 ## How each weapon MOVES (player/weapons/melee_rig.gd), so no two feel alike:
 ##   anim      its basic attack: "arc" quick forehand / backhand slashes (Beam Saber), "flurry" right hand,
 ##             left hand, both crossing (Dual Sabers), "draw" lightning draw cuts with a held follow-through
-##             (Katana), "jab" lunging stabs, every other one twirled (Spear), "chop" overhead chops (Axe),
-##             "heavy" momentum sweeps (Greatsword); spins and the Energy Sword have their own.
+##             (Katana), "jab" = the Spear's set (_spear_move: twin stab, sweep), "chop" = the Axe's set
+##             (_axe_move: cleave, whirlwind), "heavy" momentum sweeps (Greatsword); spins and the Energy
+##             Sword have their own.
+##   beam      (sabers) the blade is a code-drawn Gundam beam (melee_rig.gd BeamLayer); beam_w = its width.
+##   hot       (Axe) the head glows hot and sheds embers.
 ##   rest      where it's held between attacks, in radians to the right of the aim: out front, levelled,
-##             at the side, low behind, on the shoulder, across the back (default 0.45); rest_ext = how much
-##             of it shows there (default 0.8).
+##             out to the side, low behind, on the shoulder (default 0.45); rest_ext = how much of it shows
+##             there (default 0.8).
 ## Every blow lands when the blade gets there (melee_rig.gd LAND; the chops / heavy sweeps and the
 ## Katana's iaido cut well into their swing) - see _at().
 const WEAPONS := {
 	&"sword": {"rate": 2.6, "damage": 44.0, "reach": 150.0, "half": 1.15, "knock": 300.0, "combo": 3,
 		"style": "arc", "finisher": "dash", "color": Color(1.0, 0.35, 0.8), "tex": "beam_saber", "energy": true,
-		"anim": "arc", "rest": 0.45},
+		"anim": "arc", "rest": 0.45, "beam": true},
 	&"dual_sabers": {"rate": 5.5, "damage": 22.0, "reach": 130.0, "half": 1.0, "knock": 140.0, "combo": 5,
 		"style": "arc", "finisher": "whirl", "color": Color(0.3, 1.0, 1.0), "tex": "beam_saber", "hue": 0.6,
-		"energy": true, "anim": "flurry", "rest": 0.45},
+		"energy": true, "anim": "flurry", "rest": 0.45, "beam": true, "beam_w": 0.85},
 	&"katana": {"rate": 2.1, "damage": 54.0, "reach": 215.0, "half": 1.45, "knock": 260.0, "combo": 3,
 		"style": "arc", "finisher": "iaido", "color": Color(1.0, 0.22, 0.2), "tex": "katana", "energy": true,
 		"anim": "draw", "rest": 2.2, "rest_ext": 0.75},
@@ -43,10 +46,10 @@ const WEAPONS := {
 		"anim": "jab", "rest": 0.12},
 	&"axe": {"rate": 1.1, "damage": 115.0, "reach": 165.0, "half": 1.05, "knock": 750.0, "combo": 3,
 		"style": "arc", "finisher": "slam", "color": Color(1.0, 0.55, 0.15), "tex": "axe", "energy": true,
-		"anim": "chop", "rest": 1.25},
+		"anim": "chop", "rest": 1.25, "hot": true},
 	&"scythe": {"rate": 1.5, "damage": 42.0, "reach": 195.0, "half": PI, "knock": 240.0, "combo": 3,
 		"style": "spin", "finisher": "reap", "color": Color(0.55, 1.0, 0.2), "tex": "scythe", "energy": true,
-		"rest": PI + 0.6},
+		"rest": 0.75},
 	&"greatsword": {"rate": 0.95, "damage": 95.0, "reach": 205.0, "half": 1.3, "knock": 600.0, "combo": 3,
 		"style": "arc", "finisher": "cleave", "color": Color(0.9, 0.93, 1.0), "tex": "greatsword", "energy": false,
 		"anim": "heavy", "rest": 2.85, "rest_ext": 0.85},
@@ -128,6 +131,13 @@ func _basic(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 	if w["style"] == "energy":
 		_energy_move(w, dir, dmg, col)
 		return
+	match w.get("anim", ""):
+		"jab":
+			_spear_move(w, dir, dmg, col)
+			return
+		"chop":
+			_axe_move(w, dir, dmg, col)
+			return
 	# Every blow connects when the blade gets there (a moment into the swing; well into it for the chops and
 	# heavy sweeps), from wherever the mech is then, so the hit-pause freezes the blade on contact.
 	var heavy: bool = w.get("anim", "") in HEAVY
@@ -180,20 +190,29 @@ func _finisher(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 				line.to = p + dir * (dash + 60.0)
 				line.color = col
 				Combat.world().add_child(line))
-		"charge":  # Spear: charge forward, braced, and skewer a long line.
+		"charge":  # Spear: twirl, charge forward braced, skewer a long line, and burst at the point.
 			var dash := 200.0
 			_dash(dir, dash)
 			_blade(w, "charge", dir, reach, 0.3)
 			_hit_line(p, p + dir * (dash + reach * 1.1), 50.0, dmg * 2.0, w["knock"] * 1.5, col, w)
-		"slam":  # Axe: a huge overhead chop into a ground slam shockwave, where the axe comes down.
-			land = _blade(w, "chop", dir, reach, 0.32, 1.0, false, {"big": true})
+			_after(dash / mech.boost_speed + 0.02, func() -> void:
+				var tip := mech.global_position + dir * reach * 0.85
+				Combat.shockwave(tip, 120.0, col, 0.3)
+				Combat.burst(tip, col, 420.0, 1.1)
+				Combat.shake(0.18))
+		"slam":  # Axe: LEAP SLAM - springs up with the axe over its head and crashes down behind it into a
+			# ground-splitting shockwave where the axe comes down.
+			_dash(dir, 70.0)
+			land = _blade(w, "leap", dir, reach, 0.48)
 			_at(land, func() -> void:
 				var at := mech.global_position + dir * 70.0
-				_hit_arc(at, Vector2.ZERO, 200.0, PI, dmg * 1.5, w["knock"] * 1.3, col, w)
-				Combat.shockwave(at, 200.0, col, 0.4)
-				Combat.burst(at, col, 500.0, 1.6)
-				Combat.shake(0.5)
-				Sfx.play(&"slam", -2.0))
+				_hit_arc(at, Vector2.ZERO, 210.0, PI, dmg * 1.5, w["knock"] * 1.3, col, w)
+				Combat.shockwave(at, 210.0, col, 0.45)
+				Combat.shockwave(at, 110.0, Color(1.0, 0.9, 0.6), 0.25)
+				Combat.burst(at, col, 520.0, 1.7)
+				RIG.crack(at, 150.0, col, 9)
+				Combat.shake(0.6)
+				Sfx.play(&"slam", -1.0))
 		"reap":  # Scythe: double spin that drags enemies in.
 			_blade(w, "spin", dir, reach, 0.4, 2.0)
 			_hit_arc(p, dir, reach + 55.0, PI, dmg * 1.6, -w["knock"] * 1.5, col, w)
@@ -261,6 +280,50 @@ func _energy_move(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 				mech.recoil(dir * 60.0)
 				Combat.shake(0.1))
 	_swing_sound(w, false)
+
+
+## Beam Spear: hit 1 TWIN STAB (two quick stabs, each piercing the line in front), hit 2 SWEEP (swung wide
+## across the front like a staff, then twirled back); the finisher is the twirling CHARGE.
+func _spear_move(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
+	var reach: float = w["reach"]
+	if combo % 2 == 0:
+		var land := _blade(w, "pierce2", dir, reach * 0.85, 0.26)
+		for t: float in [land, rig.land_time(RIG.PIERCE2_SECOND)]:
+			_at(t, func() -> void:
+				var at := mech.global_position
+				_hit_line(at, at + dir * reach, 40.0, dmg * 0.6, w["knock"] * 0.55, col, w)
+				mech.recoil(dir * 55.0))
+		_after(rig.land_time(RIG.STABS["pierce2"][1]), func() -> void: Sfx.play(&"saber", -9.0, 0.15))
+	else:
+		var land := _blade(w, "sweep", dir, reach * 0.9, 0.3)
+		_at(land, func() -> void:
+			_hit_arc(mech.global_position, dir, reach * 0.95, 1.1, dmg, w["knock"] * 0.8, col, w)
+			mech.recoil(dir * 40.0))
+	_swing_sound(w, false)
+
+
+## Energy Axe: hit 1 CLEAVE (heaved over the shoulder, a brutal diagonal cut that bites into the ground and
+## cracks it), hit 2 WHIRLWIND (the mech spins once with the axe held out, hitting all round); the
+## finisher is the LEAP SLAM.
+func _axe_move(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
+	var reach: float = w["reach"]
+	if combo % 2 == 0:
+		var land := _blade(w, "cleave", dir, reach * 0.95, 0.5)
+		_at(land, func() -> void:
+			_hit_arc(mech.global_position, dir, reach, w["half"], dmg, w["knock"], col, w)
+			mech.recoil(dir * 110.0)
+			_thud(w)
+			var at: Vector2 = rig.head_pos()
+			RIG.crack(at, 70.0, col, 5)
+			Combat.burst(at, col, 320.0, 0.9))
+	else:
+		var land := _blade(w, "axe_whirl", dir, reach, 0.5)
+		_at(land, func() -> void:
+			var at := mech.global_position
+			_hit_arc(at, dir, reach + 15.0, PI, dmg * 0.85, w["knock"] * 0.9, col, w)
+			Combat.shockwave(at, reach + 15.0, col, 0.3)
+			_thud(w))
+	_swing_sound(w, false, true)
 
 
 ## Runs `f` now, or after `seconds` of game time (blows that land with the blade).

@@ -70,7 +70,7 @@ texture = ExtResource("4")
 
 [node name="ThrusterL" type="GPUParticles2D" parent="Body"]
 material = SubResource("add")
-position = Vector2(-20, 19)
+position = Vector2(-28, 9)
 amount = 24
 lifetime = 0.2
 texture = ExtResource("4")
@@ -79,7 +79,7 @@ process_material = SubResource("thrust_mat")
 
 [node name="ThrusterR" type="GPUParticles2D" parent="Body"]
 material = SubResource("add")
-position = Vector2(19, 19)
+position = Vector2(28, 6)
 amount = 24
 lifetime = 0.2
 texture = ExtResource("4")

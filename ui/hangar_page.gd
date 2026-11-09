@@ -2,11 +2,16 @@ class_name HangarPage
 extends Control
 ## Main menu HANGAR (permanent progression, see Game.HANGAR / Game.CHASSIS): spend the SCRAP earned in
 ## runs on mech chassis and permanent upgrades. One scrolling column, so it works in landscape and
-## portrait alike, with mouse, touch and keyboard / gamepad focus.
+## portrait alike, with mouse, touch and keyboard / gamepad focus. Two tabs under the title:
+##   UPGRADES   the chassis + permanent upgrades below
+##   CONTRACTS  the contract board (ui/contracts_panel.gd); the tab says how many are ready to claim
+## A row with a `lock` (Salvager Beacon) stays greyed out, naming its contract, until that's done.
 ##   MECH CHASSIS  three frames as cards (big mech art at the frames' real relative sizes), SELECT / BUY;
 ##                 cards grow to fit each frame's ability text
 ##   UPGRADES      each permanent upgrade (Game.HANGAR, any count) with its level pips and an UPGRADE
-##                 (cost) button, 2 columns in landscape / 1 in portrait
+##                 (cost) button, 2 columns in landscape / 1 in portrait. ENDLESS HANGAR: a maxed row
+##                 keeps going as MK II, MK III... (gold MK badge, what each MK level adds and the total
+##                 so far, and a gold "MK III  4,230" button)
 
 signal back_pressed
 
@@ -23,6 +28,10 @@ var _chassis_btns := {}
 var _upgrade_rows := {}
 var _back: TitleButton
 var _flash := 0.0
+var _tab_btns: Array[Button] = []
+var _upgrade_nodes: Array[Control] = []
+var _contracts: ContractsPanel
+var _tab := 0
 
 
 func _ready() -> void:
@@ -51,12 +60,28 @@ func _ready() -> void:
 	head.add_child(title)
 	_scrap_label = _label("", 24, GOLD)
 	head.add_child(_scrap_label)
-	var sub := _label("Earn SCRAP in every run (more on harder difficulties). Spend it here on new mech frames and permanent upgrades.",
+	var sub := _label("Earn SCRAP in every run (more on harder difficulties). Spend it here on new mech frames and permanent upgrades. Maxed upgrades keep going as MK levels. Finished CONTRACTS pay extra scrap.",
 		15, Color(0.7, 0.85, 1.0, 0.85))
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_column.add_child(sub)
 
-	_column.add_child(_heading("MECH CHASSIS"))
+	# UPGRADES / CONTRACTS tabs.
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 10)
+	_column.add_child(tabs)
+	for i in 2:
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(250, 42)
+		b.focus_mode = Control.FOCUS_ALL
+		b.add_theme_font_size_override("font_size", 15)
+		b.add_theme_stylebox_override("focus", _box(Color(0, 0, 0, 0), Color.WHITE, 2))
+		b.pressed.connect(_set_tab.bind(i))
+		b.mouse_entered.connect(b.grab_focus)
+		tabs.add_child(b)
+		_tab_btns.append(b)
+
+	var chassis_head := _heading("MECH CHASSIS")
+	_column.add_child(chassis_head)
 	_chassis_grid = GridContainer.new()
 	_chassis_grid.add_theme_constant_override("h_separation", 12)
 	_chassis_grid.add_theme_constant_override("v_separation", 12)
@@ -67,7 +92,8 @@ func _ready() -> void:
 		_chassis_grid.add_child(card)
 		_chassis_btns[c["id"]] = card
 
-	_column.add_child(_heading("PERMANENT UPGRADES"))
+	var upgrades_head := _heading("PERMANENT UPGRADES")
+	_column.add_child(upgrades_head)
 	_upgrade_grid = GridContainer.new()
 	_upgrade_grid.add_theme_constant_override("h_separation", 12)
 	_upgrade_grid.add_theme_constant_override("v_separation", 10)
@@ -77,6 +103,11 @@ func _ready() -> void:
 		row.buy.pressed.connect(_on_buy.bind(id))
 		_upgrade_grid.add_child(row)
 		_upgrade_rows[id] = row
+	_upgrade_nodes = [chassis_head, _chassis_grid, upgrades_head, _upgrade_grid]
+	_contracts = ContractsPanel.new()
+	_contracts.visible = false
+	_contracts.claimed.connect(func(_total: int) -> void: refresh())
+	_column.add_child(_contracts)
 
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 6)
@@ -112,22 +143,54 @@ func _relayout() -> void:
 	var uw := w if _upgrade_grid.columns == 1 else (w - 12.0) / 2.0
 	for row: UpgradeRow in _upgrade_rows.values():
 		row.custom_minimum_size = Vector2(uw, 74)
+	_contracts.set_layout(w, _upgrade_grid.columns)
 	# (the centring container spans the scroll area's width)
 	_scroll.get_child(0).custom_minimum_size = Vector2(vp.x, 0)
 
 
 func refresh() -> void:
-	_scrap_label.text = "%d SCRAP" % Game.scrap
+	_scrap_label.text = "%s SCRAP" % Game.fmt_int(Game.scrap)
 	for id in _chassis_btns:
 		_chassis_btns[id].refresh()
 	for id in _upgrade_rows:
 		_upgrade_rows[id].refresh()
+	_contracts.refresh()
+	# Tabs: the open one lit cyan; CONTRACTS turns gold while contracts are waiting to be claimed.
+	var ready := Contracts.ready_ids().size()
+	_tab_btns[0].text = "UPGRADES"
+	_tab_btns[1].text = "CONTRACTS  (%d READY)" % ready if ready > 0 else "CONTRACTS  %d / %d" % [Contracts.done_count(),
+		Contracts.LIST.size()]
+	for i in _tab_btns.size():
+		var b := _tab_btns[i]
+		var on := i == _tab
+		var hot := i == 1 and ready > 0
+		var edge := GOLD if hot else CYAN
+		b.add_theme_stylebox_override("normal", _box(Color(0.1, 0.3, 0.6, 0.95) if on else Color(0.04, 0.07, 0.13, 0.95),
+			Color(edge, 1.0 if on or hot else 0.45), 2 if on or hot else 1))
+		b.add_theme_stylebox_override("hover", _box(Color(0.14, 0.38, 0.72, 0.95), Color(edge.lightened(0.3))))
+		b.add_theme_stylebox_override("pressed", _box(Color(0.2, 0.45, 0.8, 1.0), Color.WHITE))
+		b.add_theme_color_override("font_color", GOLD if hot and not on else (Color.WHITE if on else Color(0.75, 0.85, 1.0)))
 
 
-## Focus the selected chassis (menu opens the page).
+## Focus the selected chassis (menu opens the page) - or, on the CONTRACTS tab, the first contract to claim.
 func focus_default() -> void:
-	(_chassis_btns.get(Game.chassis, _back) as Control).grab_focus()
+	if _tab == 1:
+		_contracts.first_focus().grab_focus()
+	else:
+		(_chassis_btns.get(Game.chassis, _back) as Control).grab_focus()
 	_scroll.scroll_vertical = 0
+
+
+## 0 = UPGRADES (chassis + permanent upgrades), 1 = CONTRACTS.
+func _set_tab(i: int) -> void:
+	if i != _tab:
+		Sfx.play(&"select", -10.0, 0.0)
+	_tab = i
+	for n in _upgrade_nodes:
+		n.visible = i == 0
+	_contracts.visible = i == 1
+	_scroll.scroll_vertical = 0
+	refresh()
 
 
 func _on_chassis(id: StringName) -> void:
@@ -245,7 +308,7 @@ class ChassisCard:
 		for line in _wrap(font, String(info["desc"]), w - 24.0, 12):
 			y += 16.0
 			draw_string(font, Vector2(12, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 24, 12, Color(0.7, 0.78, 0.9))
-		var foot := "SELECTED" if selected else ("SELECT" if owned else "BUY  %d SCRAP" % int(info["cost"]))
+		var foot := "SELECTED" if selected else ("SELECT" if owned else "BUY  %s SCRAP" % Game.fmt_int(int(info["cost"])))
 		var fcol := col if selected else (Color.WHITE if owned else (HangarPage.GOLD if Game.scrap >= int(info["cost"]) else Color(1, 0.45, 0.4)))
 		draw_rect(Rect2(10, size.y - 38, w - 20, 28), Color(fcol, 0.14))
 		draw_string(font, Vector2(10, size.y - 18), foot, HORIZONTAL_ALIGNMENT_CENTER, w - 20, 15, fcol)
@@ -278,18 +341,28 @@ class ChassisCard:
 		return out
 
 
-## One permanent upgrade: name, what a level does, level pips, and the UPGRADE (cost) button.
+## One permanent upgrade: name (+ a gold MK badge once it's past its max), what a level does, level pips,
+## once maxed the MK line (what every MK level adds, and the total so far), and the UPGRADE (cost) button,
+## which turns gold and reads "MK III  4,230" for the endless MK levels.
 class UpgradeRow:
 	extends PanelContainer
 	var id: StringName
 	var buy: Button
 	var _name: Label
+	var _mk_badge: Label
 	var _desc: Label
 	var _pips: Label
+	var _mk_line: Label
+	var _panel_plain: StyleBoxFlat
+	var _panel_mk: StyleBoxFlat
+	var _btn_plain := {}
+	var _btn_mk := {}
 
 	func _init(upgrade_id: StringName) -> void:
 		id = upgrade_id
-		add_theme_stylebox_override("panel", HangarPage._box(Color(0.04, 0.07, 0.13, 0.95), Color(0.3, 0.5, 0.75, 0.35)))
+		_panel_plain = HangarPage._box(Color(0.04, 0.07, 0.13, 0.95), Color(0.3, 0.5, 0.75, 0.35))
+		_panel_mk = HangarPage._box(Color(0.07, 0.065, 0.05, 0.95), Color(HangarPage.GOLD, 0.45))
+		add_theme_stylebox_override("panel", _panel_plain)
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		add_child(h)
@@ -298,10 +371,24 @@ class UpgradeRow:
 		v.add_theme_constant_override("separation", 0)
 		h.add_child(v)
 		var info: Dictionary = Game.HANGAR[id]
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 8)
+		v.add_child(top)
 		_name = Label.new()
 		_name.text = String(info["name"])
 		_name.add_theme_font_size_override("font_size", 17)
-		v.add_child(_name)
+		top.add_child(_name)
+		_mk_badge = Label.new()
+		_mk_badge.add_theme_font_size_override("font_size", 13)
+		_mk_badge.add_theme_color_override("font_color", Color(0.14, 0.09, 0.0))
+		var badge := StyleBoxFlat.new()
+		badge.bg_color = HangarPage.GOLD
+		badge.set_corner_radius_all(4)
+		badge.content_margin_left = 7
+		badge.content_margin_right = 7
+		_mk_badge.add_theme_stylebox_override("normal", badge)
+		_mk_badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		top.add_child(_mk_badge)
 		_desc = Label.new()
 		_desc.text = String(info["desc"])
 		_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -312,14 +399,24 @@ class UpgradeRow:
 		_pips.add_theme_font_size_override("font_size", 13)
 		_pips.add_theme_color_override("font_color", HangarPage.GOLD)
 		v.add_child(_pips)
+		_mk_line = Label.new()
+		_mk_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_mk_line.add_theme_font_size_override("font_size", 12)
+		_mk_line.add_theme_color_override("font_color", Color(1.0, 0.88, 0.55))
+		v.add_child(_mk_line)
 		buy = Button.new()
 		buy.custom_minimum_size = Vector2(150, 44)
 		buy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		buy.focus_mode = Control.FOCUS_ALL
 		buy.add_theme_font_size_override("font_size", 14)
-		buy.add_theme_stylebox_override("normal", HangarPage._box(Color(0.1, 0.3, 0.6, 0.9), Color(0.45, 0.75, 1.0)))
-		buy.add_theme_stylebox_override("hover", HangarPage._box(Color(0.14, 0.38, 0.72, 0.95), Color(0.6, 0.9, 1.0)))
-		buy.add_theme_stylebox_override("pressed", HangarPage._box(Color(0.2, 0.45, 0.8, 1.0), Color.WHITE))
+		_btn_plain = {"normal": HangarPage._box(Color(0.1, 0.3, 0.6, 0.9), Color(0.45, 0.75, 1.0)),
+			"hover": HangarPage._box(Color(0.14, 0.38, 0.72, 0.95), Color(0.6, 0.9, 1.0)),
+			"pressed": HangarPage._box(Color(0.2, 0.45, 0.8, 1.0), Color.WHITE)}
+		_btn_mk = {"normal": HangarPage._box(Color(0.36, 0.25, 0.04, 0.92), HangarPage.GOLD),
+			"hover": HangarPage._box(Color(0.46, 0.33, 0.06, 0.96), Color(1.0, 0.92, 0.6)),
+			"pressed": HangarPage._box(Color(0.56, 0.41, 0.08, 1.0), Color.WHITE)}
+		for k in _btn_plain:
+			buy.add_theme_stylebox_override(k, _btn_plain[k])
 		buy.add_theme_stylebox_override("focus", HangarPage._box(Color(0, 0, 0, 0), Color.WHITE, 2))
 		buy.add_theme_stylebox_override("disabled", HangarPage._box(Color(0.06, 0.08, 0.12, 0.9), Color(0.3, 0.35, 0.45, 0.5)))
 		buy.mouse_entered.connect(buy.grab_focus)
@@ -327,14 +424,50 @@ class UpgradeRow:
 
 	func refresh() -> void:
 		var info: Dictionary = Game.HANGAR[id]
+		# Locked behind a contract: greyed out, naming the contract.
+		var locked := Game.hangar_locked(id)
+		modulate = Color(1, 1, 1, 0.6) if locked else Color.WHITE
+		if locked:
+			var c := Contracts.info(info["lock"])
+			_desc.text = "LOCKED  -  finish the contract \"%s\" (%s)." % [c["title"], String(c["text"]).to_lower()]
+			_pips.text = ""
+			_mk_badge.visible = false
+			_mk_line.visible = false
+			add_theme_stylebox_override("panel", _panel_plain)
+			buy.text = "LOCKED"
+			buy.disabled = true
+			for k in _btn_plain:
+				buy.add_theme_stylebox_override(k, _btn_plain[k])
+			return
+		_desc.text = String(info["desc"])
 		var lv := Game.hangar_level(id)
 		var mx := int(info["max"])
+		var mk := Game.hangar_mk(id)
+		var maxed := lv >= mx
 		_pips.text = "■ ".repeat(lv) + "□ ".repeat(mx - lv) + "  LV %d / %d" % [lv, mx]
+		_mk_badge.text = Game.hangar_mk_name(id)
+		_mk_badge.visible = mk > 0
+		add_theme_stylebox_override("panel", _panel_mk if mk > 0 else _panel_plain)
+		# ENDLESS HANGAR line: what each MK level adds and (once bought) the running total.
+		_mk_line.visible = maxed
 		var cost := Game.hangar_cost(id)
+		if maxed:
+			var capped := info.has("mk_cap")
+			var total := roundi(Game.hangar_mk_bonus(id) * 100.0)
+			if cost < 0:
+				_mk_line.text = "MK MAX: %d%% %s" % [total, String(info["mk"]).trim_prefix("+2% ")]
+			elif mk > 0:
+				_mk_line.text = "Each MK level: %s   (now %s%d%%)" % [info["mk"], "" if capped else "+", total]
+			else:
+				_mk_line.text = "MAXED - each MK level: %s" % info["mk"]
 		if cost < 0:
 			buy.text = "MAXED"
 			buy.disabled = true
 		else:
-			buy.text = "UPGRADE  %d" % cost
+			buy.text = ("%s  %s" % [Game.hangar_mk_name(id, 1), Game.fmt_int(cost)]) if maxed \
+				else "UPGRADE  %s" % Game.fmt_int(cost)
 			buy.disabled = false
 			buy.add_theme_color_override("font_color", Color.WHITE if Game.scrap >= cost else Color(1, 0.55, 0.5))
+		var styles: Dictionary = _btn_mk if maxed and cost >= 0 else _btn_plain
+		for k in styles:
+			buy.add_theme_stylebox_override(k, styles[k])

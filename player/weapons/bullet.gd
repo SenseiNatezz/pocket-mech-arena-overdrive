@@ -74,6 +74,7 @@ func launch(pos: Vector2, vel: Vector2, dmg: float, is_player: bool, from: Node,
 	core.scale = _core_scale if is_player else ENEMY_CORE
 	core.visible = true
 	rifle_style = false
+	material = null
 	_age = 0.0
 	_frame = -1
 	_reach = 0.0
@@ -85,9 +86,10 @@ func launch(pos: Vector2, vel: Vector2, dmg: float, is_player: bool, from: Node,
 	set_physics_process(true)
 
 
-## Beam Rifle look: the drawn, cel-animated beam lance with a soft glow stretched along it.
+## Beam Rifle look: the glowing Gundam-style beam bolt (drawn additively) with a soft glow along it.
 func set_rifle_style() -> void:
 	rifle_style = true
+	material = RifleFx.additive()
 	core.visible = false
 	glow.modulate = Color(_color, 0.35)
 	_update_rifle_glow()

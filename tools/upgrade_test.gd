@@ -553,20 +553,28 @@ func _combo_checks() -> void:
 
 ## Hangar: scrap buys escalating permanent upgrades and chassis; bonuses reach the run.
 func _hangar_checks() -> void:
-	Game.scrap = 1000
+	# (scrap numbers are x10 since save version 2)
+	Game.scrap = 10000
 	Game.hangar.clear()
 	var c1 := Game.hangar_cost(&"frame")
-	_check("buying an upgrade spends scrap and levels it", Game.buy_hangar(&"frame") and Game.scrap == 1000 - c1
+	_check("buying an upgrade spends scrap and levels it", Game.buy_hangar(&"frame") and Game.scrap == 10000 - c1
 		and Game.hangar_level(&"frame") == 1)
 	_check("the next level costs more", Game.hangar_cost(&"frame") > c1)
+	# ENDLESS HANGAR: a maxed row keeps going as MK levels (15% dearer each); capped chance rows stop.
 	Game.hangar[&"last_stand"] = 1
-	_check("maxed upgrades can't be bought", Game.hangar_cost(&"last_stand") == -1 and not Game.buy_hangar(&"last_stand"))
+	_check("a maxed upgrade continues as MK II (%d scrap)" % Game.hangar_cost(&"last_stand"),
+		Game.hangar_cost(&"last_stand") == 2880 and Game.buy_hangar(&"last_stand") and Game.hangar_mk(&"last_stand") == 1
+		and Game.hangar_level(&"last_stand") == 1)
+	Game.hangar[&"last_stand"] = 1 + Game.hangar_mk_max(&"last_stand")
+	_check("a capped MK row stops (Last Stand at %d%% HP)" % roundi(Game.hangar_mk_bonus(&"last_stand") * 100.0),
+		Game.hangar_cost(&"last_stand") == -1 and not Game.buy_hangar(&"last_stand"))
+	Game.hangar.erase(&"last_stand")
 	var before := Upgrades.damage_mult()
 	Game.hangar[&"calibration"] = 2
 	_check("Weapon Calibration raises damage (x%.2f)" % (Upgrades.damage_mult() / before), is_equal_approx(Upgrades.damage_mult() / before, 1.1))
 	Game.scrap = 100
 	_check("can't buy a chassis without the scrap", not Game.pick_chassis(&"bulwark") and Game.chassis == &"standard")
-	Game.scrap = 1000
+	Game.scrap = 10000
 	_check("buying a chassis selects it", Game.pick_chassis(&"striker") and Game.chassis == &"striker" and Game.owns_chassis(&"striker"))
 	_check("the Striker is faster (x%.2f move)" % Upgrades.move_mult(), Upgrades.move_mult() > 1.1)
 	Game.pick_chassis(&"standard")

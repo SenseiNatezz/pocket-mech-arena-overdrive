@@ -1,14 +1,17 @@
 extends Node
 ## Melee swing preview (Weapon Range):  godot --path . -- --gun-range --swing-capture=OUT_DIR
-## For every melee weapon: stands the mech beside the drone cluster, plays a basic swing and then a
-## finisher, and saves a contact sheet (frames every 3 physics frames, 4 x 3 grid, cropped around the
-## mech) to OUT_DIR/swing_<id>.png. Quits when done.
+##     [--swing-only=spear,axe]  only these weapons
+## For every melee weapon: stands the mech beside the drone cluster, plays each basic hit of its combo and
+## then the finisher, and saves contact sheets (frames every 3 physics frames, 4 x 3 grid, cropped around
+## the mech) to OUT_DIR/swing_<id>.png (first hit), swing_<id>_<n>.png (later combo hits) and
+## finisher_<id>.png. Quits when done.
 
 const FRAMES := 12
 const STEP := 3
 const CROP := Vector2i(560, 420)
 
 var _out := ""
+var _only: PackedStringArray = []
 
 
 func _ready() -> void:
@@ -17,6 +20,8 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--swing-capture="):
 			_out = a.trim_prefix("--swing-capture=")
+		elif a.begins_with("--swing-only="):
+			_only = a.trim_prefix("--swing-only=").split(",")
 	_run.call_deferred()
 
 
@@ -35,21 +40,27 @@ func _run() -> void:
 		center += d.global_position
 	center /= cluster.size()
 	for id: StringName in MeleeKit.WEAPONS:
+		if not _only.is_empty() and String(id) not in _only:
+			continue
 		gr.select_weapon(id, false)
-		mech.global_position = center + Vector2(170, 0)
-		mech.velocity = Vector2.ZERO
-		Controls.touch_aim = Vector2.LEFT
-		mech.melee.combo = 0
-		await _frames(40)
-		var shots: Array[Image] = []
-		mech._fire_primary(1.0)
-		for i in FRAMES:
-			await _frames(STEP)
-			await RenderingServer.frame_post_draw
-			shots.append(_crop(mech))
-		_save(shots, "swing_%s.png" % id)
-		# Finisher: run the combo up to its last hit.
 		var combo: int = MeleeKit.WEAPONS[id]["combo"]
+		# Each basic hit of the combo (the combo counter is set up so the next swing is hit n).
+		for n in combo - 1:
+			mech.global_position = center + Vector2(170, 0)
+			mech.velocity = Vector2.ZERO
+			Controls.touch_aim = Vector2.LEFT
+			await _frames(40)
+			mech.melee._last_id = id if n > 0 else &""
+			mech.melee.combo = n - 1
+			mech.melee._last_swing = mech.melee._clock
+			var shots: Array[Image] = []
+			mech._fire_primary(1.0)
+			for i in FRAMES:
+				await _frames(STEP)
+				await RenderingServer.frame_post_draw
+				shots.append(_crop(mech))
+			_save(shots, ("swing_%s.png" % id) if n == 0 else ("swing_%s_%d.png" % [id, n + 1]))
+		# Finisher: run the combo up to its last hit.
 		mech.melee._last_id = id
 		mech.melee.combo = combo - 2
 		mech.melee._last_swing = mech.melee._clock
