@@ -1,5 +1,5 @@
 """Title lobby card art: small crops of the real arena maps (assets/hq/env_*_topdown.png, 3312 x 2480) so the
-menu never has to load the full maps. Writes assets/hq/menu/arena_0..5.jpg (campaign card + arena list, in
+menu never has to load the full maps. Writes assets/hq/menu/arena_0..7.jpg (campaign card + arena list, in
 Game.ARENAS order) and endless.jpg (the Volcanic Forge's furnace corner).
 
     py -3 art_src/menu/make_menu_thumbs.py
@@ -14,7 +14,9 @@ SIZE = (800, 340)
 
 # Game.ARENAS order -> map art.
 ARENAS = ["env_arctic_topdown", "env_jungle_topdown", "env_outpost_topdown", "env_skyway_topdown",
-          "env_plaza_topdown", "env_forge_topdown"]
+          "env_plaza_topdown", "env_forge_topdown", "env_desert_topdown", "env_dock_topdown"]
+# Crop centre per map (fractions; default the middle): the Titan Graveyard card shows the fallen titan.
+CENTRES = {"env_desert_topdown": (0.5, 0.3), "env_dock_topdown": (0.5, 0.42)}
 
 
 def crop(im: Image.Image, cx: float, cy: float, w: int) -> Image.Image:
@@ -36,7 +38,8 @@ def main() -> None:
     os.makedirs(OUT, exist_ok=True)
     for i, name in enumerate(ARENAS):
         im = Image.open(os.path.join(SRC, name + ".png")).convert("RGB")
-        finish(crop(im, 0.5, 0.5, 2300), os.path.join(OUT, "arena_%d.jpg" % i))
+        cx, cy = CENTRES.get(name, (0.5, 0.5))
+        finish(crop(im, cx, cy, 2300), os.path.join(OUT, "arena_%d.jpg" % i))
     forge = Image.open(os.path.join(SRC, "env_forge_topdown.png")).convert("RGB")
     finish(crop(forge, 0.78, 0.2, 1700), os.path.join(OUT, "endless.jpg"))
 

@@ -52,6 +52,15 @@ const ASSETS := {
 	"enemies5/anvil.png": [288, 0.15],
 	"enemies5/slagspitter.png": [288, 0.15],
 	"enemies5/vulcan.png": [520, 0.15],
+	# Titan Graveyard + Orbital Dry Dock robots and bosses (levels 7-8; raw/enemies6 faces up, transparent).
+	"enemies6/dune_burrower.png": [240, 0.15],
+	"enemies6/sand_skiff.png": [288, 0.15],
+	"enemies6/heliostat.png": [288, 0.15],
+	"enemies6/scarab.png": [520, 0.15],
+	"enemies6/mag_mine_drone.png": [200, 0.15],
+	"enemies6/grav_tug.png": [288, 0.15],
+	"enemies6/void_skimmer.png": [256, 0.15],
+	"enemies6/zenith.png": [520, 0.15],
 	# Armory weapons (card art + in-game swing sprites; all point up).
 	"weapons/beam_rifle.png": [256, 0.1],
 	"weapons/sniper.png": [256, 0.1],
@@ -74,7 +83,7 @@ const ASSETS := {
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var only: String = args[0] if not args.is_empty() else ""
-	for d in ["enemies2", "enemies3", "enemies4", "enemies5", "weapons"]:
+	for d in ["enemies2", "enemies3", "enemies4", "enemies5", "enemies6", "weapons"]:
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT + d))
 	for f: String in ASSETS:
 		if not f.begins_with(only):

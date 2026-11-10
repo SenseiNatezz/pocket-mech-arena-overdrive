@@ -28,6 +28,10 @@ const ENEMY_KINDS := [
 	["tidebreaker", "Tidebreaker"],
 	# Volcanic Forge robots (level 6).
 	["magma_crawler", "Magma Crawler"], ["anvil", "Anvil"], ["slagspitter", "Slagspitter"],
+	# Titan Graveyard robots (level 7).
+	["dune_burrower", "Dune Burrower"], ["sand_skiff", "Sand Skiff"], ["heliostat", "Heliostat"],
+	# Orbital Dry Dock robots (level 8).
+	["void_skimmer", "Void Skimmer"], ["mag_mine_drone", "Mag Mine Drone"], ["grav_tug", "Grav Tug"],
 ]
 ## [scene path under res://enemies, display name, accent]
 const BOSS_KINDS := [
@@ -35,6 +39,8 @@ const BOSS_KINDS := [
 	["bosses/ronin_boss", "Ronin", Color(1.0, 0.45, 0.15)],
 	["bosses/seraph_boss", "Seraph", Color(0.75, 0.35, 1.0)],
 	["bosses/vulcan_boss", "Vulcan", Color(1.0, 0.45, 0.1)],
+	["bosses/scarab_boss", "Scarab", Color(0.3, 1.0, 0.85)],
+	["bosses/zenith_boss", "Zenith", Color(0.8, 0.35, 1.0)],
 ]
 ## Range bosses have less HP than in the campaign so every phase is quick to reach.
 const BOSS_HP := 1800.0

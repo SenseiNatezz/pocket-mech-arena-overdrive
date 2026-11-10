@@ -122,6 +122,7 @@ func _ready() -> void:
 ## Fresh run: level 1, no upgrades.
 func reset() -> void:
 	level = 1
+	Game.run_waves = 0  # difficulty WARM-UP counts waves per run (Game.warmup)
 	xp = 0.0
 	pending = 0
 	bonus_picks = 0

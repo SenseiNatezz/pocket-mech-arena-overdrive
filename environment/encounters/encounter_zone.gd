@@ -33,6 +33,14 @@ const ENEMIES := {
 	"crawler": preload("res://enemies/magma_crawler.tscn"),
 	"anvil": preload("res://enemies/anvil.tscn"),
 	"spitter": preload("res://enemies/slagspitter.tscn"),
+	# Titan Graveyard robots (level 7; also join Endless).
+	"burrower": preload("res://enemies/dune_burrower.tscn"),
+	"skiff": preload("res://enemies/sand_skiff.tscn"),
+	"helio": preload("res://enemies/heliostat.tscn"),
+	# Orbital Dry Dock robots (level 8; also join Endless).
+	"skimmer": preload("res://enemies/void_skimmer.tscn"),
+	"magmine": preload("res://enemies/mag_mine_drone.tscn"),
+	"tug": preload("res://enemies/grav_tug.tscn"),
 }
 
 @export var waves: PackedStringArray = [
@@ -138,6 +146,8 @@ func wave_damage_mult() -> float:
 ## The Endless-only robots join too: Hornet drones at 3 (in pairs), Coils at 5, Widows at 7, Cinders at 9,
 ## Bastions at 11 and the Tidebreaker mini-boss at 12 (those last two are capped per wave).
 ## The Volcanic Forge robots too: Magma Crawlers at 4, Slagspitters at 6, Anvils at 10 (capped).
+## Then the Titan Graveyard / Orbital Dry Dock robots: Sand Skiffs at 7, Void Skimmers at 8, Dune Burrowers
+## at 9, Heliostats at 11, Mag Mine Drones at 13 and Grav Tugs at 15 (drones and tugs capped).
 ## Boss waves bring a few escorts instead of a full wave.
 func endless_wave(n: int) -> Array[String]:
 	# (the SWARM twist packs more robots in; see Game.TWISTS)
@@ -174,8 +184,21 @@ func endless_wave(n: int) -> Array[String]:
 		kinds.append(["spitter", 0.15 + minf(n * 0.008, 0.12)])
 	if n >= 10:
 		kinds.append(["anvil", 0.12 + minf(n * 0.005, 0.08)])
+	if n >= 7:
+		kinds.append(["skiff", 0.15 + minf(n * 0.006, 0.1)])
+	if n >= 8:
+		kinds.append(["skimmer", 0.15 + minf(n * 0.006, 0.1)])
+	if n >= 9:
+		kinds.append(["burrower", 0.15 + minf(n * 0.006, 0.1)])
+	if n >= 11:
+		kinds.append(["helio", 0.1 + minf(n * 0.004, 0.08)])
+	if n >= 13:
+		kinds.append(["magmine", 0.08])
+	if n >= 15:
+		kinds.append(["tug", 0.06 + minf(n * 0.002, 0.06)])
 	# Per-wave caps for the elites (one more of each every 10 waves).
-	var caps := {"bastion": 1 + n / 10, "tidebreaker": 1 + n / 20, "anvil": 2 + n / 10}
+	var caps := {"bastion": 1 + n / 10, "tidebreaker": 1 + n / 20, "anvil": 2 + n / 10, "magmine": 2 + n / 20,
+		"tug": 1 + n / 15}
 	var total := 0.0
 	for k in kinds:
 		total += k[1]
@@ -200,6 +223,7 @@ func _next_wave() -> void:
 	_advancing = false
 	_overlap_t = 0.0
 	wave += 1
+	Game.run_waves += 1  # difficulty WARM-UP (Game.warmup)
 	wave_started.emit(wave, total_waves())
 	var list: Array[String] = []
 	if endless:

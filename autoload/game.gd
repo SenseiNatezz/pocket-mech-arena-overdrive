@@ -38,6 +38,8 @@ const ARENAS: Array[Dictionary] = [
 	{"name": "Skyway Junction", "scene": "res://environment/arenas/arena_02_skyway_junction.tscn"},
 	{"name": "Ruined Plaza", "scene": "res://environment/arenas/arena_03_ruined_plaza.tscn"},
 	{"name": "Volcanic Forge", "scene": "res://environment/arenas/arena_04_volcanic_forge.tscn"},
+	{"name": "Titan Graveyard", "scene": "res://environment/arenas/arena_05_titan_graveyard.tscn"},
+	{"name": "Orbital Dry Dock", "scene": "res://environment/arenas/arena_06_orbital_dock.tscn"},
 ]
 const SAVE_PATH := "user://settings.cfg"
 const CUSTOMIZE := "res://ui/customize.tscn"
@@ -175,6 +177,7 @@ const ENDLESS_MAPS: Array[String] = [
 	"res://environment/arenas/arena_00_frozen_outpost.tscn",
 	"res://environment/arenas/arena_00b_jungle_megafactory.tscn",
 	"res://environment/arenas/arena_04_volcanic_forge.tscn",
+	"res://environment/arenas/arena_05_titan_graveyard.tscn",
 ]
 ## Endless: a boss every this many waves.
 const ENDLESS_BOSS_EVERY := 5
@@ -185,6 +188,8 @@ const ENDLESS_BOSS_SCENES: Array[String] = [
 	"res://enemies/bosses/ronin_boss.tscn",
 	"res://enemies/bosses/seraph_boss.tscn",
 	"res://enemies/bosses/vulcan_boss.tscn",
+	"res://enemies/bosses/scarab_boss.tscn",
+	"res://enemies/bosses/zenith_boss.tscn",
 ]
 var endless_boss_order: Array[String] = []
 var _last_first_boss := ""
@@ -689,8 +694,12 @@ static func _whole_parts(parts: Dictionary, total: int) -> Dictionary:
 	for k in parts:
 		out[k] = roundi(float(parts[k]))
 		sum += int(out[k])
-		if big == null or float(parts[k]) > float(parts[big]):
+		# The rounding remainder goes on the biggest EARNED part - never on a flat bounty, which would then
+		# show e.g. "Bounty 5,001".
+		if k != &"bounty" and (big == null or float(parts[k]) > float(parts[big])):
 			big = k
+	if big == null and parts.has(&"bounty"):
+		big = &"bounty"
 	if big != null:
 		out[big] = int(out[big]) + total - sum
 	return out
@@ -1291,15 +1300,35 @@ func check_unlocks() -> Array[String]:
 func diff(key: String) -> float:
 	var v: float = DIFFICULTIES[difficulty][key]
 	var t := threat_level()
-	if t <= 0:
-		return v
 	if key == "scrap":
 		return v * (1.0 + THREAT_SCRAP * t)
 	for i in t:
 		var tier: Dictionary = THREAT_TIERS[i]
 		if tier.has(key):
 			v = v + float(tier[key]) if key == "elite" else v * float(tier[key])
+	# WARM-UP: a run's first waves only get part of the way from Normal to a harder setting.
+	var w := warmup()
+	if w < 1.0 and key in WARMUP_KEYS:
+		if key == "elite":
+			v *= w
+		elif v > 1.0:
+			v = 1.0 + (v - 1.0) * w
 	return v
+
+
+## WARM-UP (Hard / Extreme / THREAT): a fresh run (level 1, no upgrades) used to meet the full difficulty on
+## wave 1 - on Extreme a new pilot could lose the run in under a minute. The run's first waves now get this
+## share of the step above Normal (more / tougher / harder-hitting / faster robots, elites), full from wave 3.
+## Bosses and artillery are never eased. Counted per run (Upgrades.reset clears it), not per arena, so NEXT
+## ARENA carries straight on at full strength.
+const WARMUP: Array[float] = [0.45, 0.7]
+const WARMUP_KEYS: Array[String] = ["count", "hp", "damage", "speed", "elite"]
+## Waves started this run (EncounterZone._next_wave), for the warm-up.
+var run_waves := 0
+
+
+func warmup() -> float:
+	return WARMUP[run_waves - 1] if run_waves >= 1 and run_waves <= WARMUP.size() else 1.0
 
 
 func difficulty_name() -> String:
@@ -1402,6 +1431,75 @@ func save() -> void:
 	cfg.set_value("mech", "weapon", String(range_restore if range_restore != &"" else weapon))
 	Parts.save_to(cfg)  # [parts]: owned + equipped mech parts (autoload/parts.gd)
 	cfg.save(save_path)
+
+
+# --- save backup codes (Settings > Save Backup, ui/main_menu.gd) ----------------------------------------
+## The whole save as one line of text: "PMA1:<size>:<base64 of the deflated settings.cfg>". On the web the
+## save only lives in that browser's storage (a home-screen app on iPhone even gets its own), so this is
+## how progress moves between browsers / devices or survives clearing Safari's data.
+const BACKUP_PREFIX := "PMA1:"
+const BACKUP_MAX_BYTES := 262144
+
+
+func export_save_code() -> String:
+	save()
+	var raw := FileAccess.get_file_as_string(save_path).to_utf8_buffer()
+	return "%s%d:%s" % [BACKUP_PREFIX, raw.size(), Marshalls.raw_to_base64(raw.compress(FileAccess.COMPRESSION_DEFLATE))]
+
+
+## Decodes a backup code. Returns {} when it isn't a valid code, else {"text": the save file, "scrap",
+## "weapons", "cleared", "best_wave", "mechs"} for the confirm step.
+func read_save_code(code: String) -> Dictionary:
+	var c := ""
+	for ch in code.strip_edges():
+		if not ch in " \t\r\n":
+			c += ch
+	if not c.begins_with(BACKUP_PREFIX):
+		return {}
+	var parts := c.trim_prefix(BACKUP_PREFIX).split(":", true, 1)
+	if parts.size() != 2 or not parts[0].is_valid_int():
+		return {}
+	var n := int(parts[0])
+	if n <= 0 or n > BACKUP_MAX_BYTES:
+		return {}
+	var packed := Marshalls.base64_to_raw(parts[1])
+	if packed.is_empty():
+		return {}
+	var raw := packed.decompress(n, FileAccess.COMPRESSION_DEFLATE)
+	if raw.size() != n:
+		return {}
+	var text := raw.get_string_from_utf8()
+	var cfg := ConfigFile.new()
+	if text.is_empty() or cfg.parse(text) != OK or not cfg.has_section("progress"):
+		return {}
+	var scrap_v := int(cfg.get_value("hangar", "scrap", 0))
+	if int(cfg.get_value("progress", "save_version", 1)) < 2:
+		scrap_v *= 10
+	return {"text": text, "scrap": scrap_v, "weapons": (cfg.get_value("progress", "unlocked", []) as Array).size(),
+		"cleared": (cfg.get_value("progress", "cleared", []) as Array).size(),
+		"best_wave": int(cfg.get_value("progress", "endless_best", 0)),
+		"mechs": maxi((cfg.get_value("hangar", "chassis_owned", []) as Array).size(), 1)}
+
+
+## Replaces the save with a decoded backup (read_save_code()["text"]) and restarts the game so every
+## autoload starts clean from it.
+func import_save(text: String) -> void:
+	var f := FileAccess.open(save_path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(text)
+	f.close()
+	restart_game()
+
+
+## Restarts the whole game (web: reloads the page once the browser storage has synced the save).
+func restart_game() -> void:
+	if OS.has_feature("web"):
+		await get_tree().create_timer(1.5, true, false, true).timeout
+		JavaScriptBridge.eval("window.location.reload()")
+	else:
+		OS.set_restart_on_exit(true, OS.get_cmdline_args())
+		get_tree().quit()
 
 
 ## Saves live in a folder named after project.godot's config/name, which was renamed to drop an old

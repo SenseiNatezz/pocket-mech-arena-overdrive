@@ -20,7 +20,7 @@ signal start_pressed
 const CYAN := Color(0.35, 0.75, 1.0)
 const GOLD := Color(1.0, 0.82, 0.3)
 ## Boss of each Game.ARENAS level (same order; for "or defeat VULCAN" on boss-unlock weapon cards).
-const ARENA_BOSSES: Array[String] = ["WARDEN", "RONIN", "SERAPH", "WARDEN MK-II", "SHOGUN", "VULCAN"]
+const ARENA_BOSSES: Array[String] = ["WARDEN", "RONIN", "SERAPH", "WARDEN MK-II", "SHOGUN", "VULCAN", "SCARAB", "ZENITH"]
 ## Landscape: cards per row and their width (7 x 106 px fits 13+ weapons in two rows beside the panel).
 const COLS := 7
 const CARD_W := 106.0

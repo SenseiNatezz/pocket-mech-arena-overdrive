@@ -23,6 +23,9 @@ extends CharacterBody2D
 
 signal stats_changed
 signal died
+## A hit landed (after the shield): `amount` HP lost, `from` = where it came from (the shooter / attacker when
+## known, else the hit's origin) - the HUD's hit-direction markers and big-hit flash (ui/hud.gd).
+signal hurt(amount: float, from: Vector2)
 
 @export_group("Movement")
 @export var move_speed := 340.0
@@ -148,6 +151,9 @@ var _secondary_cd := 0.0
 var _repair_cd := 0.0
 var _invuln := 0.0
 var _knockback := Vector2.ZERO
+## TRACTOR BEAMS (Grav Tug, ZENITH's gravity well): a pull velocity enemies set each physics frame via
+## pull(); added on top of the stick (boosting breaks free of it), then cleared.
+var _tractor := Vector2.ZERO
 var _flash := 0.0
 var _muzzle_t := 0.0
 ## Gatling rounds fired (every few puffs gun smoke).
@@ -318,7 +324,11 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.move_toward(move * speed, acceleration * delta)
 	velocity += _knockback
 	_knockback = _knockback.lerp(Vector2.ZERO, 1.0 - exp(-12.0 * delta))
+	var tractor := _tractor if _boost_left <= 0.0 else Vector2.ZERO
+	_tractor = Vector2.ZERO
+	velocity += tractor
 	move_and_slide()
+	velocity -= tractor
 	if _boost_left > 0.0:
 		_boost_contact()
 	else:
@@ -1031,7 +1041,12 @@ func take_damage(amount: float, _from_pos: Vector2, _source: Node = null) -> voi
 		Sfx.play(&"shield", -4.0, 0.0)
 		stats_changed.emit()
 		return
-	_apply_damage(amount * float(_chassis.get("taken", 1.0)) * lerpf(1.0, SIEGE_TAKEN, siege_k))
+	var taken := amount * float(_chassis.get("taken", 1.0)) * lerpf(1.0, SIEGE_TAKEN, siege_k)
+	var from := _from_pos
+	if is_instance_valid(_source) and _source is Node2D and _source != self:
+		from = (_source as Node2D).global_position
+	_apply_damage(taken)
+	hurt.emit(taken, from)
 	_invuln = maxf(_invuln, 0.4)
 	# REACTIVE ARMOR: getting hit discharges a blast around the mech.
 	if not dead and Upgrades.reactive_damage() > 0.0 and _reactive_cd <= 0.0:
@@ -1155,6 +1170,11 @@ func add_overdrive(amount: float) -> void:
 ## Hits and explosions don't push the Gundam around (it holds its ground).
 func knock(_impulse: Vector2) -> void:
 	pass
+
+
+## A tractor beam / gravity well pulling at the mech this frame (px/s; several add up, capped at 260).
+func pull(v: Vector2) -> void:
+	_tractor = (_tractor + v).limit_length(260.0)
 
 
 ## The Gundam's own weapon recoil (scatter shot, beam cannon) - not caused by taking damage.

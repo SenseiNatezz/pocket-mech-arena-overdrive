@@ -20,7 +20,7 @@ waves = PackedStringArray("chaser:4, striker:2", "shooter:3, lancer:2, chaser:2"
 enemy_hp_mult = 1.35
 enemy_damage_mult = 1.25
 bombard_from_wave = 2
-boss_hp = 3600.0
+boss_hp = 5600.0
 boss_name = "WARDEN MK-II"
 boss_accent = Color(0.75, 0.35, 1, 1)
 

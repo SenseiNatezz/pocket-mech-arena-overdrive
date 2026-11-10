@@ -23,9 +23,10 @@ const MAP_SHARPEN := preload("res://environment/map_sharpen.gdshader")
 ## World pixels per painting pixel (sets how big the scenery is compared to the Gundam).
 @export var map_scale := 1.0
 ## Ambient particles over the map: snow (Frozen Outpost), pollen (Jungle), embers (Volcanic Forge),
-## spores (Alien Outpost: glowing teal motes), wind (Skyway Junction: fast streaks), dust (Ruined Plaza).
-## Every scenic arena also gets slow cloud shadows drifting across (see CloudShadows).
-@export_enum("none", "snow", "pollen", "embers", "spores", "wind", "dust") var weather := "none"
+## spores (Alien Outpost: glowing teal motes), wind (Skyway Junction: fast streaks), dust (Ruined Plaza),
+## sandstorm (Titan Graveyard: sand streaks + rolling haze), space (Orbital Dry Dock: drifting sparks, no clouds).
+## Every scenic arena also gets slow cloud shadows drifting across (see CloudShadows) - except over lava and in space.
+@export_enum("none", "snow", "pollen", "embers", "spores", "wind", "dust", "sandstorm", "space") var weather := "none"
 ## Very bright floor (Frozen Outpost ice): the painting is dimmed a touch (PALE_FLOOR_SHADE) so white shots
 ## and blasts still pop, and scorch marks turn to grey soot instead of black ink (BlastFx.pale_floor).
 @export var pale_floor := false
@@ -110,6 +111,8 @@ const OPENING_OBJECTIVES := {
 	"Skyway Junction": "Hold the skyway",
 	"Ruined Plaza": "Take back the plaza",
 	"Volcanic Forge": "Shut down the foundry",
+	"Titan Graveyard": "Hold the basin",
+	"Orbital Dry Dock": "Retake the dock",
 }
 
 
@@ -335,7 +338,7 @@ func _bake_navigation() -> void:
 
 
 func _add_weather(cam: Camera2D) -> void:
-	if weather != "embers":
+	if weather != "embers" and weather != "space":
 		cam.add_child(CloudShadows.new())
 	if weather == "none":
 		return
@@ -446,6 +449,67 @@ func _add_weather(cam: Camera2D) -> void:
 		sr.colors = PackedColorArray([Color(1.0, 0.97, 0.9, 0.0), Color(1.0, 0.97, 0.9, 0.85), Color(1.0, 0.93, 0.82, 0.0)])
 		specks.color_ramp = sr
 		cam.add_child(specks)
+	elif weather == "sandstorm":
+		# Sand blowing across the basin: fast thin streaks plus big ochre haze puffs rolling with them.
+		p.amount = 130
+		p.direction = Vector2(1, 0.18)
+		p.spread = 6.0
+		p.initial_velocity_min = 380.0
+		p.initial_velocity_max = 560.0
+		p.gravity = Vector2.ZERO
+		p.lifetime = 2.2
+		p.preprocess = 2.2
+		p.scale_amount_min = 1.2
+		p.scale_amount_max = 2.4
+		var grain := Image.create(48, 3, false, Image.FORMAT_RGBA8)
+		for x in 48:
+			grain.set_pixel(x, 0, Color(1, 1, 1, float(x) / 48.0 * 0.5))
+			grain.set_pixel(x, 1, Color(1, 1, 1, float(x) / 48.0))
+			grain.set_pixel(x, 2, Color(1, 1, 1, float(x) / 48.0 * 0.5))
+		p.texture = ImageTexture.create_from_image(grain)
+		p.angle_min = rad_to_deg(atan2(0.18, 1.0))
+		p.angle_max = p.angle_min
+		ramp.offsets = PackedFloat32Array([0.0, 0.3, 1.0])
+		ramp.colors = PackedColorArray([Color(1.0, 0.85, 0.6, 0.0), Color(1.0, 0.88, 0.66, 0.75), Color(1.0, 0.8, 0.55, 0.0)])
+		var haze := CPUParticles2D.new()
+		haze.z_index = 20
+		haze.amount = 26
+		haze.lifetime = 6.0
+		haze.preprocess = 6.0
+		haze.emission_shape = CPUParticles2D.EMISSION_SHAPE_RECTANGLE
+		haze.emission_rect_extents = Vector2(900, 520)
+		haze.local_coords = false
+		haze.direction = Vector2(1, 0.15)
+		haze.spread = 10.0
+		haze.initial_velocity_min = 140.0
+		haze.initial_velocity_max = 220.0
+		haze.texture = preload("res://assets/fx/glow.tres")
+		haze.scale_amount_min = 2.0
+		haze.scale_amount_max = 3.6
+		var hr := Gradient.new()
+		hr.offsets = PackedFloat32Array([0.0, 0.35, 1.0])
+		hr.colors = PackedColorArray([Color(0.95, 0.7, 0.4, 0.0), Color(0.95, 0.72, 0.42, 0.2), Color(0.9, 0.65, 0.35, 0.0)])
+		haze.color_ramp = hr
+		cam.add_child(haze)
+	elif weather == "space":
+		# Slow glittering motes (ice crystals / hull flakes) drifting past the deck.
+		p.amount = 70
+		p.direction = Vector2(-0.6, 1)
+		p.spread = 50.0
+		p.initial_velocity_min = 10.0
+		p.initial_velocity_max = 34.0
+		p.gravity = Vector2.ZERO
+		p.lifetime = 8.0
+		p.preprocess = 8.0
+		p.texture = preload("res://assets/fx/glow.tres")
+		p.scale_amount_min = 0.06
+		p.scale_amount_max = 0.16
+		var sadd := CanvasItemMaterial.new()
+		sadd.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+		p.material = sadd
+		ramp.offsets = PackedFloat32Array([0.0, 0.25, 0.5, 0.75, 1.0])
+		ramp.colors = PackedColorArray([Color(0.8, 0.85, 1.0, 0.0), Color(0.85, 0.9, 1.0, 0.9), Color(0.8, 0.7, 1.0, 0.3),
+			Color(0.85, 0.9, 1.0, 0.9), Color(0.8, 0.85, 1.0, 0.0)])
 	else:
 		p.direction = Vector2(1, -0.3)
 		p.spread = 40.0
@@ -535,6 +599,16 @@ func _on_zone_cleared() -> void:
 	get_tree().create_timer(2.0, false).timeout.connect(_start_boss)
 
 
+## A campaign boss's HP: the arena's boss_hp x difficulty, +CAMPAIGN_BOSS_HP_PER_LEVEL per pilot level (like
+## Endless bosses). Upgrades stack up fast - Triple Shot alone lands ~2.5x on a boss-sized target - so a boss
+## with fixed HP melted in seconds late in a run; now it keeps pace with the build the pilot brings.
+const CAMPAIGN_BOSS_HP_PER_LEVEL := 0.08
+
+
+func campaign_boss_hp() -> float:
+	return boss_hp * Game.diff("boss_hp") * (1.0 + CAMPAIGN_BOSS_HP_PER_LEVEL * (Upgrades.level - 1))
+
+
 func debug_skip_to_boss() -> void:
 	zone.is_cleared = true
 	zone.is_running = false
@@ -548,7 +622,7 @@ func _start_boss() -> void:
 	banner.emit(boss_name, boss_accent)
 	objective_changed.emit("Destroy the %s" % boss_name)
 	var b: Enemy = (boss_scene if boss_scene else load("res://enemies/warden_boss.tscn")).instantiate()
-	b.max_hp = boss_hp * Game.diff("boss_hp")
+	b.max_hp = campaign_boss_hp()
 	b.damage_mult = enemy_damage_mult * Game.diff("damage")
 	b.set("boss_name", boss_name)
 	b.set("accent", boss_accent)

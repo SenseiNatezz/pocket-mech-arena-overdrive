@@ -248,6 +248,8 @@ const DEBRIS_TINTS := {
 	&"Hornet": Color(0.2, 0.4, 0.95), &"Coil": Color(0.8, 0.8, 0.85), &"Widow": Color(0.15, 0.15, 0.15),
 	&"Cinder": Color(0.3, 0.3, 0.32), &"Bastion": Color(0.15, 0.6, 0.35), &"Tidebreaker": Color(0.15, 0.25, 0.6),
 	&"MagmaCrawler": Color(1.0, 0.4, 0.1), &"Anvil": Color(0.45, 0.45, 0.5), &"Slagspitter": Color(0.95, 0.7, 0.2),
+	&"DuneBurrower": Color(0.85, 0.7, 0.5), &"SandSkiff": Color(0.7, 0.45, 0.25), &"Heliostat": Color(0.95, 0.8, 0.4),
+	&"VoidSkimmer": Color(0.5, 0.25, 0.75), &"MagMineDrone": Color(0.25, 0.22, 0.3), &"GravTug": Color(0.35, 0.3, 0.45),
 }
 
 

@@ -14,7 +14,7 @@ config/name="Pocket Mech Arena"
 config/description="Top-down twin-stick mech shooter (landscape)."
 run/main_scene="res://ui/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
-config/icon="res://icon.svg"
+config/icon="res://assets/web/app_icon_512.png"
 
 [autoload]
 

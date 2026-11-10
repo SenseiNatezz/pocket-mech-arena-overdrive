@@ -40,6 +40,7 @@ func _run() -> void:
 	var sample: Array[String] = []
 	for i in 10:
 		sample.append("chaser")
+	Game.run_waves = 99  # past the WARM-UP: full multipliers (checked on their own in _warmup_checks)
 	Game.difficulty = 1
 	var normal := _spawn_one(zone)
 	var base_hp := normal.max_hp
@@ -64,6 +65,7 @@ func _run() -> void:
 			is_equal_approx(zone.bombard_interval / Game.diff("bombard"), base_bombard / info["bombard"]))
 		e.queue_free()
 	_check("harder = more enemies (%s)" % str(sizes), sizes[0] < sizes[1] and sizes[1] < sizes[2] and sizes[2] < sizes[3])
+	_warmup_checks(zone, base_hp, sample)
 	await _extreme_extras(zone, mech)
 	await _tank_checks(zone, mech)
 
@@ -72,7 +74,7 @@ func _run() -> void:
 	arena.debug_skip_to_boss()
 	await _frames(5)
 	var boss: Enemy = arena.boss
-	_check("Extreme boss HP x%.2f (%.0f)" % [Game.diff("boss_hp"), boss.max_hp], is_equal_approx(boss.max_hp, arena.boss_hp * Game.diff("boss_hp")))
+	_check("Extreme boss HP x%.2f (%.0f)" % [Game.diff("boss_hp"), boss.max_hp], is_equal_approx(boss.max_hp, arena.boss_hp * Game.diff("boss_hp") * (1.0 + arena.CAMPAIGN_BOSS_HP_PER_LEVEL * (Upgrades.level - 1))))
 	print("DIFFICULTY TEST %s (%d failed)" % ["OK" if _fails == 0 else "FAILED", _fails])
 	get_tree().quit(0 if _fails == 0 else 1)
 
@@ -139,3 +141,28 @@ func _tank_checks(zone: EncounterZone, mech: Mech) -> void:
 	_check("tank rear vent takes %.1fx damage (front %.0f, rear %.0f)" % [rear / maxf(front, 0.01), front, rear],
 		is_equal_approx(rear, front * HeavyTank.REAR_MULT))
 	tank.queue_free()
+
+
+## WARM-UP: a run's 1st / 2nd wave on Extreme get Game.WARMUP of the step above Normal; Easy / Normal never change.
+func _warmup_checks(zone: EncounterZone, base_hp: float, sample: Array[String]) -> void:
+	Game.difficulty = 3
+	var full_n := zone._scale_for_difficulty(sample).size()
+	for i in Game.WARMUP.size():
+		Game.run_waves = i + 1
+		var w: float = Game.WARMUP[i]
+		var want_hp := 1.0 + (float(Game.DIFFICULTIES[3]["hp"]) - 1.0) * w
+		_check("Extreme wave %d warm-up: robot HP x%.2f" % [i + 1, Game.diff("hp")], is_equal_approx(Game.diff("hp"), want_hp))
+		_check("Extreme wave %d warm-up: elites %.0f%%" % [i + 1, Game.diff("elite") * 100.0],
+			is_equal_approx(Game.diff("elite"), float(Game.DIFFICULTIES[3]["elite"]) * w))
+		_check("Extreme wave %d: boss HP not eased" % (i + 1), is_equal_approx(Game.diff("boss_hp"), Game.DIFFICULTIES[3]["boss_hp"]))
+		var n := zone._scale_for_difficulty(sample).size()
+		_check("Extreme wave %d warm-up: %d of %d robots" % [i + 1, n, full_n], n < full_n)
+	Game.run_waves = 1
+	Game.difficulty = 0
+	_check("Easy is never eased (HP x%.2f)" % Game.diff("hp"), is_equal_approx(Game.diff("hp"), Game.DIFFICULTIES[0]["hp"]))
+	Game.difficulty = 1
+	_check("Normal is never eased", is_equal_approx(Game.diff("damage"), 1.0))
+	Game.run_waves = 3
+	Game.difficulty = 3
+	_check("Extreme wave 3: full strength", is_equal_approx(Game.diff("hp"), Game.DIFFICULTIES[3]["hp"]))
+	Game.run_waves = 99

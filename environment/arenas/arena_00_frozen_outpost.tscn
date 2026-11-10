@@ -18,7 +18,7 @@ weather = "snow"
 pale_floor = true
 intro_subtitle = "Level 1  //  Arctic research station  -  secure the outpost"
 waves = PackedStringArray("chaser:4, shooter:1", "chaser:4, shooter:2, striker:1", "chaser:3, striker:2, shooter:2, lancer:1", "shooter:3, striker:2, lancer:2, tank:1", "striker:3, lancer:2, aegis:1, shooter:2, tank:2")
-boss_hp = 2400.0
+boss_hp = 4000.0
 boss_name = "WARDEN - CRYO UNIT"
 boss_accent = Color(0.45, 0.85, 1, 1)
 

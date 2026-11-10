@@ -24,7 +24,8 @@ const LOGO := preload("res://assets/hq/title_logo.png")
 ## Card art: crops of the real arena maps (art_src/menu/make_menu_thumbs.py), in Game.ARENAS order.
 const ARENA_ART: Array[Texture2D] = [preload("res://assets/hq/menu/arena_0.jpg"), preload("res://assets/hq/menu/arena_1.jpg"),
 	preload("res://assets/hq/menu/arena_2.jpg"), preload("res://assets/hq/menu/arena_3.jpg"),
-	preload("res://assets/hq/menu/arena_4.jpg"), preload("res://assets/hq/menu/arena_5.jpg")]
+	preload("res://assets/hq/menu/arena_4.jpg"), preload("res://assets/hq/menu/arena_5.jpg"),
+	preload("res://assets/hq/menu/arena_6.jpg"), preload("res://assets/hq/menu/arena_7.jpg")]
 const ENDLESS_ART := preload("res://assets/hq/menu/endless.jpg")
 ## Screen margin, and the landscape columns' widths (left: logo / tiles / name plate; right: operations).
 const M := 28.0
@@ -42,6 +43,8 @@ const LOADOUT_PAGE := 6
 const HANGAR_PAGE := 7
 ## Settings > Controls: key rebinding (ui/controls_page.gd).
 const CONTROLS_PAGE := 8
+## Settings > Save Backup: copy the save as a code / load one (Game.export_save_code / read_save_code).
+const BACKUP_PAGE := 9
 
 var _scene: TitleScene
 var _logo: TextureRect
@@ -81,6 +84,12 @@ var _full_btn: TitleButton
 var _autofire_btn: TitleButton
 var _layout_btn: TitleButton
 var _controls: ControlsPage
+var _backup_info: Label
+var _backup_confirm: TitleButton
+## The decoded backup waiting for "Replace My Save" (read_save_code()), {} = none.
+var _backup_pending := {}
+## Web app (PWA): shown when a newer version of the game has been downloaded in the background.
+var _update_btn: TitleButton
 var _diff_btn: TitleButton
 var _diff_btns: Array[TitleButton] = []
 var _diff_info: Label
@@ -201,6 +210,9 @@ func _ready() -> void:
 	var tut_btn := TitleButton.new("Tutorial", cell)
 	tut_btn.pressed.connect(Game.to_tutorial)
 	sgrid.add_child(tut_btn)
+	var backup_btn := TitleButton.new("Save Backup", cell)
+	backup_btn.pressed.connect(_show.bind(BACKUP_PAGE))
+	sgrid.add_child(backup_btn)
 	var help := _heading(settings, "F11: fullscreen.  Pause in-game (Esc / Start / II) to see the controls.")
 	help.add_theme_font_size_override("font_size", 15)
 	help.add_theme_color_override("font_color", Color(LobbyKit.DIM, 0.9))
@@ -254,7 +266,33 @@ func _ready() -> void:
 	_controls.back_pressed.connect(_show.bind(2))
 	add_child(_controls)
 	_pages.append(_controls)
+	# 9: Save Backup (from Settings).
+	var bk := _page_box("SAVE BACKUP", 10)
+	var bk_help := _heading(bk, "Your progress is saved on this device only. Copy your save code and keep it somewhere "
+		+ "safe (Notes, a message to yourself), then load it on another phone, PC or browser to bring your scrap, "
+		+ "mechs, weapons and campaign along.")
+	bk_help.add_theme_font_size_override("font_size", 16)
+	_btn(bk, "Copy Save Code", _backup_copy, Vector2(COL_W, 46))
+	_btn(bk, "Load Save Code", _backup_load, Vector2(COL_W, 46))
+	_backup_info = _heading(bk, "")
+	_backup_info.add_theme_font_size_override("font_size", 16)
+	_backup_info.add_theme_color_override("font_color", LobbyKit.GOLD)
+	_backup_confirm = _btn(bk, "Replace My Save", _backup_apply, Vector2(COL_W, 46))
+	_backup_confirm.visible = false
+	_btn(bk, "Back", _show.bind(2), Vector2(COL_W, 42))
 
+	# WEB APP UPDATE: the home-screen app (PWA) caches the game for offline play, so a new release would
+	# only load on the launch after next; this button swaps it in straight away.
+	_update_btn = TitleButton.new("UPDATE READY - TAP TO RESTART", Vector2(340, 44))
+	_update_btn.visible = false
+	_update_btn.pressed.connect(func() -> void:
+		_update_btn.label_text = "UPDATING..."
+		JavaScriptBridge.pwa_update())
+	add_child(_update_btn)
+	if OS.has_feature("web"):
+		JavaScriptBridge.pwa_update_available.connect(_show_update_btn)
+		if JavaScriptBridge.pwa_needs_update():
+			_show_update_btn.call_deferred()
 	Layout.changed.connect(func(_portrait: bool) -> void: _layout())
 	_refresh()
 	_show(0)
@@ -392,7 +430,7 @@ func _show(which: int) -> void:
 	_page = which
 	for i in _pages.size():
 		_pages[i].visible = i == which
-	_logo.visible = which in [0, 1, 2, DIFFICULTY_PAGE, TUTORIAL_PAGE]
+	_logo.visible = which in [0, 1, 2, DIFFICULTY_PAGE, TUTORIAL_PAGE, BACKUP_PAGE]
 	_layout()
 	if _boxes.has(which):
 		# Consoles fade in.
@@ -416,6 +454,8 @@ func _show(which: int) -> void:
 			_hangar.focus_default()
 		CONTROLS_PAGE:
 			_controls.focus_default()
+		BACKUP_PAGE:
+			_backup_reset("")
 		DIFFICULTY_PAGE:
 			focus = _diff_btns[Game.difficulty]
 			_show_difficulty_info(Game.difficulty)
@@ -607,6 +647,8 @@ func _layout() -> void:
 	_scene.bg_focus = 0.3 if Layout.portrait else 0.0
 	_shade.queue_redraw()
 	_lobby.queue_redraw()
+	if _update_btn:
+		_update_btn.position = Vector2((vp.x - _update_btn.size.x) / 2.0, vp.y * (0.36 if Layout.portrait else 0.02) + 70.0)
 
 
 ## The console of the current sub-page (sized to its buttons), or an empty rect on other pages.
@@ -755,6 +797,73 @@ func _nav(c: Control, left: Control, up: Control, right: Control, down: Control)
 		var target: Control = s[1]
 		c.set_focus_neighbor(s[0], c.get_path_to(target) if target else NodePath("."))
 
+
+
+func _show_update_btn() -> void:
+	_update_btn.visible = true
+	_update_btn.move_to_front()
+	_layout()
+
+# --- Settings > Save Backup ------------------------------------------------------------------------------
+
+func _backup_reset(msg: String) -> void:
+	_backup_pending = {}
+	_backup_confirm.visible = false
+	_backup_info.text = msg
+	_layout()
+
+
+## Copies the save code. Desktop: straight to the clipboard. Web: the clipboard too where the browser
+## allows it, plus a native text box holding the code (long-press > Copy works there on phones).
+func _backup_copy() -> void:
+	var code := Game.export_save_code()
+	DisplayServer.clipboard_set(code)
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.prompt('Your save code - select it all and copy it:', %s)" % JSON.stringify(code))
+		_backup_reset("Save code ready (%d characters). Keep it somewhere safe." % code.length())
+	else:
+		_backup_reset("Save code copied to the clipboard (%d characters). Paste it somewhere safe." % code.length())
+	Sfx.play(&"pickup", -6.0)
+
+
+## Reads a save code (desktop: from the clipboard; web: a native paste box), shows what's in it and waits
+## for "Replace My Save".
+func _backup_load() -> void:
+	var code := ""
+	if OS.has_feature("web"):
+		var got: Variant = JavaScriptBridge.eval("window.prompt('Paste your save code here:', '')")
+		code = str(got) if got != null else ""
+	else:
+		code = DisplayServer.clipboard_get()
+	_backup_check(code)
+
+
+## Shows what a pasted code holds (or why it's refused) and arms "Replace My Save".
+func _backup_check(code: String) -> void:
+	if code.strip_edges().is_empty():
+		_backup_reset("No code found. Copy your save code first, then press Load Save Code." if not OS.has_feature("web") else "")
+		return
+	var info := Game.read_save_code(code)
+	if info.is_empty():
+		_backup_reset("That isn't a Pocket Mech Arena save code. Check you copied all of it (it starts with PMA1:).")
+		return
+	_backup_reset("Found a save with %s scrap, %d / %d weapons, %d / %d arenas cleared, %d mech%s, best wave %d.
+Loading it REPLACES your current progress on this device." % [
+		Game.fmt_int(info["scrap"]), info["weapons"], Game.WEAPONS.size(), info["cleared"], Game.ARENAS.size(),
+		info["mechs"], "" if info["mechs"] == 1 else "s", info["best_wave"]])
+	_backup_pending = info
+	_backup_confirm.visible = true
+	_backup_confirm.grab_focus()
+	_layout()
+
+
+func _backup_apply() -> void:
+	if _backup_pending.is_empty():
+		return
+	_backup_confirm.visible = false
+	_backup_info.text = "Loading your save - the game restarts..."
+	Game.import_save(_backup_pending["text"])
+	_backup_pending = {}
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _page != 0 and (event.is_action_pressed("ui_cancel") or event.is_action_pressed("pause")):

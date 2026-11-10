@@ -6,10 +6,15 @@ Twin-stick, top-down mech shooter made in Godot 4.7 (GL Compatibility). Plays in
 **Windows download:** see [Releases](https://github.com/SenseiNatezz/pocket-mech-arena-overdrive/releases)
 
 ## How to play
-Six levels on painted top-down maps: Frozen Outpost, Jungle Megafactory, Alien Outpost, Skyway
-Junction, Ruined Plaza and the Volcanic Forge. Survive 5 waves of robots on each, then a boss drops in
-(Warden, Ronin, Seraph, Warden Mk-II, Shogun, and VULCAN the Forge Titan). Heat and Overdrive build up from the damage you deal. Die during a
-boss fight and RETRY BOSS puts you straight back into it.
+Eight levels on painted top-down maps: Frozen Outpost, Jungle Megafactory, Alien Outpost, Skyway
+Junction, Ruined Plaza, the Volcanic Forge, the Titan Graveyard and the Orbital Dry Dock. Survive 5 waves
+of robots on each, then a boss drops in (Warden, Ronin, Seraph, Warden Mk-II, Shogun, VULCAN the Forge
+Titan, SCARAB the Dune Colossus and ZENITH the Orbital Dreadnought). Every boss has three phases and an
+OVERDRIVE at 20% health (aura, faster attacks, nova rings). Heat and Overdrive build up from the damage
+you deal. Die during a boss fight and RETRY BOSS puts you straight back into it.
+
+**Save Backup** (Settings): copy your whole save as a text code and load it on another device or browser.
+**Add to Home Screen:** the web version installs as a full-screen app with its own icon.
 
 **New Game:** pick a difficulty (Easy / Normal / Hard / Extreme: more, tougher, faster enemies and
 beefier bosses), then your starting weapon on the Loadout screen.
@@ -17,7 +22,10 @@ beefier bosses), then your starting weapon on the Loadout screen.
 **Enemies:** Scrap Hound, Scrap Gunner, Blade Striker (energy-katana dash), Aegis Guardian (frontal
 shield: flank it), Lancer (laser-locked rail sniper) and the armored Heavy Tank. The Volcanic Forge
 adds its own: the Magma Crawler (drips lava, lunges, bursts into a lava pool), the Anvil (hammer
-leap-slam) and the Slagspitter (lobs molten globs; its furnace tank is weak from behind).
+leap-slam) and the Slagspitter (lobs molten globs; its furnace tank is weak from behind). The Titan
+Graveyard brings the Dune Burrower (tunnels under the sand and erupts beneath you), the Sand Skiff
+(circles and rams) and the Heliostat (sun-lance sniper); the Orbital Dry Dock brings the Void Skimmer
+(blinks beside you), the Mag Mine Drone (seeds the deck with mines) and the Grav Tug (tractor beam).
 
 **Leveling up:** defeated enemies drop XP shards. Each level-up pauses the game and offers 3 upgrades
 (4 with the VX-7 Standard) from 23: Target Lock, Triple Shot, Defense Shield, Piercing Rounds, Rapid
@@ -127,6 +135,9 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --arena=1 --arena-test --temp-save --no-intro` checks the arena flow
 - `godot --headless --path . -- --gun-range --touch --attach=res://tools/touch_test.gd --temp-save` checks the touch controls (auto-aim, FIRE button, move stick)
 - `godot --headless --path . -- --arena=6 --no-intro --attach=res://tools/forge_test.gd --temp-save` checks the Volcanic Forge robots and the VULCAN boss
+- `godot --headless --path . -- --arena=7 --no-intro --attach=res://tools/frontier_test.gd --temp-save` checks the Titan Graveyard robots and SCARAB (`--arena=8`: the Orbital Dry Dock robots and ZENITH)
+- `godot --headless --path . -- --arena=1 --no-intro --attach=res://tools/overdrive_test.gd --temp-save` checks boss phases, OVERDRIVE and the hit-direction markers
+- `godot --headless --path . -- --temp-save --attach=res://tools/save_backup_test.gd` checks the save backup code
 - `godot --headless --path . -- --gun-range --attach=res://tools/energy_sword_test.gd --temp-save` checks the Energy Sword (unlock, held art, combo + CRESCENT NOVA)
 - `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, FEATHER SWARM, PHASE BLINK)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts

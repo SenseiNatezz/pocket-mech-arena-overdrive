@@ -241,6 +241,7 @@ func _hook_scene() -> void:
 	mech = get_tree().get_first_node_in_group("player") as Mech
 	if mech:
 		mech.died.connect(func() -> void: get_tree().create_timer(1.6).timeout.connect(_show_game_over))
+		mech.hurt.connect(_on_hurt)
 	arena = get_tree().get_first_node_in_group("arena")
 	if Game.is_endless():
 		(_pause_panel.find_child("Btn1", true, false) as Button).text = "RESTART RUN"
@@ -1139,6 +1140,7 @@ func _process(delta: float) -> void:
 	if mech:
 		_hp_shown = lerpf(_hp_shown, mech.hp / mech.max_hp, 1.0 - exp(-6.0 * delta))
 		_update_heartbeat(delta)
+		_update_hit_marks(delta)
 	_update_scrap(delta)
 	_bars.queue_redraw()
 	_update_blackout(delta)
@@ -1147,6 +1149,88 @@ func _process(delta: float) -> void:
 ## LOW ARMOUR: under 30% HP a soft heartbeat thumps (faster the lower it gets) with a little rumble,
 ## alongside the red vignette. Not while paused or destroyed.
 var _beat_t := 0.0
+
+
+## HIT DIRECTION: every hit leaves a red chevron on a ring around the mech pointing at where it came from
+## (the shooter when known - off-screen snipers and artillery included), fading over HIT_MARK_TIME. A BIG HIT
+## (BIG_HIT share of max HP or more in one go) also flashes that edge of the screen red.
+const HIT_MARK_TIME := 1.1
+const HIT_MARKS_MAX := 6
+const BIG_HIT := 0.18
+## {"dir": Vector2 (world, from the mech), "t": seconds left, "big": bool}
+var _hit_marks: Array[Dictionary] = []
+var _edge_flash := 0.0
+var _edge_dir := Vector2.ZERO
+
+
+func _on_hurt(amount: float, from: Vector2) -> void:
+	if mech == null:
+		return
+	var d := from - mech.global_position
+	if d.length() < 1.0:
+		d = Vector2.from_angle(randf() * TAU)
+	d = d.normalized()
+	var big := amount >= mech.max_hp * BIG_HIT
+	if big:
+		_edge_flash = 1.0
+		_edge_dir = d
+	# A new hit from (almost) the same way refreshes that marker instead of stacking.
+	for m in _hit_marks:
+		if absf((m["dir"] as Vector2).angle_to(d)) < 0.3:
+			m["dir"] = d
+			m["t"] = HIT_MARK_TIME
+			m["big"] = m["big"] or big
+			return
+	_hit_marks.append({"dir": d, "t": HIT_MARK_TIME, "big": big})
+	if _hit_marks.size() > HIT_MARKS_MAX:
+		_hit_marks.pop_front()
+
+
+func _update_hit_marks(delta: float) -> void:
+	_edge_flash = move_toward(_edge_flash, 0.0, delta * 2.6)
+	for i in range(_hit_marks.size() - 1, -1, -1):
+		_hit_marks[i]["t"] -= delta
+		if _hit_marks[i]["t"] <= 0.0:
+			_hit_marks.remove_at(i)
+
+
+func _draw_hit_marks(c: Control, vp: Vector2) -> void:
+	if mech == null or mech.dead:
+		return
+	# Big-hit flash: a red glow along the edge the hit came from (all edges a little).
+	if _edge_flash > 0.0:
+		var a := _edge_flash * _edge_flash
+		for i in 5:
+			c.draw_rect(Rect2(Vector2.ZERO, vp).grow(-i * 10), Color(1, 0.08, 0.05, a * 0.22 * (1.0 - i / 5.0)), false, 10.0)
+		var bands := 9
+		for i in bands:
+			var k := 1.0 - float(i) / bands
+			var w := vp.x * 0.09 * (i + 1) / bands
+			var h := vp.y * 0.12 * (i + 1) / bands
+			var col := Color(1, 0.1, 0.05, a * 0.11 * k)
+			if absf(_edge_dir.x) > 0.35:
+				c.draw_rect(Rect2(0.0 if _edge_dir.x < 0.0 else vp.x - w, 0.0, w, vp.y), col)
+			if absf(_edge_dir.y) > 0.35:
+				c.draw_rect(Rect2(0.0, 0.0 if _edge_dir.y < 0.0 else vp.y - h, vp.x, h), col)
+	if _hit_marks.is_empty():
+		return
+	var center := c.get_viewport().get_canvas_transform() * mech.global_position
+	var r := clampf(minf(vp.x, vp.y) * 0.13, 70.0, 130.0)
+	for m in _hit_marks:
+		var dir: Vector2 = m["dir"]
+		var life := clampf(float(m["t"]) / HIT_MARK_TIME, 0.0, 1.0)
+		var big: bool = m["big"]
+		var a := life * (1.0 if big else 0.8)
+		var s := (1.35 if big else 1.0) * (1.0 + 0.25 * (1.0 - life))
+		var side := dir.orthogonal()
+		var col := Color(1.0, 0.16 if big else 0.25, 0.1, a)
+		# Arc segment on the ring + a chevron pointing out toward the attacker.
+		var ang := dir.angle()
+		c.draw_arc(center, r, ang - 0.32 * s, ang + 0.32 * s, 14, Color(col, a * 0.85), 5.0 * s, true)
+		var base := center + dir * (r + 2.0)
+		var tip := center + dir * (r + 16.0 * s)
+		c.draw_colored_polygon(PackedVector2Array([tip, base + side * 13.0 * s, base + dir * 6.0 * s, base - side * 13.0 * s]), col)
+		c.draw_polyline(PackedVector2Array([base + side * 13.0 * s, tip, base - side * 13.0 * s]), Color(1, 0.85, 0.75, a * 0.7), 1.5, true)
 
 
 func _update_heartbeat(delta: float) -> void:
@@ -1208,6 +1292,7 @@ func _draw_bars() -> void:
 	var font := ThemeDB.fallback_font
 	var vp := c.size
 	_draw_enemy_arrows(c, font, vp)
+	_draw_hit_marks(c, vp)
 	if mech:
 		var hp_frac := mech.hp / mech.max_hp
 		# Low-HP warning vignette.
@@ -1223,10 +1308,12 @@ func _draw_bars() -> void:
 	if boss_alive:
 		var bar := boss_bar_rect()
 		var col: Color = boss.get("accent")
-		_text(font, Vector2(bar.position.x, bar.position.y - 7), "%s  -  PHASE %d" % [boss.get("boss_name"), boss.get("phase")], 15, col.lightened(0.3))
+		var ph := int(boss.get("phase"))
+		var label := "%s  -  OVERDRIVE" % boss.get("boss_name") if ph >= 4 else "%s  -  PHASE %d" % [boss.get("boss_name"), ph]
+		_text(font, Vector2(bar.position.x, bar.position.y - 7), label, 15, col.lightened(0.3) if ph < 4 else Color(1, 0.9, 0.55).lerp(col, 0.5 + 0.5 * sin(_t * 8.0)))
 		c.draw_rect(bar.grow(3), Color(0, 0, 0, 0.7))
 		c.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(boss.hp / boss.max_hp, 0.0, 1.0), bar.size.y)), col)
-		for k in [0.66, 0.33]:
+		for k in [0.66, 0.33, WardenBoss.OVERDRIVE_AT]:
 			c.draw_line(bar.position + Vector2(bar.size.x * k, 0), bar.position + Vector2(bar.size.x * k, bar.size.y), Color(1, 1, 1, 0.7), 2.0)
 		c.draw_rect(bar, Color(1, 1, 1, 0.6), false, 1.5)
 	# Run info (top-right, below the touch buttons' row when they're visible).

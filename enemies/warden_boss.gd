@@ -5,6 +5,10 @@ extends Enemy
 ##   Phase 2  + spiral bullet storm, + charging ram (red line telegraph)
 ##   Phase 3  + bullet rings, + summons Scrap Hounds, faster attacks
 ## Phase changes at 66% / 33% HP (brief invulnerable roar that clears enemy bullets).
+##   OVERDRIVE (phase 4, every boss - they all extend this): at OVERDRIVE_AT HP the boss roars, glows and goes
+##            all-out - every phase-scaled attack steps up again, attacks come faster, and every
+##            OVERDRIVE_NOVA_EVERY s it charges (shrinking ring) and fires a slow nova ring with one gap to
+##            slip through. The HUD bar reads OVERDRIVE (ui/hud.gd).
 
 signal phase_changed(phase: int)
 signal defeated
@@ -26,6 +30,14 @@ const SPRITE_SCALE := 0.78
 
 ## Ram: the lane stops tracking the mech this many seconds before the charge (wind-up is 0.75 s).
 const CHARGE_LOCK := 0.4
+## OVERDRIVE: the last stand starts at this share of HP.
+const OVERDRIVE_AT := 0.2
+const OVERDRIVE_NOVA_EVERY := 5.5
+const OVERDRIVE_NOVA_CHARGE := 0.8
+const OVERDRIVE_NOVA_BULLETS := 26
+## Bullets left out of the ring (the gap to slip through).
+const OVERDRIVE_NOVA_GAP := 5
+const AURA := preload("res://enemies/bosses/overdrive_aura.gd")
 
 var phase := 1
 var _state := &"idle"
@@ -38,6 +50,9 @@ var _turret := Vector2.DOWN
 var _spin := 0.0
 var _last_attack := &""
 var _dying := 0.0
+var _nova_t := 0.0
+var _nova_charge := 0.0
+var _aura: Node2D
 
 
 func _ready() -> void:
@@ -67,6 +82,8 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 		return
 	super._physics_process(delta)
+	if phase >= 4 and not dead and _roar <= 0.0:
+		_overdrive_tick(delta)
 
 
 func knock(impulse: Vector2) -> void:
@@ -78,6 +95,8 @@ func take_damage(amount: float, from_pos: Vector2, source: Node = null) -> void:
 		return
 	super.take_damage(amount, from_pos, source)
 	var frac := hp / max_hp
+	if dead:
+		return
 	if phase == 1 and frac <= 0.66 or phase == 2 and frac <= 0.33:
 		phase += 1
 		_roar = 1.2
@@ -88,6 +107,65 @@ func take_damage(amount: float, from_pos: Vector2, source: Node = null) -> void:
 		Combat.shake(0.6)
 		Sfx.play(&"alarm", -4.0, 0.0)
 		phase_changed.emit(phase)
+	elif phase == 3 and frac <= OVERDRIVE_AT:
+		_enter_overdrive()
+
+
+## OVERDRIVE (phase 4): a longer roar with a big shockwave, the banner, the aura, then the nova rhythm.
+func _enter_overdrive() -> void:
+	phase = 4
+	_roar = 1.7
+	_state = &"idle"
+	_state_t = 1.0
+	_nova_t = 2.5
+	Combat.clear_enemy_bullets()
+	Combat.shockwave(global_position, 520.0, accent, 0.8)
+	Combat.shockwave(global_position, 300.0, Color(1, 0.9, 0.6), 0.5)
+	Combat.explosion_fx(global_position, hit_radius * 2.2, accent)
+	Combat.shake(0.9)
+	Combat.rumble(0.8, 0.6, 0.5)
+	Sfx.play(&"alarm", -2.0, 0.0)
+	Sfx.play(&"charge", -3.0, 0.0)
+	var arena := get_tree().get_first_node_in_group("arena")
+	if arena and arena.has_signal("banner"):
+		arena.emit_signal("banner", "%s  -  OVERDRIVE" % boss_name, accent.lightened(0.2))
+	_aura = AURA.new()
+	_aura.set("boss", self)
+	add_child(_aura)
+	phase_changed.emit(phase)
+
+
+func _overdrive_tick(delta: float) -> void:
+	if _nova_charge > 0.0:
+		_nova_charge -= delta
+		if _nova_charge <= 0.0:
+			_fire_nova()
+		return
+	_nova_t -= delta
+	if _nova_t <= 0.0:
+		_nova_t = OVERDRIVE_NOVA_EVERY
+		_nova_charge = OVERDRIVE_NOVA_CHARGE
+		Sfx.play(&"charge", -8.0, 0.0)
+
+
+## The nova: a ring of slow shots with one gap, the gap turned away from where the pilot is (so it's
+## never a free pass - you run round to it or boost through the ring).
+func _fire_nova() -> void:
+	var gap_at := dir_to_target().angle() + PI + randf_range(-0.9, 0.9)
+	var step := TAU / OVERDRIVE_NOVA_BULLETS
+	for i in OVERDRIVE_NOVA_BULLETS:
+		var a := gap_at + step * (i + OVERDRIVE_NOVA_GAP / 2.0 + 0.5)
+		if i >= OVERDRIVE_NOVA_BULLETS - OVERDRIVE_NOVA_GAP:
+			continue
+		shoot(Vector2.from_angle(a), 235.0, 11.0, accent.lightened(0.25), 1.4)
+	Combat.shockwave(global_position, hit_radius * 2.5, accent, 0.35)
+	Combat.shake(0.3)
+	Sfx.play(&"big_explode", -12.0, 0.0)
+
+
+## 0 = not charging, rising to 1 as the nova is about to fire (the aura draws the shrinking ring).
+func nova_charge_k() -> float:
+	return 1.0 - _nova_charge / OVERDRIVE_NOVA_CHARGE if _nova_charge > 0.0 else 0.0
 
 
 func die() -> void:
