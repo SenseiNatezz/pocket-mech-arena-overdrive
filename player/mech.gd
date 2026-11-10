@@ -108,7 +108,7 @@ const SALVO_INTERVAL := 4.0
 const SALVO_ROCKETS := 4
 const SALVO_DAMAGE := 34.0
 const SALVO_RANGE := 700.0
-## ONIBI IAIDO: melee / gun damage, overdrive gain on melee hits, HP per melee kill.
+## FROSTBLADE IAIDO: melee / gun damage, overdrive gain on melee hits, HP per melee kill.
 const IAIDO_MELEE := 1.3
 const IAIDO_GUNS := 0.8
 const IAIDO_OD := 1.5
@@ -120,7 +120,7 @@ const BARRIER_BLAST := 40.0
 ## CORVID FEATHER SWARM: chance a kill fires feathers, and how many.
 const FEATHER_CHANCE := 0.35
 const FEATHERS := 2
-## VESPER PHASE BLINK: blink distance, and the critical window after a blink.
+## RAVEN CLAW PHASE BLINK: blink distance, and the critical window after a blink.
 const BLINK_DIST := 230.0
 const BLINK_CRIT_TIME := 1.5
 const BLINK_CRIT := 2.0
@@ -173,7 +173,7 @@ var _body_scale := 1.0
 ## This chassis's sprite frames (with / without the painted Beam Rifle), see Game.chassis_frames.
 var _frames_gun: SpriteFrames
 var _frames_nogun: SpriteFrames
-## TEMPEST salvo timer; VESPER crit window after a blink.
+## TEMPEST salvo timer; RAVEN CLAW crit window after a blink.
 var _salvo_t := 1.5
 var _crit_t := 0.0
 var _boost_hits: Array[int] = []
@@ -671,7 +671,7 @@ func _try_boost(move: Vector2) -> void:
 	stats_changed.emit()
 
 
-## VESPER PHASE BLINK: the boost jumps the mech up to BLINK_DIST at once (stopping at walls and never
+## RAVEN CLAW PHASE BLINK: the boost jumps the mech up to BLINK_DIST at once (stopping at walls and never
 ## into a pit), leaves a trail of afterimages, and opens the critical window.
 func _blink() -> void:
 	var from := global_position
@@ -700,7 +700,7 @@ func _over_pit(p: Vector2) -> bool:
 	return false
 
 
-## Chassis damage on every attack: ONIBI's IAIDO (melee up, guns down) and VESPER's post-blink criticals.
+## Chassis damage on every attack: FROSTBLADE's IAIDO (melee up, guns down) and RAVEN CLAW's post-blink criticals.
 func _chassis_damage_mult() -> float:
 	var m := 1.0
 	if _chassis_id == &"duelist":
@@ -951,7 +951,7 @@ func _on_enemy_killed(e: Node) -> void:
 		stats_changed.emit()
 	if _chassis.get("id") == &"striker" and boost_cooldown_left > 0.0:
 		boost_cooldown_left = maxf(boost_cooldown_left - STRIKER_KILL_REFUND, 0.0)
-	# ONIBI IAIDO: melee kills patch the armor; CORVID FEATHER SWARM: kills may loose homing feathers.
+	# FROSTBLADE IAIDO: melee kills patch the armor; CORVID FEATHER SWARM: kills may loose homing feathers.
 	if _chassis_id == &"duelist" and Game.is_melee(weapon) and not dead and hp < max_hp:
 		hp = minf(hp + IAIDO_HEAL * Game.diff("heal"), max_hp)
 		stats_changed.emit()

@@ -321,8 +321,9 @@ const CHASSIS: Array[Dictionary] = [
 		"color": Color(1.0, 0.9, 0.2),
 		"ability": "SALVO: the shoulder pods fire 4 heavy homing rockets at nearby robots every 4 seconds.",
 		"desc": "Walking artillery: +15% HP, takes 5% less damage, a little slower."},
-	{"id": &"duelist", "name": "ONIBI", "role": "Duelist frame", "sheet": &"onibi", "cost": 5000, "hp": 0.9,
-		"speed": 1.08, "boost_cd": 0.85, "boost_speed": 1.05, "taken": 1.0, "scale": 0.95, "color": Color(1.0, 0.34, 0.32),
+	# FROSTBLADE (unit 06, the user's sheet 11-09) took over the ONIBI slot: same IAIDO kit, own art.
+	{"id": &"duelist", "name": "FROSTBLADE", "role": "Duelist frame", "sheet": &"frost", "cost": 5000, "hp": 0.9,
+		"speed": 1.08, "boost_cd": 0.85, "boost_speed": 1.05, "taken": 1.0, "scale": 0.95, "color": Color(0.35, 0.85, 1.0),
 		"ability": "IAIDO: melee weapons hit 30% harder and build Overdrive 50% faster; melee kills heal 3 HP.",
 		"desc": "A blade master: guns deal 20% less damage, -10% HP, +8% speed."},
 	{"id": &"guardian", "name": "SOLSTICE", "role": "Guardian frame", "sheet": &"solstice", "cost": 5500, "hp": 1.1,
@@ -333,8 +334,9 @@ const CHASSIS: Array[Dictionary] = [
 		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 0.98, "color": Color(0.72, 0.48, 1.0),
 		"ability": "FEATHER SWARM: launches with 2 Bit Drones (the upgrade adds a 3rd), and kills can fire homing feathers.",
 		"desc": "Lets its drones fight: -15% HP, takes 5% more damage."},
-	{"id": &"phantom", "name": "VESPER", "role": "Phantom frame", "sheet": &"vesper", "cost": 7000, "hp": 0.8,
-		"speed": 1.1, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9, "color": Color(1.0, 0.42, 0.85),
+	# RAVEN CLAW (unit 12, the user's sheet 11-09) took over the VESPER slot: same PHASE BLINK kit, own art.
+	{"id": &"phantom", "name": "RAVEN CLAW", "role": "Phantom frame", "sheet": &"raven", "cost": 7000, "hp": 0.8,
+		"speed": 1.1, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9, "color": Color(1.0, 0.24, 0.26),
 		"ability": "PHASE BLINK: boost is an instant blink, and attacks within 1.5 s of a blink are critical (x2 damage).",
 		"desc": "Glass cannon: -20% HP, +10% speed, boost recharges 30% faster."},
 ]

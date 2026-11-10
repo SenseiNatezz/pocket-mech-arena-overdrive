@@ -2,7 +2,7 @@ extends Node
 ## Chassis test:  godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save
 ## Flies every Hangar chassis (Game.CHASSIS) in the Weapon Range, reloading the range for each one, and
 ## checks its stats, its art (own sheet or NIMBUS-07's tinted) and its signature trick:
-## NIMBUS-07 4 cards, TEMPEST SALVO, ONIBI IAIDO, SOLSTICE BARRIER, CORVID drones, VESPER PHASE BLINK.
+## NIMBUS-07 4 cards, TEMPEST SALVO, FROSTBLADE IAIDO, SOLSTICE BARRIER, CORVID drones, RAVEN CLAW PHASE BLINK.
 
 static var _running := false
 var _fails := 0

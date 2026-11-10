@@ -1,0 +1,21 @@
+[gd_resource type="Resource" format=3]
+
+[resource]
+metadata/fist = {
+&"idle": [Vector2(184.3, 87.9), Vector2(183.9, 89.9), Vector2(184.2, 88.9), Vector2(183.9, 89.9), Vector2(184.3, 87.9), Vector2(184.4, 87.9), Vector2(184.5, 87.9), Vector2(184.4, 87.9)],
+&"boost": [Vector2(179.7, 96.7), Vector2(179.6, 96.6), Vector2(179.7, 96.6), Vector2(179.7, 96.7), Vector2(180.1, 95.7), Vector2(180.1, 95.7)],
+&"bank_left": [Vector2(184.9, 86.8), Vector2(184.9, 87.7), Vector2(184.9, 87.7), Vector2(184.9, 86.8), Vector2(185.0, 86.8), Vector2(185.0, 86.8)],
+&"bank_right": [Vector2(178.9, 90.9), Vector2(179.1, 90.9), Vector2(179.1, 90.9), Vector2(178.9, 90.9), Vector2(178.9, 90.9), Vector2(178.9, 90.9)],
+&"dash": [Vector2(184.3, 87.9), Vector2(183.6, 90.9), Vector2(179.7, 96.7), Vector2(181.5, 93.8), Vector2(184.5, 87.9), Vector2(184.3, 87.9)],
+&"fire": [Vector2(186.6, 77.0), Vector2(186.7, 77.0), Vector2(186.7, 77.0), Vector2(186.7, 77.0)],
+&"aim": [Vector2(184.3, 87.9), Vector2(186.0, 79.0), Vector2(186.6, 77.0), Vector2(186.7, 77.0), Vector2(186.6, 77.0), Vector2(186.6, 77.0)]
+}
+metadata/rifle_tip = {
+&"idle": [Vector2(195.5, 30.0), Vector2(195.2, 31.0), Vector2(195.4, 31.0), Vector2(195.2, 31.0), Vector2(195.5, 30.0), Vector2(195.3, 30.0), Vector2(195.0, 30.0), Vector2(195.3, 30.0)],
+&"boost": [Vector2(197.8, 45.0), Vector2(197.9, 46.0), Vector2(197.8, 46.0), Vector2(197.8, 45.0), Vector2(197.5, 45.0), Vector2(197.5, 45.0)],
+&"bank_left": [Vector2(201.1, 32.0), Vector2(201.5, 32.0), Vector2(201.5, 32.0), Vector2(201.1, 32.0), Vector2(201.0, 31.0), Vector2(201.0, 31.0)],
+&"bank_right": [Vector2(188.4, 31.0), Vector2(188.2, 32.0), Vector2(188.2, 32.0), Vector2(188.4, 31.0), Vector2(188.5, 31.0), Vector2(188.5, 31.0)],
+&"dash": [Vector2(195.5, 30.0), Vector2(195.6, 33.0), Vector2(197.8, 45.0), Vector2(196.6, 40.0), Vector2(195.0, 29.0), Vector2(195.5, 30.0)],
+&"fire": [Vector2(193.7, 13.0), Vector2(193.7, 13.0), Vector2(193.6, 13.0), Vector2(193.6, 13.0)],
+&"aim": [Vector2(195.5, 30.0), Vector2(193.2, 17.0), Vector2(193.0, 12.0), Vector2(193.7, 12.0), Vector2(193.7, 13.0), Vector2(193.7, 13.0)]
+}
