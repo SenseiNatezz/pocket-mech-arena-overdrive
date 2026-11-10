@@ -66,6 +66,17 @@ func _ready() -> void:
 	panel.gun_range = self
 	add_child(panel)
 	select_weapon(Game.weapon, false)
+	if _announce_chassis:
+		# Back from a MECH pick (the range reloaded): name the new frame.
+		_announce_chassis = false
+		var hud := get_node_or_null("HUD")
+		if hud:
+			var c := Game.chassis_info()
+			hud.call_deferred("show_banner", String(c["name"]), c["color"])
+
+
+## Set by select_chassis(), read once by the reloaded range.
+static var _announce_chassis := false
 
 
 func weapon_ids() -> Array[StringName]:
@@ -85,6 +96,20 @@ func select_weapon(id: StringName, announce := true) -> void:
 		if hud:
 			hud.show_banner(String(Game.weapon_info(id)["name"]).to_upper(), Color(1.0, 0.85, 0.3))
 		Sfx.play(&"select", -6.0, 0.0)
+
+
+## MECH picker: fly any Hangar chassis (owned or not) - in memory only, Game.range_chassis_restore keeps the
+## real one for saving and for leaving the range. The range reloads so the mech is built fresh (scale, sheet,
+## fists, signature trick); the current weapon carries over through Game.weapon.
+func select_chassis(id: StringName) -> void:
+	if id == Game.chassis:
+		return
+	if Game.range_chassis_restore == &"":
+		Game.range_chassis_restore = Game.chassis  # (a range started without to_gun_range, e.g. --gun-range)
+	Game.chassis = id
+	_announce_chassis = true
+	Sfx.play(&"select", -6.0, 0.0)
+	get_tree().reload_current_scene.call_deferred()
 
 
 func cycle_weapon(step: int) -> void:

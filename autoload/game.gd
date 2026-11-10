@@ -252,6 +252,9 @@ var tutorial_done := false
 ## Gun Range: the weapon equipped before entering (the range swaps `weapon` freely, in memory only).
 ## save() writes this instead, and leaving the range puts it back.
 var range_restore := &""
+## Gun Range: the Hangar chassis flown before entering. The range's MECH picker swaps `chassis` to any frame
+## (owned or not, in memory only); save() writes this instead, and leaving the range puts it back.
+var range_chassis_restore := &""
 ## RETRY BOSS (campaign): taken when an arena's boss appears - arena, level, XP, upgrades, kills, time.
 var boss_checkpoint := {}
 ## True for the arena scene loaded by retry_boss(): it skips the intro + waves and drops the boss in.
@@ -1133,6 +1136,8 @@ func finish_tutorial() -> void:
 func to_gun_range() -> void:
 	if range_restore == &"":
 		range_restore = weapon
+	if range_chassis_restore == &"":
+		range_chassis_restore = chassis
 	mode = &"campaign"
 	Upgrades.reset()
 	_reset_run()
@@ -1388,7 +1393,7 @@ func save() -> void:
 	for id in contracts_claimed:
 		claimed_names.append(String(id))
 	cfg.set_value("contracts", "claimed", claimed_names)
-	cfg.set_value("hangar", "chassis", String(chassis))
+	cfg.set_value("hangar", "chassis", String(range_chassis_restore if range_chassis_restore != &"" else chassis))
 	var owned: Array[String] = []
 	for id in chassis_owned:
 		owned.append(String(id))
@@ -1542,6 +1547,9 @@ func _change_now(path: String) -> void:
 	if path != GUN_RANGE and range_restore != &"":
 		weapon = range_restore
 		range_restore = &""
+	if path != GUN_RANGE and range_chassis_restore != &"":
+		chassis = range_chassis_restore
+		range_chassis_restore = &""
 	get_tree().paused = false
 	Controls.touch_move = Vector2.ZERO
 	Controls.touch_aim = Vector2.ZERO

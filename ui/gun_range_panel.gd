@@ -41,6 +41,13 @@ var _heads: Array[Label] = []
 var _boss_btns: Array[Button] = []
 var _toggle: Button
 var _spawn_open := false
+## MECH picker: a "MECH: NAME" toggle top-left (every layout) opening a grid of all Hangar chassis
+## (gun_range.select_chassis reloads the range with that frame, in memory only).
+var _mech_toggle: Button
+var _mech_panel: PanelContainer
+var _mech_grid: GridContainer
+var _mech_btns: Array[Button] = []
+var _mech_open := false
 var _touch := false
 var _portrait := false
 
@@ -96,7 +103,27 @@ func _ready() -> void:
 		_boss_btns.append(b)
 	_boss_grid.add_child(_button("CLEAR ALL", gun_range.clear_enemies, Color(1.0, 0.55, 0.45)))
 
+	# MECH picker (toggle + its own panel).
+	_mech_toggle = _button("", _toggle_mech, Color(Game.chassis_info()["color"]).lightened(0.3))
+	_mech_toggle.custom_minimum_size = Vector2(230, 36)
+	root.add_child(_mech_toggle)
+	_mech_panel = PanelContainer.new()
+	_mech_panel.add_theme_stylebox_override("panel", _box(Color(0.02, 0.05, 0.12, 0.85), CYAN))
+	root.add_child(_mech_panel)
+	var mlist := VBoxContainer.new()
+	mlist.add_theme_constant_override("separation", 6)
+	_mech_panel.add_child(mlist)
+	_head(mlist, "FLY ANY MECH")
+	_mech_grid = _button_grid(mlist)
+	for c: Dictionary in Game.CHASSIS:
+		var id: StringName = c["id"]
+		var b := _button(String(c["name"]), func() -> void: gun_range.select_chassis(id), Color(c["color"]).lightened(0.3))
+		b.set_meta("id", id)
+		_mech_grid.add_child(b)
+		_mech_btns.append(b)
+
 	_spawn_open = OS.get_cmdline_user_args().has("--spawn-open")  # debug: screenshots of the open grid
+	_mech_open = OS.get_cmdline_user_args().has("--mech-open")  # debug: screenshots of the open MECH picker
 	Controls.device_changed.connect(func(_d: int) -> void: _relayout())
 	get_viewport().size_changed.connect(_relayout, CONNECT_DEFERRED)
 	var layout := get_node_or_null("/root/Layout")
@@ -123,6 +150,15 @@ func _button_grid(parent: Control) -> GridContainer:
 
 func _toggle_spawn() -> void:
 	_spawn_open = not _spawn_open
+	if _spawn_open and (_touch or _portrait):
+		_mech_open = false  # (compact: the two menus share the same spot)
+	_relayout()
+
+
+func _toggle_mech() -> void:
+	_mech_open = not _mech_open
+	if _mech_open and (_touch or _portrait):
+		_spawn_open = false
 	_relayout()
 
 
@@ -192,6 +228,22 @@ func _relayout() -> void:
 		b.text = ("Boss: %s" if compact else "%s") % b.get_meta("name")
 	_panel.reset_size()
 	_panel.position = Vector2(16, 158) if compact else Vector2(vp.x - 16 - _panel.get_combined_minimum_size().x, 64)
+
+	# MECH toggle: right of SPAWN on touch / portrait, where SPAWN would be on desktop. Its grid opens below.
+	var cur := Game.chassis_info()
+	_mech_toggle.text = "MECH: %s  %s" % [cur["name"], "-" if _mech_open else "+"]
+	_mech_toggle.position = Vector2(176, 116) if compact else Vector2(16, 116)
+	_mech_panel.visible = _mech_open
+	_mech_grid.columns = 3 if compact else 2
+	for b in _mech_btns:
+		b.custom_minimum_size = Vector2(150, 34) if compact else Vector2(150, 31)
+		var on: bool = b.get_meta("id") == Game.chassis
+		var col := Color(Game.chassis_info(b.get_meta("id"))["color"])
+		b.add_theme_stylebox_override("normal", _box(Color(0.1, 0.16, 0.28, 0.95) if on else Color(0.04, 0.1, 0.2, 0.9),
+			GOLD if on else Color(col, 0.6), 3 if on else 1))
+	_mech_grid.reset_size()
+	_mech_panel.reset_size()
+	_mech_panel.position = Vector2(16, 158)
 
 
 func _label(txt: String, fs: int, col: Color) -> Label:
