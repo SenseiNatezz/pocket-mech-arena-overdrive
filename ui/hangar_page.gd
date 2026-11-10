@@ -51,6 +51,9 @@ func _ready() -> void:
 	var center := CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.add_child(center)
+	# Phones: swipe anywhere (cards and buttons too) to scroll; a swipe never presses BUY (ui/touch_scroll.gd).
+	# (added after `center`: _scroll.get_child(0) is the content)
+	_scroll.add_child(TouchScroll.new())
 	_column = VBoxContainer.new()
 	_column.add_theme_constant_override("separation", 10)
 	center.add_child(_column)
