@@ -42,6 +42,10 @@ after level 5, 10 and 15. Upgrades carry over when you press NEXT ARENA.
 robots and kills recharge the boost), VX-9 Bulwark (heavy; boost rams robots, and SIEGE MODE braces it
 when you stand still: +30% damage, -30% damage taken).
 
+**Walking mechs:** NIMBUS-07 (and ARROWHEAD, RAMPART and CORVID, which share its frame) walk on the ground
+instead of hovering: the legs step the way you move (backwards when that is behind your aim), the upper body
+turns to your aim on top with its own walk cycle, and a boost drops into a slide. The other four mechs still hover.
+
 **Gold Salvager:** every 2-3 minutes of waves a gold drone pops up near you and flees for 11 seconds.
 Shoot it down for a random prize: SCRAP FRENZY (all scrap x7 for 20 s), LUCKY (15% of the run's scrap at
 once), XP SURGE, a full Overdrive, or rarely a JACKPOT of little gold drones that each pay scrap. The
@@ -140,6 +144,7 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --temp-save --attach=res://tools/save_backup_test.gd` checks the save backup code
 - `godot --headless --path . -- --gun-range --attach=res://tools/energy_sword_test.gd --temp-save` checks the Energy Sword (unlock, held art, combo + CRESCENT NOVA)
 - `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, FEATHER SWARM, PHASE BLINK)
+- `godot --path . --resolution 1280x720 -- --gun-range --temp-save --attach=res://tools/walk_shots.gd --walk-out=DIR` walks a mech through a fixed routine, checks its walking legs and saves a crop per frame (`--walk-demo` = free walking + circling a target; `--hover` = the old hover art)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena

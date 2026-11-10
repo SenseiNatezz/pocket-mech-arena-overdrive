@@ -17,7 +17,7 @@ const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"p
 	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1,
 	&"scatter": 3, &"boost": 2, &"nova": 2, &"cone": 2, &"repair": 1, &"overdrive": 1, &"deny": 1, &"coin": 3,
 	&"sparkle": 1, &"beam_shot": 3, &"gatling_shot": 4, &"pistol_shot": 4, &"drone_shot": 2, &"death_boom": 3,
-	&"heartbeat": 1, &"boss_braam": 1}
+	&"heartbeat": 1, &"boss_braam": 1, &"step": 2}
 
 var _streams: Dictionary = {}
 var _from_file: Dictionary = {}
@@ -102,6 +102,8 @@ func _build() -> void:
 	_streams[&"laser"] = _synth(1.2, 95, 80, 0.55, 0.7, 0.6, 0.3, 0.2, 0.35, 0.01)
 	_streams[&"slam"] = _synth(0.45, 70, 35, 0.7, 0.2, 0.8, 0.25, 0.05, 1.8)
 	_streams[&"select"] = _synth(0.07, 1250, 1250, 0.3, 0.5, 0.0, 0.0, 0.0, 1.0)
+	# Walking mechs' footstep (recording: art_src/sfx/make_step.py).
+	_streams[&"step"] = _synth(0.14, 95, 45, 0.6, 0.1, 0.5, 0.3, 0.05, 2.0)
 	# Beam Rifle: sharp electric zap sweeping down into a crackle.
 	_streams[&"beam_rifle"] = _synth(0.55, 2600, 260, 0.38, 0.75, 0.7, 0.85, 0.25, 1.1)
 	# Beam Saber: airy whoosh sweeping down with a bright metallic edge.

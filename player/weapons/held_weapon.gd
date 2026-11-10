@@ -21,20 +21,27 @@ extends Node2D
 const FIST := {
 	&"idle": [Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(179.8, 106.9), Vector2(180.0, 106.9), Vector2(179.9, 106.9), Vector2(180.0, 106.9)],
 	&"boost": [Vector2(181.7, 90.6), Vector2(181.6, 90.6), Vector2(181.6, 90.6), Vector2(181.7, 90.6), Vector2(181.7, 90.7), Vector2(181.7, 90.7)],
-	&"bank_left": [Vector2(178.6, 112.8), Vector2(178.7, 112.8), Vector2(178.7, 112.8), Vector2(178.6, 112.8), Vector2(178.6, 112.8), Vector2(178.6, 112.8)],
-	&"bank_right": [Vector2(175.6, 104.0), Vector2(175.6, 104.0), Vector2(175.6, 104.0), Vector2(175.6, 104.0), Vector2(175.5, 103.9), Vector2(175.5, 103.9)],
-	&"dash": [Vector2(179.8, 106.9), Vector2(178.0, 109.8), Vector2(181.7, 90.6), Vector2(178.7, 98.7), Vector2(179.9, 106.9), Vector2(179.8, 106.9)],
+	&"bank_left": [Vector2(178.6, 102.6), Vector2(178.6, 102.6), Vector2(178.6, 102.6), Vector2(178.6, 102.6), Vector2(178.6, 102.7), Vector2(178.6, 102.7)],
+	&"bank_right": [Vector2(177.7, 98.0), Vector2(177.7, 98.0), Vector2(177.7, 98.0), Vector2(177.7, 98.0), Vector2(177.5, 98.0), Vector2(177.5, 98.0)],
+	&"dash": [Vector2(179.8, 106.9), Vector2(180.5, 90.8), Vector2(181.7, 90.6), Vector2(178.7, 98.7), Vector2(179.9, 106.9), Vector2(179.8, 106.9)],
 	&"fire": [Vector2(180.7, 106.0), Vector2(180.6, 107.0), Vector2(180.6, 106.0), Vector2(180.7, 106.0)],
 	&"aim": [Vector2(179.8, 106.9), Vector2(180.4, 107.0), Vector2(180.8, 106.0), Vector2(180.7, 106.0), Vector2(180.7, 106.0), Vector2(180.7, 106.0)],
+	# WALKING mechs' upper-body walk row (printed by art_src/halo_forge/tools/render_walk.py: WALK TABLES).
+	&"walk": [Vector2(179.8, 114.3), Vector2(179.9, 99.3), Vector2(179.7, 92.0), Vector2(179.9, 99.3), Vector2(179.8, 114.3), Vector2(178.6, 123.7), Vector2(177.8, 125.6), Vector2(178.6, 123.7)],
+}
+## The walk row swings the arms against each other, so there the left fist is NOT the right one mirrored.
+const FIST_LEFT := {
+	&"walk": [Vector2(76.2, 114.6), Vector2(78.6, 132.7), Vector2(79.9, 138.2), Vector2(78.6, 132.7), Vector2(76.2, 114.6), Vector2(74.8, 91.2), Vector2(74.5, 80.9), Vector2(74.8, 91.2)],
 }
 const RIFLE_TIP := {
 	&"idle": [Vector2(197.4, 15.0), Vector2(197.5, 16.0), Vector2(197.5, 16.0), Vector2(197.5, 16.0), Vector2(197.4, 15.0), Vector2(197.0, 15.0), Vector2(197.2, 14.0), Vector2(197.0, 15.0)],
 	&"boost": [Vector2(201.8, 36.0), Vector2(201.8, 37.0), Vector2(201.8, 37.0), Vector2(201.8, 36.0), Vector2(201.6, 35.0), Vector2(201.2, 36.0)],
-	&"bank_left": [Vector2(206.0, 17.0), Vector2(206.0, 18.0), Vector2(206.0, 18.0), Vector2(206.0, 17.0), Vector2(205.5, 17.0), Vector2(205.5, 17.0)],
-	&"bank_right": [Vector2(186.8, 17.0), Vector2(186.7, 18.0), Vector2(186.7, 18.0), Vector2(186.8, 17.0), Vector2(187.1, 16.0), Vector2(187.1, 16.0)],
-	&"dash": [Vector2(197.4, 15.0), Vector2(198.7, 19.0), Vector2(201.8, 36.0), Vector2(201.3, 29.0), Vector2(197.2, 13.0), Vector2(197.4, 15.0)],
+	&"bank_left": [Vector2(209.5, 17.0), Vector2(209.7, 18.0), Vector2(209.7, 18.0), Vector2(209.5, 17.0), Vector2(209.0, 17.0), Vector2(209.0, 17.0)],
+	&"bank_right": [Vector2(185.4, 17.0), Vector2(185.3, 18.0), Vector2(185.3, 18.0), Vector2(185.4, 17.0), Vector2(185.8, 16.0), Vector2(185.8, 16.0)],
+	&"dash": [Vector2(197.4, 15.0), Vector2(201.1, 19.0), Vector2(201.8, 36.0), Vector2(201.3, 29.0), Vector2(197.2, 13.0), Vector2(197.4, 15.0)],
 	&"fire": [Vector2(191.8, 0.0), Vector2(191.9, 0.0), Vector2(191.8, 0.0), Vector2(191.8, 0.0)],
 	&"aim": [Vector2(197.4, 15.0), Vector2(193.7, 0.0), Vector2(191.4, 0.0), Vector2(191.6, 0.0), Vector2(191.8, 0.0), Vector2(191.8, 0.0)],
+	&"walk": [Vector2(197.4, 29.5), Vector2(189.7, 6.3), Vector2(186.1, -4.8), Vector2(189.7, 6.3), Vector2(197.4, 29.5), Vector2(203.8, 42.7), Vector2(205.9, 44.7), Vector2(203.8, 42.7)],
 }
 ## The sprite is centred on its 256 x 256 cell.
 const CELL_CENTER := Vector2(128, 128)
@@ -108,6 +115,9 @@ static func frame_point(m: Mech, table: Dictionary, side := 1.0) -> Vector2:
 	if not own.is_empty():
 		table = own
 	var pts: Array = table.get(s.animation, table[&"idle"])
+	if side < 0.0 and is_same(table, FIST) and FIST_LEFT.has(s.animation):
+		pts = FIST_LEFT[s.animation]
+		side = 1.0
 	var p: Vector2 = pts[clampi(s.frame, 0, pts.size() - 1)] - CELL_CENTER
 	p.x *= side
 	return s.position + p * s.scale

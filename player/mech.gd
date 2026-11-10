@@ -179,6 +179,27 @@ var _body_scale := 1.0
 ## This chassis's sprite frames (with / without the painted Beam Rifle), see Game.chassis_frames.
 var _frames_gun: SpriteFrames
 var _frames_nogun: SpriteFrames
+## WALKING mechs (Game.chassis_walk_art): the legs are their own sprite under the body. They face the way
+## the mech moves (or the opposite way, stepping backwards, when that is behind the aim) while the upper
+## body turns to the aim; a dash drops them into the slide pose. null = this design hovers (old art).
+var legs: AnimatedSprite2D
+var _legs_back := false
+var _legs_turning := false
+const LEGS_TURN := 14.0
+## WALKING mechs: the upper body is alive on top of the legs. It swings round to the aim on a spring (a
+## little overshoot and settle instead of a stiff snap), the shoulders counter-swing against the hips on
+## every step, each shot kicks the gun shoulder back, and the body leans into the way it is walking.
+const TORSO_STIFF := 380.0
+const TORSO_DAMP := 21.0
+const STEP_TWIST := 0.05         # extra shoulder counter-swing per step, radians each way (most is drawn)
+const STEP_BOB := 0.035          # the body swells / shrinks this much as it rises and drops on each step
+const RECOIL_TWIST := 0.014      # radians per px of the sprite's recoil kick
+const WALK_LEAN := 3.5           # px the body leans toward where it is walking
+var _torso_rot := 0.0
+var _torso_vel := 0.0
+var _step_twist := 0.0
+var _sprite_scale := Vector2.ONE
+var _last_step := -1
 ## TEMPEST salvo timer; RAVEN CLAW crit window after a blink.
 var _salvo_t := 1.5
 var _crit_t := 0.0
@@ -265,6 +286,21 @@ func _ready() -> void:
 	Game.apply_armor(sprite.material)
 	# A chassis whose own design isn't rendered yet flies NIMBUS-07's art tinted in its colour.
 	sprite.self_modulate = Game.chassis_tint(_chassis_id)
+	_sprite_scale = sprite.scale
+	if Game.chassis_walk_art(_chassis_id) != "":
+		_frames_gun = Game.chassis_torso_frames(_chassis_id, true)
+		_frames_nogun = Game.chassis_torso_frames(_chassis_id, false)
+		sprite.sprite_frames = _frames_gun
+		sprite.play(&"idle")
+		legs = AnimatedSprite2D.new()
+		legs.sprite_frames = Game.chassis_legs_frames(_chassis_id)
+		legs.material = sprite.material  # (shared: armor paint + hit flash)
+		legs.self_modulate = sprite.self_modulate
+		legs.scale = _sprite_scale * _body_scale
+		legs.rotation = body.rotation
+		add_child(legs)
+		move_child(legs, body.get_index())
+		legs.play(&"stand")
 	muzzle_flash.modulate = Game.energy_color()
 	for t in thrusters:
 		t.modulate = Game.booster_color().lightened(0.25)
@@ -1126,10 +1162,17 @@ func _update_fall(delta: float) -> void:
 	body.scale = Vector2.ONE * lerpf(1.0, 0.25, k) * _body_scale
 	body.modulate.a = 1.0 - k
 	body.rotation += delta * 6.0
+	if legs:
+		legs.scale = _sprite_scale * body.scale
+		legs.modulate.a = body.modulate.a
+		legs.rotation += delta * 6.0
 	if _falling <= 0.0:
 		_falling = 0.0
 		body.scale = Vector2.ONE * _body_scale
 		body.modulate.a = 1.0
+		if legs:
+			legs.scale = _sprite_scale * _body_scale
+			legs.modulate.a = 1.0
 		global_position = _safe_pos
 		_apply_damage(PIT_DAMAGE)
 		_invuln = 1.0
@@ -1207,10 +1250,22 @@ func _update_interact_focus() -> void:
 func _update_visuals(delta: float, move: Vector2) -> void:
 	# Torso turns to the aim independently of movement (sprite faces "up" at rotation 0), plus the twist
 	# of a melee swing (the body winds up and turns through the cut).
-	body.rotation = lerp_angle(body.rotation, aim_dir.angle() + PI / 2 + swing_twist, 1.0 - exp(-22.0 * delta))
+	var face := aim_dir.angle() + PI / 2 + swing_twist
+	if legs:
+		_torso_vel += (angle_difference(_torso_rot, face) * TORSO_STIFF - _torso_vel * TORSO_DAMP) * delta
+		_torso_rot = wrapf(_torso_rot + _torso_vel * delta, -PI, PI)
+		body.rotation = _torso_rot + _step_twist + sprite.position.length() * RECOIL_TWIST
+	else:
+		body.rotation = lerp_angle(body.rotation, face, 1.0 - exp(-22.0 * delta))
 	var anim := &"idle"
 	if _boost_left > 0.0:
 		anim = &"dash"
+	elif legs:
+		# Walking: the upper body plays its own walk row, kept in step with the legs (_update_legs).
+		if legs.animation == &"walk":
+			anim = &"walk"
+		elif Controls.is_firing():
+			anim = &"fire"
 	elif move.length() > 0.2:
 		var local := move.rotated(-body.rotation)
 		anim = &"bank_left" if local.x < -0.55 else (&"bank_right" if local.x > 0.55 else &"boost")
@@ -1227,9 +1282,19 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 		sprite.set_frame_and_progress(f, p)
 	if sprite.animation != anim:
 		sprite.play(anim)
+	if legs and anim == &"walk":
+		sprite.set_frame_and_progress(legs.frame, legs.frame_progress)
+		sprite.speed_scale = legs.speed_scale
+	else:
+		sprite.speed_scale = 1.0
 	held.sync(weapon, delta, Controls.is_firing())
 	for t in thrusters:
-		t.amount_ratio = 1.0 if move.length() > 0.2 or _boost_left > 0.0 else 0.4
+		if legs:
+			t.amount_ratio = 1.0 if _boost_left > 0.0 else 0.12
+		else:
+			t.amount_ratio = 1.0 if move.length() > 0.2 or _boost_left > 0.0 else 0.4
+	if legs:
+		_update_legs(delta, move)
 	sprite.position = sprite.position.lerp(Vector2.ZERO, 1.0 - exp(-30.0 * delta))
 	_muzzle_t -= delta
 	muzzle_flash.visible = _muzzle_t > 0.0
@@ -1244,6 +1309,72 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 	if aura.visible:
 		aura.scale = Vector2.ONE * (2.3 + sin(Time.get_ticks_msec() * 0.02) * 0.15)
 	ring.queue_redraw()
+
+
+## WALKING mechs: turns and animates the legs layer under the body.
+func _update_legs(delta: float, move: Vector2) -> void:
+	var anim := &"stand"
+	var pace := 1.0
+	var want := legs.rotation
+	var turn := LEGS_TURN
+	if _boost_left > 0.0:
+		# Dash: the legs snap round to the dash and hold the slide pose.
+		anim = &"slide"
+		want = _boost_dir.angle() + PI / 2
+		turn = 40.0
+		_legs_turning = false
+	elif move.length() > 0.2:
+		# Walking: legs point along the move; past ~100 degrees off the aim they step backwards instead.
+		var off := absf(angle_difference(body.rotation, move.angle() + PI / 2))
+		if off > deg_to_rad(110.0):
+			_legs_back = true
+		elif off < deg_to_rad(80.0):
+			_legs_back = false
+		want = move.angle() + PI / 2 + (PI if _legs_back else 0.0)
+		anim = &"walk"
+		var top := maxf(move_speed * Upgrades.move_mult(), 1.0)
+		pace = lerpf(0.55, 1.2, clampf(velocity.length() / top, 0.0, 1.0)) * (-1.0 if _legs_back else 1.0)
+		_legs_turning = false
+	else:
+		# Standing: once the body has twisted far round, the legs shuffle round under it.
+		var off := absf(angle_difference(legs.rotation, body.rotation))
+		if off > deg_to_rad(70.0):
+			_legs_turning = true
+		elif off < deg_to_rad(8.0):
+			_legs_turning = false
+		if _legs_turning:
+			want = body.rotation
+			turn = 7.0
+			anim = &"walk"
+	legs.rotation = lerp_angle(legs.rotation, want, 1.0 - exp(-turn * delta))
+	if legs.animation != anim:
+		legs.play(anim)
+	legs.speed_scale = pace
+	# The body rocks a little from foot to foot, and the hips stay over the legs' hip joint as it twists.
+	var sway := Vector2.ZERO
+	var twist := 0.0
+	if anim == &"walk":
+		var phase := (legs.frame + legs.frame_progress) / 8.0
+		sway = Vector2.RIGHT.rotated(legs.rotation) * sin(phase * TAU) * 2.2 * _body_scale
+		twist = -sin(phase * TAU) * STEP_TWIST  # (the hips turn +, the shoulders swing against them)
+		if not _legs_turning:
+			var top := maxf(move_speed * Upgrades.move_mult(), 1.0)
+			sway += velocity.limit_length(top) / top * WALK_LEAN * _body_scale
+		# Rise and drop twice a stride, and a puff of dust where each foot comes down.
+		sprite.scale = _sprite_scale * (1.0 + STEP_BOB * cos(phase * 2.0 * TAU))
+		var step := int(floor(phase * 2.0 + 0.25)) % 2
+		if step != _last_step:
+			_last_step = step
+			var foot := Vector2(-22.0 if step == 0 else 22.0, -14.0).rotated(legs.rotation) * _body_scale
+			SmokePuff.spawn(global_position + foot, Color(0.62, 0.58, 0.5, 0.3), 9.0 * _body_scale, 0.45, -velocity * 0.08, 1)
+			Sfx.play(&"step", -13.0 if _legs_turning else -10.0, 0.12)
+	else:
+		sprite.scale = sprite.scale.lerp(_sprite_scale, 1.0 - exp(-18.0 * delta))
+		_last_step = -1
+	_step_twist = lerpf(_step_twist, twist, 1.0 - exp(-20.0 * delta))
+	body.position = body.position.lerp(sway, 1.0 - exp(-18.0 * delta))
+	var hip := Game.WALK_HIP * _sprite_scale.x * _body_scale
+	legs.position = body.position + hip.rotated(body.rotation) - hip.rotated(legs.rotation)
 
 
 func _spawn_afterimage() -> void:
@@ -1261,6 +1392,15 @@ func _spawn_afterimage_at(at: Vector2, col: Color) -> void:
 	var tw := ghost.create_tween()
 	tw.tween_property(ghost, "modulate:a", 0.0, 0.2)
 	tw.tween_callback(ghost.queue_free)
+	if legs:
+		# The legs ride along as a child drawn under the ghost (so they fade with it).
+		var under := Sprite2D.new()
+		under.texture = legs.sprite_frames.get_frame_texture(legs.animation, legs.frame)
+		under.show_behind_parent = true
+		ghost.add_child(under)
+		under.global_position = at + legs.position - body.position
+		under.global_rotation = legs.rotation
+		under.global_scale = legs.scale
 
 
 ## Fraction of the boost cooldown that has recharged (1 = ready). Used by the ring + HUD.

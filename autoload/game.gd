@@ -917,6 +917,77 @@ func chassis_frames(id: StringName = &"", gun := true) -> SpriteFrames:
 	return _frames_cache[key]
 
 
+## WALKING art (art_src/halo_forge/tools/render_walk.py): a design with a legs sheet walks on the ground -
+## its legs turn the way it moves and the upper body turns to the aim on top (player/mech.gd). "" = the
+## design has none and hovers as before. Chassis that borrow NIMBUS-07's art walk on NIMBUS-07's legs.
+const WALK_SPRITES := "res://assets/sprites/walk/%s_%s.png"
+## The hip joint in sheet px from the cell centre (render_walk.py prints HIP_PX; front of the mech is -y).
+const WALK_HIP := Vector2(0, -8.2)
+
+
+func chassis_walk_art(id: StringName = &"") -> String:
+	if OS.get_cmdline_user_args().has("--hover"):  # debug: the old hover art, to compare
+		return ""
+	var sheet := String(chassis_info(id).get("sheet", &"nimbus"))
+	if chassis_placeholder(id):
+		sheet = "nimbus"
+	return sheet if ResourceLoader.exists(WALK_SPRITES % [sheet, "legs"]) else ""
+
+
+## The chassis's sprite frames with the legs cut away (same animations and cells as chassis_frames).
+func chassis_torso_frames(id: StringName = &"", gun := true) -> SpriteFrames:
+	var art := chassis_walk_art(id)
+	var key := art + (":torso" if gun else ":torso_nogun")
+	if not _frames_cache.has(key):
+		var tex: Texture2D = load(WALK_SPRITES % [art, "torso" if gun else "torso_nogun"])
+		var src := chassis_frames(id, gun)
+		var out := SpriteFrames.new()
+		out.remove_animation(&"default")
+		for anim in src.get_animation_names():
+			out.add_animation(anim)
+			out.set_animation_speed(anim, src.get_animation_speed(anim))
+			out.set_animation_loop(anim, src.get_animation_loop(anim))
+			for i in src.get_frame_count(anim):
+				var at := AtlasTexture.new()
+				at.atlas = tex
+				at.region = (src.get_frame_texture(anim, i) as AtlasTexture).region
+				out.add_frame(anim, at, src.get_frame_duration(anim, i))
+		# The 8th row: the upper body's own walk cycle (frame for frame in step with the legs' `walk`).
+		out.add_animation(&"walk")
+		out.set_animation_loop(&"walk", true)
+		out.set_animation_speed(&"walk", 16.0)
+		for i in 8:
+			var at := AtlasTexture.new()
+			at.atlas = tex
+			at.region = Rect2(i * 256, 7 * 256, 256, 256)
+			out.add_frame(&"walk", at)
+		_frames_cache[key] = out
+	return _frames_cache[key]
+
+
+## The legs layer: `walk` (8 frames, one full stride cycle), `stand`, `slide` (the dash pose).
+func chassis_legs_frames(id: StringName = &"") -> SpriteFrames:
+	var art := chassis_walk_art(id)
+	var key := art + ":legs"
+	if not _frames_cache.has(key):
+		var tex: Texture2D = load(WALK_SPRITES % [art, "legs"])
+		var out := SpriteFrames.new()
+		out.remove_animation(&"default")
+		# [animation, row, first column, frames, loop]
+		for spec: Array in [[&"walk", 0, 0, 8, true], [&"stand", 1, 0, 1, false], [&"slide", 1, 1, 1, false]]:
+			var anim: StringName = spec[0]
+			out.add_animation(anim)
+			out.set_animation_speed(anim, 16.0)
+			out.set_animation_loop(anim, spec[4])
+			for i in int(spec[3]):
+				var at := AtlasTexture.new()
+				at.atlas = tex
+				at.region = Rect2((int(spec[2]) + i) * 256, int(spec[1]) * 256, 256, 256)
+				out.add_frame(anim, at)
+		_frames_cache[key] = out
+	return _frames_cache[key]
+
+
 ## True while a chassis has no art of its own yet (it borrows NIMBUS-07's sheet, tinted its colour).
 func chassis_placeholder(id: StringName = &"") -> bool:
 	var sheet := String(chassis_info(id).get("sheet", &"nimbus"))
