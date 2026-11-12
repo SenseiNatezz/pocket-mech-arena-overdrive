@@ -110,7 +110,7 @@ const IAIDO_HEAL := 3.0
 const BARRIER_RECHARGE := 10.0
 const BARRIER_FASTER := 0.75
 const BARRIER_BLAST := 40.0
-## CORVID FEATHER SWARM: chance a kill fires feathers, and how many.
+## AURORA PETAL SWARM: chance a kill fires feathers, and how many.
 const FEATHER_CHANCE := 0.35
 const FEATHERS := 2
 ## RAVEN CLAW PHASE BLINK: blink distance, and the critical window after a blink.
@@ -190,6 +190,8 @@ var fuel_on := false             # this chassis can switch (so it flies on fuel)
 var fly_fuel := 1.0              # 0..1
 var fly_locked := false          # ran dry: grounded until full
 var _refill_wait := 0.0
+var _low_warned := false         # the low-fuel beep played this flight (re-armed once the tank is half full)
+const FLY_LOW_WARN := 0.25       # the beep when a flying tank drops under this
 ## Which design's two-layer art this is ("" = none; WalkTables key), and whether it floats (RAVEN CLAW): the
 ## same layers and upper-body motion, but the legs hang tucked and trail, with no footsteps.
 var walk_art := ""
@@ -955,7 +957,7 @@ func _on_enemy_killed(e: Node) -> void:
 		stats_changed.emit()
 	if _chassis.get("id") == &"striker" and boost_cooldown_left > 0.0:
 		boost_cooldown_left = maxf(boost_cooldown_left - STRIKER_KILL_REFUND, 0.0)
-	# FROSTBLADE IAIDO: melee kills patch the armor; CORVID FEATHER SWARM: kills may loose homing feathers.
+	# FROSTBLADE IAIDO: melee kills patch the armor; AURORA PETAL SWARM: kills may loose homing feathers.
 	if _chassis_id == &"duelist" and Game.is_melee(weapon) and not dead and hp < max_hp:
 		hp = minf(hp + IAIDO_HEAL * Game.diff("heal"), max_hp)
 		stats_changed.emit()
@@ -974,7 +976,7 @@ func _on_enemy_killed(e: Node) -> void:
 			Sfx.play(&"freeze", -10.0, 0.1)).call_deferred()
 
 
-## CORVID FEATHER SWARM: homing feather blades from the backpack toward the robots near a kill.
+## AURORA PETAL SWARM: homing feather blades from the backpack toward the robots near a kill.
 func _fire_feathers(at: Vector2) -> void:
 	if dead:
 		return
@@ -1322,6 +1324,11 @@ func toggle_hover() -> void:
 
 
 ## True when this mech may take off now (it has the fuel for it).
+## RAVEN CLAW's identity: it always flies (no switch, no fuel), so the floor hazards can't reach it.
+func glides_over_hazards() -> bool:
+	return _hover and not fuel_on
+
+
 func can_take_off() -> bool:
 	return not fuel_on or (not fly_locked and fly_fuel >= FLY_MIN_TAKEOFF)
 
@@ -1331,21 +1338,27 @@ func _update_fuel(delta: float) -> void:
 	if not fuel_on:
 		return
 	if _hover:
-		fly_fuel = maxf(fly_fuel - delta / FLY_FUEL_TIME, 0.0)
+		fly_fuel = maxf(fly_fuel - delta / (FLY_FUEL_TIME * Parts.mult("fuel")), 0.0)
 		_refill_wait = FLY_REFILL_DELAY
+		if fly_fuel < FLY_LOW_WARN and fly_fuel > 0.0 and not _low_warned:
+			_low_warned = true
+			Sfx.play(&"fuel_low", -6.0, 0.0)
 		if fly_fuel <= 0.0 and _boost_left <= 0.0:
 			fly_locked = true
 			_set_flying(false)
-			Sfx.play(&"slam", -8.0, 0.05)
+			Sfx.play(&"fuel_out", -3.0, 0.0)
+			Sfx.play(&"slam", -12.0, 0.05)
 			Combat.shake(0.15)
 			fuel_empty.emit()
 	else:
 		_refill_wait -= delta
 		if _refill_wait <= 0.0 and fly_fuel < 1.0:
-			fly_fuel = minf(fly_fuel + delta / FLY_REFILL_TIME, 1.0)
+			fly_fuel = minf(fly_fuel + delta * Parts.mult("refuel") / FLY_REFILL_TIME, 1.0)
+			if fly_fuel >= 0.5:
+				_low_warned = false
 			if fly_fuel >= 1.0 and fly_locked:
 				fly_locked = false
-				Sfx.play(&"select", -8.0, 0.0)  # (ready to fly again)
+				Sfx.play(&"fuel_ready", -4.0, 0.0)  # (ready to fly again)
 
 
 ## Lifts off / sets down (the WALK / FLY switch). Kept in the settings (Game.hover_mode).

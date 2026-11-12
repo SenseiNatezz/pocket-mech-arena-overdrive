@@ -38,17 +38,21 @@ cards: REROLL (2 per run, +1 per NEXT ARENA), BANISH (1 per run: that upgrade ne
 SKIP (+20 HP instead); the Hangar sells more rerolls and banishes. Max level 20; leveling slows down
 after level 5, 10 and 15. Upgrades carry over when you press NEXT ARENA.
 
-**Hangar chassis:** VX-7 Standard (4 upgrade cards per level-up), VX-5 Striker (fast; boosting slices
-robots and kills recharge the boost), VX-9 Bulwark (heavy; boost rams robots, and SIEGE MODE braces it
-when you stand still: +30% damage, -30% damage taken).
+**Hangar chassis (8):** NIMBUS-07 (standard; 4 upgrade cards per level-up), GRIFFIN (striker: fast; boosting
+slices robots and kills recharge the boost), TUSKER (bulwark: heavy; boost rams robots, and SIEGE MODE braces
+it when you stand still: +30% damage, -30% damage taken), TEMPEST (artillery: SALVO rockets), FROSTBLADE
+(duelist: IAIDO melee), SOLSTICE (guardian: BARRIER shield blast), AURORA (carrier: starts with 2 Bit Drones,
+PETAL SWARM homing blades on kills) and RAVEN CLAW (phantom: PHASE BLINK, always flies).
 
 **Walking mechs:** every mech is two layers - the legs step the way you move (backwards when that is behind
 your aim) and the upper body swings round to your aim on top, with its own walk cycle, recoil kick and a slide
 on boost. **WALK / FLY:** press V (D-pad up, or the FLY / WALK touch button) to lift off and fly on your
 thrusters with the legs tucked, or set down and walk again; the game remembers your pick. **FLIGHT FUEL:**
 flying is 35% faster but burns fuel (about 6 s a tank; the arc on the left of your ring and the FLY button
-show it). Run dry and you drop and must wait for a full tank; land early and it refills at once. RAVEN CLAW
-always flies (no fuel): a slower glide, but +20% damage.
+show it). Run dry and you drop and must wait for a full tank; land early and it refills at once. A beep warns
+you when the tank is low, the jets sputter out when it runs dry, and a chime says you can fly again. The
+Reserve Tank and Jump-Jet Legs parts stretch it. RAVEN CLAW always flies (no fuel): a slower glide and
+-20% HP, but +20% damage, and it glides over lava, steam vents and shock panels.
 
 **Living maps:** mechs and robots cast soft shadows (yours drops away when you fly); shots, blasts, the beam
 and thrusters light the floor; blasts leave scorch marks, robots leave scrap and walking leaves footprints in
@@ -77,13 +81,14 @@ Hangar; claiming a whole row switches on its permanent bonus (+5% scrap, +5% dam
 XP, +10% scrap). Gold Rush opens the Salvager Beacon Hangar row and Jackpot the Salvage Protocol card.
 
 **Mech parts (Hangar > PARTS):** build your mech from four slots: HEAD (sensors), ARMS (weapon handling),
-LEGS (movement) and BACKPACK (booster). Each starts on a free STOCK part; the 12 others cost scrap, and
+LEGS (movement) and BACKPACK (booster). Each starts on a free STOCK part; the 14 others cost scrap, and
 every one trades a strength for a weakness, most with a perk on top. Head: Longsight Optics (+crit),
 Salvage Dish (+pickup radius and scrap), Lock-On Head (starts runs with Target Lock). Arms: Gunner (+gun
 fire rate, STEADY: no recoil), Brawler (+melee speed, SCRAPPER: melee kills repair), Reactor (+overdrive gain
 and damage, slower attacks). Legs: Sprinter (+speed and dash), Anchor (+HP), Hover Skirt (HOVER: lava
-pools, steam vents and shock panels can't hurt you). Backpack: Twin Booster (DOUBLE DASH), Missile Rack
-(starts runs with the Micro-Missile Pod), Overburn Booster (starts runs with Impulse Burst); each backpack
+pools, steam vents and shock panels can't hurt you), Jump-Jet Legs (flight fuel refills 60% faster).
+Backpack: Twin Booster (DOUBLE DASH), Missile Rack (starts runs with the Micro-Missile Pod), Overburn Booster
+(starts runs with Impulse Burst), Reserve Tank (60% more flight fuel, slower to refill); each backpack
 has its own thruster flame. The cards show what a part changes against the one you have on. Buying a part
 puts it on, and you can swap between owned parts any time. The Hover Skirt, Twin Booster and Missile Rack
 open with the Campaigner, Survivor and Tank Buster contracts.
@@ -105,7 +110,7 @@ Melee weapons have combos with a finisher on the last hit.
 **Weapon Range (main menu):** every weapon unlocked, spawn any enemy or boss, and you can't be
 destroyed. Switch weapons with 1-9, 0, -, = / mouse wheel / Tab or the weapon bar.
 
-**Tutorial:** new pilots are offered a 2-minute guided training mission before their first run (also under Settings > Tutorial).
+**Tutorial:** new pilots are offered a 2-minute guided training mission before their first run (also under Settings > Tutorial). It covers moving, attacking, the boost dash, WALK OR FLY (take off, run the fuel tank dry, wait for the refill), scatter shot, Beam Cannon, a real fight, level-ups, repair kits and Overdrive.
 
 **Endless Mode (main menu):** endless waves on a random open map. Each wave is bigger and tougher, a
 Warden boss arrives every 5 waves, and your best wave is saved. Six extra robots join the later waves:
@@ -133,7 +138,7 @@ Bastion and the armored Tidebreaker crab (all spawnable in the Weapon Range too)
 - `fx/` - shared effects: explosion fireballs, smoke, scorch marks (`blast_fx.gd`, `smoke_puff.gd`), the molten lava shader
 - `tools/` - tileset generator, automated tests, autopilot, debug runner, `fx_shots.gd` (weapon / FX close-up captures)
 - `art_src/` - source for generated art and sound: `weapons/build_beam_pistol.py` (Blender, the pistol art), `sfx/make_combat_sfx.py` (layered combat sounds)
-- `assets/hq/raw/` - source art for the tools only. It has a `.gdignore`, so Godot never imports or exports it. Big painted maps and the Customize turntable import as lossy WebP (small download, works on every platform).
+- `assets/hq/raw/` - source art for the tools only. It has a `.gdignore`, so Godot never imports or exports it. Big painted maps, the Customize turntable and the big sprite sheets (mechs, bosses, props) import as lossy WebP (quality 0.9; small download, works on every platform). Small sprites stay lossless.
 
 Arena size: select an arena scene's root and change `size_in_screens` in the Inspector.
 
@@ -150,7 +155,7 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --arena=1 --no-intro --attach=res://tools/overdrive_test.gd --temp-save` checks boss phases, OVERDRIVE and the hit-direction markers
 - `godot --headless --path . -- --temp-save --attach=res://tools/save_backup_test.gd` checks the save backup code
 - `godot --headless --path . -- --gun-range --attach=res://tools/energy_sword_test.gd --temp-save` checks the Energy Sword (unlock, held art, combo + CRESCENT NOVA)
-- `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, FEATHER SWARM, PHASE BLINK)
+- `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, PETAL SWARM, PHASE BLINK)
 - `godot --path . --resolution 1280x720 -- --gun-range --temp-save --attach=res://tools/walk_shots.gd --walk-out=DIR` walks a mech through a fixed routine, checks its walking legs and saves a crop per frame (`--walk-demo` = free walking + circling a target; `--hover` = the old hover art)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)

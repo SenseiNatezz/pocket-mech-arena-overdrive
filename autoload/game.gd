@@ -319,12 +319,14 @@ const CHASSIS: Array[Dictionary] = [
 	{"id": &"standard", "name": "NIMBUS-07", "role": "Standard frame", "sheet": &"nimbus", "cost": 0, "hp": 1.0,
 		"speed": 1.0, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.0, "scale": 1.0, "color": Color(1.0, 0.84, 0.4),
 		"ability": "ADAPTIVE CORE: level-ups offer 4 upgrade cards instead of 3.", "desc": "The all-rounder: solid armor, solid speed."},
-	{"id": &"striker", "name": "ARROWHEAD", "role": "Striker frame", "sheet": &"arrowhead", "cost": 2500, "hp": 0.75,
-		"speed": 1.18, "boost_cd": 0.6, "boost_speed": 1.15, "taken": 1.0, "scale": 0.82, "color": Color(0.3, 1.0, 0.85),
+	# GRIFFIN / TUSKER / AURORA (the user's concepts 06-08, built 11-12) took over the ARROWHEAD / RAMPART /
+	# CORVID slots, which had flown NIMBUS-07's art: same ids, abilities and stats, own art.
+	{"id": &"striker", "name": "GRIFFIN", "role": "Striker frame", "sheet": &"griffin", "cost": 2500, "hp": 0.75,
+		"speed": 1.18, "boost_cd": 0.6, "boost_speed": 1.15, "taken": 1.0, "scale": 0.82, "color": Color(1.0, 0.42, 0.32),
 		"ability": "AFTERBURNER: boost slices through robots, and every kill recharges your boost faster.",
 		"desc": "Light and fast: -25% HP, +18% speed, boost recharges 40% faster."},
-	{"id": &"bulwark", "name": "RAMPART", "role": "Bulwark frame", "sheet": &"rampart", "cost": 3500, "hp": 1.5,
-		"speed": 0.86, "boost_cd": 1.2, "boost_speed": 0.9, "taken": 0.8, "scale": 1.25, "color": Color(1.0, 0.55, 0.25),
+	{"id": &"bulwark", "name": "TUSKER", "role": "Bulwark frame", "sheet": &"tusker", "cost": 3500, "hp": 1.5,
+		"speed": 0.86, "boost_cd": 1.2, "boost_speed": 0.9, "taken": 0.8, "scale": 1.25, "color": Color(0.92, 0.72, 0.38),
 		"ability": "SIEGE MODE: hold still to brace (+30% damage, -30% damage taken); boost rams robots aside.",
 		"desc": "Heavy armor: +50% HP, takes 20% less damage, but slower."},
 	{"id": &"artillery", "name": "TEMPEST", "role": "Artillery frame", "sheet": &"tempest", "cost": 4500,
@@ -341,16 +343,16 @@ const CHASSIS: Array[Dictionary] = [
 		"speed": 0.95, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.0, "scale": 1.12, "color": Color(1.0, 0.8, 0.3),
 		"ability": "BARRIER: always carries a shield charge that recharges 25% faster; when it breaks it blasts robots back.",
 		"desc": "Defensive frame: +10% HP and +1 Defense Shield charge, a little slower."},
-	{"id": &"carrier", "name": "CORVID", "role": "Carrier frame", "sheet": &"corvid", "cost": 6000, "hp": 0.85,
-		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 0.98, "color": Color(0.72, 0.48, 1.0),
-		"ability": "FEATHER SWARM: launches with 2 Bit Drones (the upgrade adds a 3rd), and kills can fire homing feathers.",
+	{"id": &"carrier", "name": "AURORA", "role": "Carrier frame", "sheet": &"aurora", "cost": 6000, "hp": 0.85,
+		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 0.98, "color": Color(1.0, 0.55, 0.85),
+		"ability": "PETAL SWARM: launches with 2 Bit Drones (the upgrade adds a 3rd), and kills can fire homing petal blades.",
 		"desc": "Lets its drones fight: -15% HP, takes 5% more damage."},
 	# RAVEN CLAW (unit 12, the user's sheet 11-09) took over the VESPER slot: same PHASE BLINK kit, own art.
 	{"id": &"phantom", "name": "RAVEN CLAW", "role": "Phantom frame", "sheet": &"raven", "cost": 7000, "hp": 0.8,
 		"speed": 0.88, "damage": 1.2, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9,
 		"color": Color(1.0, 0.24, 0.26),
 		"ability": "PHASE BLINK: boost is an instant blink, and attacks within 1.5 s of a blink are critical (x2 damage).",
-		"desc": "Glass cannon that always flies: +20% damage, -20% HP, a slower glide (-12% speed), boost recharges 30% faster."},
+		"desc": "Glass cannon that always flies, even over lava and vents: +20% damage, -20% HP, -12% speed, boost recharges 30% faster."},
 ]
 ## Where a chassis's rendered sprite frames live (the Blender pipeline writes frames.tres + frames_nogun.tres).
 const MECH_SPRITES := "res://assets/sprites/mechs/%s/%s.tres"

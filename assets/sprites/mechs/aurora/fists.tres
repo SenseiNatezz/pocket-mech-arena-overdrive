@@ -1,0 +1,21 @@
+[gd_resource type="Resource" format=3]
+
+[resource]
+metadata/fist = {
+&"idle": [Vector2(153.2, 138.0), Vector2(153.1, 138.0), Vector2(153.1, 138.0), Vector2(153.1, 138.0), Vector2(153.2, 138.0), Vector2(153.2, 138.0), Vector2(153.2, 138.0), Vector2(153.2, 138.0)],
+&"boost": [Vector2(153.2, 114.9), Vector2(153.4, 114.9), Vector2(153.4, 114.9), Vector2(153.2, 114.9), Vector2(153.7, 115.9), Vector2(153.3, 114.9)],
+&"bank_left": [Vector2(152.1, 138.9), Vector2(152.2, 138.9), Vector2(152.2, 138.9), Vector2(152.1, 138.9), Vector2(152.1, 138.9), Vector2(152.1, 138.9)],
+&"bank_right": [Vector2(155.1, 135.0), Vector2(155.3, 135.0), Vector2(155.3, 135.0), Vector2(155.1, 135.0), Vector2(154.9, 135.0), Vector2(154.9, 135.0)],
+&"dash": [Vector2(153.2, 138.0), Vector2(153.3, 133.0), Vector2(153.2, 114.9), Vector2(153.9, 122.9), Vector2(153.1, 138.0), Vector2(153.2, 138.0)],
+&"fire": [Vector2(153.0, 138.0), Vector2(152.8, 138.0), Vector2(152.9, 138.0), Vector2(152.9, 138.0)],
+&"aim": [Vector2(153.2, 138.0), Vector2(153.2, 138.0), Vector2(153.0, 138.0), Vector2(152.9, 138.0), Vector2(153.0, 138.0), Vector2(153.0, 138.0)]
+}
+metadata/rifle_tip = {
+&"idle": [Vector2(165.6, 19.0), Vector2(165.7, 20.0), Vector2(165.8, 20.0), Vector2(165.7, 20.0), Vector2(165.6, 19.0), Vector2(165.4, 19.0), Vector2(165.4, 19.0), Vector2(165.4, 19.0)],
+&"boost": [Vector2(169.9, 37.0), Vector2(169.6, 38.0), Vector2(169.6, 38.0), Vector2(169.9, 37.0), Vector2(169.0, 36.0), Vector2(169.4, 37.0)],
+&"bank_left": [Vector2(171.2, 21.0), Vector2(171.1, 22.0), Vector2(171.1, 22.0), Vector2(171.2, 21.0), Vector2(170.9, 20.0), Vector2(170.9, 20.0)],
+&"bank_right": [Vector2(158.0, 21.0), Vector2(157.7, 21.0), Vector2(157.7, 21.0), Vector2(158.0, 21.0), Vector2(158.3, 20.0), Vector2(158.3, 20.0)],
+&"dash": [Vector2(165.6, 19.0), Vector2(166.3, 22.0), Vector2(169.9, 37.0), Vector2(167.1, 31.0), Vector2(165.6, 18.0), Vector2(165.6, 19.0)],
+&"fire": [Vector2(164.8, 0.0), Vector2(165.1, 0.0), Vector2(164.8, 0.0), Vector2(164.8, 0.0)],
+&"aim": [Vector2(165.6, 19.0), Vector2(164.3, 6.0), Vector2(164.4, 0.0), Vector2(164.7, 0.0), Vector2(164.8, 0.0), Vector2(164.8, 0.0)]
+}

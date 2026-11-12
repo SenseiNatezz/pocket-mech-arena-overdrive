@@ -83,6 +83,8 @@ func _trick(id: StringName, tag: String, mech: Mech) -> void:
 	match id:
 		&"standard":
 			_check("%s: ADAPTIVE CORE offers 4 cards" % tag, Upgrades.card_count() == 4)
+			_check("%s: walks / flies on fuel, so the floor hazards still hurt it" % tag,
+				not mech.glides_over_hazards() and not Parts.hovers(mech))
 		&"artillery":
 			var target := _near_target(mech)
 			_check("%s: a target in salvo range" % tag, target != null)
@@ -127,3 +129,5 @@ func _trick(id: StringName, tag: String, mech: Mech) -> void:
 			mech._crit_t = 0.0
 			_check("%s: +20%% damage on every attack (x%.2f)" % [tag, mech._chassis_damage_mult()],
 				is_equal_approx(mech._chassis_damage_mult(), 1.2))
+			_check("%s: always flies, so lava / vents / shock panels can't reach it" % tag,
+				mech.glides_over_hazards() and Parts.hovers(mech))

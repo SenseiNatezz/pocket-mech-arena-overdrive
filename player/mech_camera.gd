@@ -31,6 +31,7 @@ const TABLET_ZOOM := 1.08
 const PHONE_MAX_INCHES := 7.5
 ## Portrait: how far (world px) the view shifts down so the mech sits above the thumb controls.
 const PORTRAIT_RAISE := 80.0
+const PORTRAIT_DOWN_LEAD := 1.6  # x the normal look-ahead when aiming down on a portrait screen
 ## Dynamic camera: the most it pulls out (fraction of the zoom) for a crowd, for a boss, and in total.
 const CROWD_OUT := 0.13
 const BOSS_OUT := 0.1
@@ -169,8 +170,10 @@ func _process(delta: float) -> void:
 		target = mech.aim_dir * lead_distance * strength
 		if Layout.portrait:
 			# Narrow screen: half the sideways lead (it would push the mech to the edge), and frame the
-			# mech a little above centre, clear of the thumb controls along the bottom.
-			target = Vector2(target.x * 0.5, target.y + PORTRAIT_RAISE)
+			# mech a little above centre, clear of the thumb controls along the bottom. Aiming DOWN looks
+			# further ahead, so robots coming from below show above the buttons, not under them.
+			var down := maxf(target.y, 0.0) * (PORTRAIT_DOWN_LEAD - 1.0)
+			target = Vector2(target.x * 0.5, target.y + down + PORTRAIT_RAISE)
 		if dynamic:
 			_scan_t -= delta
 			if _scan_t <= 0.0:

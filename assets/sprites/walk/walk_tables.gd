@@ -5,6 +5,16 @@ extends RefCounted
 ## of the 8 frames of the upper body's `walk` row, in sheet px (player/weapons/held_weapon.gd).
 
 const TABLES := {
+	"aurora": {
+		"fist": [Vector2(-0.0, 4.6), Vector2(-0.5, -4.6), Vector2(-0.8, -9.1), Vector2(-0.5, -4.6), Vector2(0.0, 4.6), Vector2(-0.1, 10.5), Vector2(-0.3, 11.8), Vector2(-0.1, 10.5)],
+		"fist_left": [Vector2(-0.0, 5.2), Vector2(1.0, 18.2), Vector2(1.5, 22.2), Vector2(1.0, 18.2), Vector2(-0.0, 5.2), Vector2(-0.4, -11.1), Vector2(-0.5, -18.1), Vector2(-0.4, -11.1)],
+		"tip": [Vector2(-0.0, 11.7), Vector2(-8.3, -5.7), Vector2(-12.0, -14.0), Vector2(-8.3, -5.7), Vector2(0.0, 11.7), Vector2(7.5, 21.4), Vector2(10.2, 22.7), Vector2(7.5, 21.4)],
+	},
+	"aurora_hover": {
+		"fist": [Vector2(2.4, 3.7), Vector2(1.9, 0.3), Vector2(0.3, -0.4), Vector2(-1.5, 1.8), Vector2(-2.6, 6.0), Vector2(-2.3, 9.6), Vector2(-0.7, 10.5), Vector2(1.3, 8.0)],
+		"fist_left": [Vector2(2.9, 11.3), Vector2(3.1, 15.7), Vector2(1.4, 14.2), Vector2(-1.1, 7.6), Vector2(-2.7, 0.2), Vector2(-2.7, -4.0), Vector2(-1.1, -2.8), Vector2(1.2, 3.5)],
+		"tip": [Vector2(5.7, 11.1), Vector2(1.0, 4.9), Vector2(-4.3, 3.1), Vector2(-7.1, 6.6), Vector2(-6.1, 13.8), Vector2(-1.7, 20.9), Vector2(3.8, 23.1), Vector2(7.0, 18.8)],
+	},
 	"frost": {
 		"fist": [Vector2(-0.0, 3.9), Vector2(0.3, -7.7), Vector2(0.1, -12.9), Vector2(0.3, -7.7), Vector2(0.0, 3.9), Vector2(-1.3, 12.6), Vector2(-2.1, 15.0), Vector2(-1.3, 12.6)],
 		"fist_left": [Vector2(-0.0, 4.6), Vector2(1.8, 19.8), Vector2(2.8, 24.9), Vector2(1.8, 19.8), Vector2(0.0, 4.6), Vector2(-0.8, -13.5), Vector2(-0.9, -21.0), Vector2(-0.8, -13.5)],
@@ -14,6 +24,16 @@ const TABLES := {
 		"fist": [Vector2(1.9, 2.6), Vector2(1.9, -2.1), Vector2(0.8, -3.2), Vector2(-0.8, -0.2), Vector2(-2.3, 5.4), Vector2(-2.7, 10.3), Vector2(-1.4, 11.6), Vector2(0.6, 8.3)],
 		"fist_left": [Vector2(2.7, 10.5), Vector2(3.3, 16.2), Vector2(1.9, 15.2), Vector2(-0.5, 8.3), Vector2(-2.3, -0.2), Vector2(-2.5, -5.7), Vector2(-1.3, -5.2), Vector2(0.7, 1.4)],
 		"tip": [Vector2(5.3, 10.0), Vector2(1.0, 2.4), Vector2(-3.8, 0.4), Vector2(-6.5, 4.6), Vector2(-5.8, 13.2), Vector2(-2.0, 21.6), Vector2(3.0, 24.2), Vector2(6.2, 19.1)],
+	},
+	"griffin": {
+		"fist": [Vector2(-0.0, 4.4), Vector2(-0.2, -5.3), Vector2(-0.5, -9.9), Vector2(-0.2, -5.3), Vector2(-0.0, 4.4), Vector2(-0.5, 10.8), Vector2(-0.9, 12.3), Vector2(-0.5, 10.8)],
+		"fist_left": [Vector2(0.0, 4.9), Vector2(1.2, 17.2), Vector2(1.8, 21.1), Vector2(1.2, 17.2), Vector2(0.0, 4.9), Vector2(-0.5, -10.7), Vector2(-0.5, -17.4), Vector2(-0.5, -10.7)],
+		"tip": [Vector2(0.0, 11.5), Vector2(-8.1, -6.3), Vector2(-11.6, -14.7), Vector2(-8.1, -6.3), Vector2(-0.0, 11.5), Vector2(7.0, 21.7), Vector2(9.5, 23.2), Vector2(7.0, 21.7)],
+	},
+	"griffin_hover": {
+		"fist": [Vector2(2.2, 3.7), Vector2(1.9, -0.1), Vector2(0.5, -1.0), Vector2(-1.2, 1.2), Vector2(-2.5, 5.6), Vector2(-2.5, 9.5), Vector2(-0.9, 10.7), Vector2(1.1, 8.2)],
+		"fist_left": [Vector2(2.8, 10.4), Vector2(3.1, 14.9), Vector2(1.5, 13.7), Vector2(-0.9, 7.6), Vector2(-2.5, 0.5), Vector2(-2.5, -3.8), Vector2(-1.1, -3.0), Vector2(1.1, 2.8)],
+		"tip": [Vector2(5.6, 11.0), Vector2(1.0, 4.5), Vector2(-4.1, 2.5), Vector2(-6.9, 6.0), Vector2(-6.0, 13.4), Vector2(-1.8, 20.8), Vector2(3.5, 23.3), Vector2(6.7, 18.9)],
 	},
 	"nimbus": {
 		"fist": [Vector2(0.0, 7.4), Vector2(0.1, -7.6), Vector2(-0.1, -14.9), Vector2(0.1, -7.6), Vector2(0.0, 7.4), Vector2(-1.2, 16.8), Vector2(-2.0, 18.7), Vector2(-1.2, 16.8)],
@@ -49,5 +69,15 @@ const TABLES := {
 		"fist": [Vector2(2.5, 3.8), Vector2(2.4, -0.9), Vector2(0.9, -2.0), Vector2(-1.1, 1.0), Vector2(-2.8, 6.4), Vector2(-3.1, 11.3), Vector2(-1.5, 12.6), Vector2(0.9, 9.5)],
 		"fist_left": [Vector2(3.3, 12.1), Vector2(3.9, 17.7), Vector2(2.3, 16.3), Vector2(-0.7, 9.0), Vector2(-3.0, 0.3), Vector2(-3.3, -5.0), Vector2(-1.8, -4.0), Vector2(0.9, 3.0)],
 		"tip": [Vector2(5.9, 11.2), Vector2(1.5, 3.7), Vector2(-3.7, 1.6), Vector2(-6.8, 5.7), Vector2(-6.3, 14.2), Vector2(-2.4, 22.5), Vector2(2.9, 25.3), Vector2(6.6, 20.3)],
+	},
+	"tusker": {
+		"fist": [Vector2(-0.0, 6.8), Vector2(-1.0, -8.6), Vector2(-1.8, -15.8), Vector2(-1.0, -8.6), Vector2(-0.0, 6.8), Vector2(-0.1, 17.2), Vector2(-0.5, 19.7), Vector2(-0.1, 17.2)],
+		"fist_left": [Vector2(-0.0, 7.3), Vector2(1.3, 26.7), Vector2(2.1, 32.9), Vector2(1.3, 26.7), Vector2(0.0, 7.3), Vector2(-0.2, -16.8), Vector2(0.1, -27.1), Vector2(-0.2, -16.8)],
+		"tip": [Vector2(-0.0, 13.9), Vector2(-8.9, -9.7), Vector2(-12.9, -20.7), Vector2(-8.9, -9.7), Vector2(-0.0, 13.9), Vector2(7.4, 28.1), Vector2(9.9, 30.7), Vector2(7.4, 28.1)],
+	},
+	"tusker_hover": {
+		"fist": [Vector2(3.4, 5.5), Vector2(2.5, -0.5), Vector2(0.3, -2.1), Vector2(-2.2, 1.6), Vector2(-3.8, 8.6), Vector2(-3.4, 15.0), Vector2(-1.0, 16.8), Vector2(2.0, 12.7)],
+		"fist_left": [Vector2(4.1, 15.7), Vector2(4.3, 22.8), Vector2(1.9, 21.1), Vector2(-1.6, 11.7), Vector2(-3.7, 0.5), Vector2(-3.4, -6.3), Vector2(-1.2, -5.1), Vector2(1.8, 3.9)],
+		"tip": [Vector2(6.8, 12.8), Vector2(1.6, 4.0), Vector2(-4.4, 1.5), Vector2(-7.9, 6.4), Vector2(-7.3, 16.4), Vector2(-2.8, 26.3), Vector2(3.5, 29.4), Vector2(7.6, 23.5)],
 	},
 }

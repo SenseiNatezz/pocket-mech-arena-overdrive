@@ -132,9 +132,12 @@ func _run() -> void:
 	await _wait_until(func() -> bool: return arena.zone._pending == 0 and not arena.zone._alive.is_empty(), 20.0)
 	await _frames(5)
 	var keep: Enemy = null
+	var stand_in: Enemy = null  # a second robot, tagged "boss": the stall guard must work in boss waves too
 	for e in _enemies():
 		if keep == null and not e.is_in_group("boss"):
 			keep = e
+		elif stand_in == null and not e.is_in_group("boss"):
+			stand_in = e
 		elif not e.is_in_group("boss"):
 			e.die()
 	await _frames(5)
@@ -158,9 +161,19 @@ func _run() -> void:
 			if p.distance_to(mech.global_position) > far.distance_to(mech.global_position):
 				far = p
 		keep.global_position = far
+		if stand_in:
+			stand_in.add_to_group("boss")
+			stand_in.global_position = mech.global_position + Vector2(260, 0)
+			stand_in.set_physics_process(false)
+			stand_in.set_process(false)
 		var warped := await _wait_until(func() -> bool: return not is_instance_valid(keep) or keep.global_position.distance_to(far) > 50.0, 36.0)
 		var d := keep.global_position.distance_to(mech.global_position) if is_instance_valid(keep) else -1.0
-		_check("stuck last enemy warps in near the mech (%.0f px away)" % d, warped and d > 250.0 and d < 900.0)
+		_check("stuck last enemy warps in near the mech, even with a boss up (%.0f px away)" % d,
+			warped and d > 250.0 and d < 900.0 and is_instance_valid(stand_in))
+		if is_instance_valid(stand_in):
+			_check("the boss itself is never warped", stand_in.global_position.distance_to(mech.global_position) < 400.0)
+			stand_in.remove_from_group("boss")
+			stand_in.die()
 		if is_instance_valid(keep):
 			keep.die()
 	arena.zone.overlap_enabled = true

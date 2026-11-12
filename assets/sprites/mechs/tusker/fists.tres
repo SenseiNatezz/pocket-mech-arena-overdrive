@@ -1,0 +1,21 @@
+[gd_resource type="Resource" format=3]
+
+[resource]
+metadata/fist = {
+&"idle": [Vector2(187.5, 78.8), Vector2(187.6, 78.8), Vector2(187.7, 78.8), Vector2(187.6, 78.8), Vector2(187.5, 78.8), Vector2(187.7, 77.8), Vector2(187.7, 77.8), Vector2(187.7, 77.8)],
+&"boost": [Vector2(179.8, 87.1), Vector2(180.0, 87.1), Vector2(180.0, 87.1), Vector2(179.8, 87.1), Vector2(181.7, 86.2), Vector2(181.7, 86.2)],
+&"bank_left": [Vector2(184.8, 84.4), Vector2(184.6, 85.4), Vector2(184.6, 85.4), Vector2(184.8, 84.4), Vector2(184.5, 84.4), Vector2(184.5, 84.4)],
+&"bank_right": [Vector2(183.9, 78.9), Vector2(184.3, 79.0), Vector2(184.3, 79.0), Vector2(183.9, 78.9), Vector2(185.0, 77.0), Vector2(185.0, 77.0)],
+&"dash": [Vector2(187.5, 78.8), Vector2(187.8, 80.8), Vector2(179.8, 87.1), Vector2(186.8, 86.7), Vector2(188.0, 76.8), Vector2(187.5, 78.8)],
+&"fire": [Vector2(189.2, 55.9), Vector2(189.5, 56.9), Vector2(189.4, 55.9), Vector2(189.3, 55.9)],
+&"aim": [Vector2(187.5, 78.8), Vector2(187.8, 65.8), Vector2(189.4, 57.9), Vector2(189.6, 55.9), Vector2(189.2, 55.9), Vector2(189.2, 55.9)]
+}
+metadata/rifle_tip = {
+&"idle": [Vector2(206.9, 12.0), Vector2(206.7, 13.0), Vector2(206.9, 13.0), Vector2(206.7, 13.0), Vector2(206.9, 12.0), Vector2(206.9, 11.0), Vector2(206.8, 11.0), Vector2(206.9, 11.0)],
+&"boost": [Vector2(213.5, 34.0), Vector2(213.8, 34.0), Vector2(213.8, 34.0), Vector2(213.5, 34.0), Vector2(212.2, 33.0), Vector2(212.3, 33.0)],
+&"bank_left": [Vector2(219.7, 14.0), Vector2(219.7, 15.0), Vector2(219.7, 15.0), Vector2(219.7, 14.0), Vector2(219.8, 13.0), Vector2(219.8, 13.0)],
+&"bank_right": [Vector2(192.6, 13.0), Vector2(191.9, 14.0), Vector2(191.9, 14.0), Vector2(192.6, 13.0), Vector2(191.9, 13.0), Vector2(191.9, 13.0)],
+&"dash": [Vector2(206.9, 12.0), Vector2(206.7, 16.0), Vector2(213.5, 34.0), Vector2(207.4, 26.0), Vector2(206.7, 10.0), Vector2(206.9, 12.0)],
+&"fire": [Vector2(201.0, 0.0), Vector2(200.9, 0.0), Vector2(200.8, 0.0), Vector2(200.9, 0.0)],
+&"aim": [Vector2(206.9, 12.0), Vector2(203.3, 0.0), Vector2(200.5, 0.0), Vector2(200.6, 0.0), Vector2(201.0, 0.0), Vector2(201.0, 0.0)]
+}

@@ -79,6 +79,7 @@ var _bombard_t := 0.0
 ## Stall guard (see _check_stall).
 const STALL_TIME := 20.0
 const STALL_MAX_LEFT := 3
+const STALL_BOSS_FAR := 900.0
 var _stall_t := 0.0
 ## OVERLAPPING WAVES: once a fully spawned wave is down to its last OVERLAP_LEFT robots for OVERLAP_DELAY
 ## seconds, it counts as beaten and the next wave warps in while those stragglers are still around
@@ -343,22 +344,31 @@ func _on_enemy_died(e: Enemy) -> void:
 
 ## Stall guard: a wave down to its last few regular enemies with no kill for STALL_TIME seconds gets
 ## them warped back in near the player (with the normal warp-in telegraph), so however an enemy got
-## stuck or lost (wedged in scenery, unreachable spot), a wave can never soft-lock the run.
+## stuck or lost (wedged in scenery, unreachable spot), a wave can never soft-lock the run. In a boss
+## wave the boss is ignored and only stragglers far from the mech (STALL_BOSS_FAR) are pulled back, so a
+## robot lost behind scenery comes back while the ones already in the fight stay put.
 func _check_stall(delta: float) -> void:
-	if not is_running or _pending > 0 or _alive.is_empty() or _alive.size() > STALL_MAX_LEFT:
+	var regular := 0
+	var boss := false
+	for e in _alive:
+		if not is_instance_valid(e):
+			continue
+		if e.is_in_group("boss"):
+			boss = true
+		else:
+			regular += 1
+	if not is_running or _pending > 0 or regular == 0 or regular > STALL_MAX_LEFT:
 		_stall_t = 0.0
 		return
-	for e in _alive:
-		if not is_instance_valid(e) or e.is_in_group("boss"):
-			_stall_t = 0.0
-			return
 	_stall_t += delta
 	if _stall_t < STALL_TIME:
 		return
 	_stall_t = 0.0
 	var mech := get_tree().get_first_node_in_group("player") as Node2D
 	for e in _alive:
-		if not is_instance_valid(e) or e.dead:
+		if not is_instance_valid(e) or e.dead or e.is_in_group("boss"):
+			continue
+		if boss and mech and e.global_position.distance_to(mech.global_position) < STALL_BOSS_FAR:
 			continue
 		var pos := e.global_position
 		if mech and not spawn_points.is_empty():

@@ -15,9 +15,9 @@ dest_files=["res://.godot/imported/tempest_legs.png-099f1787c097454c93a396aca8ad
 
 [params]
 
-compress/mode=0
+compress/mode=1
 compress/high_quality=false
-compress/lossy_quality=0.7
+compress/lossy_quality=0.9
 compress/uastc_level=0
 compress/rdo_quality_loss=0.0
 compress/hdr_compression=1

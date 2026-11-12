@@ -581,6 +581,9 @@ func _on_weapon_unlocked(names: Array[String]) -> void:
 
 ## Top of the right-hand toast column: under the run info and the scrap ticker in landscape, under the
 ## status card + boss bar in portrait.
+const TOAST_PORTRAIT_SCALE := 0.72
+
+
 func _toast_y() -> float:
 	if Layout.portrait:
 		return 170.0
@@ -673,14 +676,16 @@ func _toast_stack_y(skip: Control) -> float:
 	var y := _toast_y()
 	for t: Control in [_unlock_toast, _mastery_toast, _contract_toast, _pool_toast]:
 		if t != skip and t.modulate.a > 0.05:
-			y = maxf(y, t.position.y + t.size.y + 10.0)
+			y = maxf(y, t.position.y + t.size.y * t.scale.y + 10.0)
 	return y
 
 
 ## Puts a toast at the bottom of the column, just off to the right, already counting as showing.
 func _toast_start(t: Control) -> float:
 	t.reset_size()
-	var x := (t.get_parent() as Control).size.x - 450.0
+	# Portrait (phone): smaller and hugging the right edge, so it covers less of the fight.
+	t.scale = Vector2.ONE * (TOAST_PORTRAIT_SCALE if Layout.portrait else 1.0)
+	var x := (t.get_parent() as Control).size.x - (t.size.x * t.scale.x + 10.0 if Layout.portrait else 450.0)
 	t.position = Vector2(x + 40.0, _toast_stack_y(t))
 	t.modulate.a = maxf(t.modulate.a, 0.06)
 	return x

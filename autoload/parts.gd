@@ -5,7 +5,8 @@ extends Node
 ## Every other part trades a plus for a minus (`mods`), and most add a PERK:
 ##   mods   +/- fractions on a stat, read live through mult() (crit through add(), in chance points): hp,
 ##          damage, crit, rate (every weapon), fire_rate (guns), melee_rate, speed, dash (boost speed),
-##          accel (handling), boost_cd, overdrive (overdrive gain), magnet (pickup radius), scrap. Numbers
+##          accel (handling), boost_cd, overdrive (overdrive gain), magnet (pickup radius), scrap, fuel (flight
+##          time on a full tank) and refuel (tank refill speed; both only for mechs on the WALK / FLY switch). Numbers
 ##          a perk explains instead (boosts) sit in mods too but get no stat line on the cards.
 ##   perk   STEADY (no recoil from your own weapons), SCRAPPER (kills repair while you hold a melee weapon),
 ##          HOVER (lava pools, steam vents and shock panels can't hurt
@@ -30,6 +31,7 @@ const STATS: Array[Array] = [
 	["fire_rate", "GUN FIRE RATE", 1], ["melee_rate", "MELEE SPEED", 1], ["speed", "MOVE SPEED", 1],
 	["dash", "DASH DISTANCE", 1], ["accel", "HANDLING", 1], ["boost_cd", "BOOST COOLDOWN", -1],
 	["overdrive", "OVERDRIVE GAIN", 1], ["magnet", "PICKUP RADIUS", 1], ["scrap", "SCRAP", 1],
+	["fuel", "FLIGHT FUEL", 1], ["refuel", "REFUEL SPEED", 1],
 ]
 ## Perk keyword -> [name on the card, what it does]. (`start` parts name their upgrade instead.)
 const PERKS := {
@@ -74,6 +76,9 @@ const LIST: Array[Dictionary] = [
 	{"id": &"legs_hover", "slot": &"legs", "name": "Hover Skirt", "cost": 4500,
 		"mods": {"speed": 0.08, "accel": -0.3}, "perk": &"hover", "contract": &"campaigner",
 		"desc": "Floats over the floor. Drifts when it turns."},
+	{"id": &"legs_jumpjet", "slot": &"legs", "name": "Jump-Jet Legs", "cost": 3000,
+		"mods": {"refuel": 0.6, "speed": -0.05},
+		"desc": "Pumps in the shins refill the flight tank fast after you land. A little heavier."},
 	# BACKPACK (booster)
 	{"id": &"backpack_stock", "slot": &"backpack", "name": "Stock Booster", "cost": 0, "mods": {},
 		"desc": "One boost, standard recharge."},
@@ -86,6 +91,10 @@ const LIST: Array[Dictionary] = [
 	{"id": &"backpack_assault", "slot": &"backpack", "name": "Overburn Booster", "cost": 3500,
 		"mods": {"dash": 0.15, "boost_cd": 0.25}, "start": &"boost_burst",
 		"flame": Color(1.0, 0.32, 0.5), "flame_scale": 1.45, "desc": "A huge burner that hits like a shockwave."},
+	{"id": &"backpack_tank", "slot": &"backpack", "name": "Reserve Tank", "cost": 3000,
+		"mods": {"fuel": 0.6, "refuel": -0.2},
+		"flame": Color(0.55, 1.0, 0.75), "flame_scale": 1.1,
+		"desc": "A big extra fuel tank: fly much longer. Slower to fill back up."},
 ]
 
 var owned: Array[StringName] = [&"head_stock", &"arms_stock", &"legs_stock", &"backpack_stock"]
@@ -230,9 +239,12 @@ func has_perk(perk: StringName) -> bool:
 	return false
 
 
-## HOVER: the floor hazards (lava pools, steam vents, shock panels) skip this body.
+## HOVER: the floor hazards (lava pools, steam vents, shock panels) skip this body. Also true for a mech that
+## always flies (RAVEN CLAW: no WALK / FLY switch, no fuel), which glides over them.
 func hovers(body: Node) -> bool:
-	return body != null and body.is_in_group("player") and has_perk(&"hover")
+	if body == null or not body.is_in_group("player"):
+		return false
+	return has_perk(&"hover") or (body.has_method("glides_over_hazards") and body.glides_over_hazards())
 
 
 ## DOUBLE DASH: boosts on top of the usual one.

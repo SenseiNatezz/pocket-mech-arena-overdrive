@@ -4,7 +4,7 @@ extends Node2D
 ## the mech starts on the launch pad = world origin). Main menu Settings > Tutorial, and offered
 ## to new pilots before their first New Game / Endless run). One step at a time, each with prompts for
 ## the device in use (keyboard/mouse, gamepad or touch) and a progress bar:
-##   move -> aim & attack -> boost -> scatter shot -> beam cannon -> real enemies + XP
+##   move -> aim & attack -> boost -> walk / fly (flight fuel) -> scatter shot -> beam cannon -> real enemies + XP
 ##   -> level-up pick -> repair kit -> overdrive -> done (play the campaign / endless / main menu)
 ## The mech can't be destroyed here, and nothing records waves or unlocks.
 
@@ -27,6 +27,9 @@ const STEPS := [
 	[&"boost", "BOOST DASH", "Press  SPACE  to dash. You can't be hit while dashing - dash twice.",
 		"Press  LB  to dash. You can't be hit while dashing - dash twice.",
 		"Tap  BOOST  to dash. You can't be hit while dashing - dash twice."],
+	[&"fly", "WALK OR FLY", "Press  V  to FLY: faster than walking, but it burns fuel (the arc by your ring). Fly until the tank runs dry, then let it refill.",
+		"Press  D-PAD UP  to FLY: faster than walking, but it burns fuel (the arc by your ring). Fly until the tank runs dry, then let it refill.",
+		"Tap  FLY  to take off: faster than walking, but it burns fuel (the arc on the FLY button). Fly until the tank runs dry, then let it refill."],
 	[&"scatter", "SCATTER SHOT", "RIGHT CLICK  fires a wide scatter blast - perfect up close. Try it.",
 		"LT  fires a wide scatter blast - perfect up close. Try it.",
 		"ALT FIRE  shoots a wide scatter blast - perfect up close. Try it."],
@@ -111,6 +114,10 @@ func _begin(i: int) -> void:
 				_targets.append(_dummy(_near(off), 60.0))
 		&"boost":
 			_was_boosting = false
+		&"fly":
+			# A short tank so the lesson doesn't wait out a whole 6 s flight.
+			if mech.fuel_on:
+				mech.fly_fuel = minf(mech.fly_fuel, 0.35)
 		&"beam":
 			mech.beam.state = BeamCannon.State.READY
 			mech.beam.cooldown_left = 0.0
@@ -170,6 +177,18 @@ func _progress(_delta: float) -> float:
 				_count += 1
 			_was_boosting = boosting
 			return _count / 2.0
+		&"fly":
+			# Take off (1/3), run the tank dry (2/3), wait for the refill (done). A mech that always flies
+			# (RAVEN CLAW: no switch, no fuel) skips it.
+			if not mech.fuel_on:
+				return 1.0
+			if _count == 0 and mech._hover:
+				_count = 1
+			elif _count == 1 and mech.fly_locked:
+				_count = 2
+			elif _count == 2 and not mech.fly_locked:
+				_count = 3
+			return _count / 3.0
 		&"scatter":
 			if Input.is_action_just_pressed("fire_secondary"):
 				_count += 1

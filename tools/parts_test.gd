@@ -98,7 +98,7 @@ func _all_stock() -> bool:
 
 func _stock_checks() -> void:
 	_check("a fresh save wears the four STOCK parts and owns only them (%d of %d parts)" % [Parts.owned_count(), Parts.LIST.size()],
-		_all_stock() and Parts.owned_count() == 4 and Parts.LIST.size() == 16)
+		_all_stock() and Parts.owned_count() == 4 and Parts.LIST.size() == 18)
 	var ones := true
 	for s: Array in Parts.STATS:
 		ones = ones and Parts.mult(s[0]) == 1.0

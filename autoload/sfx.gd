@@ -17,7 +17,7 @@ const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"p
 	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1,
 	&"scatter": 3, &"boost": 2, &"repair": 1, &"overdrive": 1, &"deny": 1, &"coin": 3,
 	&"sparkle": 1, &"beam_shot": 3, &"gatling_shot": 4, &"pistol_shot": 4, &"drone_shot": 2, &"death_boom": 3,
-	&"heartbeat": 1, &"boss_braam": 1, &"step": 2}
+	&"heartbeat": 1, &"boss_braam": 1, &"step": 2, &"fuel_low": 1, &"fuel_out": 1, &"fuel_ready": 1}
 
 var _streams: Dictionary = {}
 var _from_file: Dictionary = {}
@@ -104,6 +104,14 @@ func _build() -> void:
 	_streams[&"select"] = _synth(0.07, 1250, 1250, 0.3, 0.5, 0.0, 0.0, 0.0, 1.0)
 	# Walking mechs' footstep (recording: art_src/sfx/make_step.py).
 	_streams[&"step"] = _synth(0.14, 95, 45, 0.6, 0.1, 0.5, 0.3, 0.05, 2.0)
+	# FLIGHT FUEL (recordings: art_src/sfx/make_fuel_sfx.py): low-tank beeps, jets sputtering out, tank full.
+	var beeps: Array[AudioStreamWAV] = [_synth(0.075, 1046, 1046, 0.3, 0.35, 0.0, 0.0, 0.0, 1.5),
+		_synth(0.05, 1, 1, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0), _synth(0.11, 1046, 1046, 0.3, 0.35, 0.0, 0.0, 0.0, 1.5)]
+	_streams[&"fuel_low"] = _join(beeps)
+	_streams[&"fuel_out"] = _synth(0.62, 300, 55, 0.45, 0.2, 0.6, 0.3, 0.05, 1.3)
+	var chime: Array[AudioStreamWAV] = [_synth(0.07, 784, 784, 0.35, 0.1, 0.0, 0.0, 0.0, 1.0),
+		_synth(0.32, 1175, 1175, 0.35, 0.1, 0.0, 0.0, 0.0, 1.6)]
+	_streams[&"fuel_ready"] = _join(chime)
 	# Beam Rifle: sharp electric zap sweeping down into a crackle.
 	_streams[&"beam_rifle"] = _synth(0.55, 2600, 260, 0.38, 0.75, 0.7, 0.85, 0.25, 1.1)
 	# Beam Saber: airy whoosh sweeping down with a bright metallic edge.

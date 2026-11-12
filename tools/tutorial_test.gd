@@ -98,6 +98,13 @@ func _run() -> void:
 	await _step(&"boost", func() -> void:
 		await _tap(&"boost")
 		await _frames(70))
+	await _step(&"fly", func() -> void:
+		if tut._count == 0 and not mech._hover:
+			await _tap(&"hover_toggle")
+		Controls.touch_move = Vector2.RIGHT if int(Time.get_ticks_msec() / 900) % 2 == 0 else Vector2.LEFT
+		await _frames(15), 25.0)
+	Controls.touch_move = Vector2.ZERO
+	_check("landed with the tank refilled after the fly lesson", not mech._hover and not mech.fly_locked)
 	await _step(&"scatter", func() -> void: await _tap(&"fire_secondary"))
 	await _step(&"beam", func() -> void:
 		await _tap(&"beam")

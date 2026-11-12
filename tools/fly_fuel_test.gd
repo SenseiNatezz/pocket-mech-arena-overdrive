@@ -89,8 +89,41 @@ func _run() -> void:
 	await _toggle()
 	_check("takes off again on a part-filled tank", mech._hover)
 
+	# Fuel parts (autoload/parts.gd): Reserve Tank burns slower, Jump-Jet Legs refill faster.
+	await _toggle()
+	await _seconds(Mech.FLY_REFILL_TIME + 1.0)
+	_check("stock tank refilled for the parts check (%.2f)" % mech.fly_fuel, mech.fly_fuel >= 1.0 and not mech._hover)
+	var stock_burn := await _burn(mech, 1.0)
+	Parts.equipped[&"backpack"] = &"backpack_tank"
+	await _seconds(Mech.FLY_REFILL_TIME + 1.0)
+	var tank_burn := await _burn(mech, 1.0)
+	_check("Reserve Tank: flies longer (%.3f vs %.3f of the tank per second)" % [tank_burn, stock_burn],
+		tank_burn < stock_burn * 0.7 and Parts.mult("fuel") > 1.5)
+	Parts.equipped[&"backpack"] = &"backpack_stock"
+	var refill := [0.0, 0.0]
+	for i in 2:
+		Parts.equipped[&"legs"] = [&"legs_stock", &"legs_jumpjet"][i]
+		await _seconds(Mech.FLY_REFILL_TIME + 1.0)
+		await _burn(mech, 3.0)
+		await _seconds(Mech.FLY_REFILL_DELAY + 0.1)
+		var f0 := mech.fly_fuel
+		await _seconds(1.0)
+		refill[i] = mech.fly_fuel - f0
+	_check("Jump-Jet Legs: refuel faster (%.3f vs %.3f per second)" % [refill[1], refill[0]], refill[1] > refill[0] * 1.4)
+	Parts.equipped[&"legs"] = &"legs_stock"
+
 	print("FLY FUEL TEST %s (%d failed)" % ["OK" if _fails == 0 else "FAILED", _fails])
 	get_tree().quit(1 if _fails else 0)
+
+
+## Flies for `s` seconds then lands; returns how much of the tank that burned.
+func _burn(mech: Mech, s: float) -> float:
+	var f0 := mech.fly_fuel
+	await _toggle()
+	await _seconds(s)
+	var used := f0 - mech.fly_fuel
+	await _toggle()
+	return used
 
 
 func _check(what: String, ok: bool) -> void:

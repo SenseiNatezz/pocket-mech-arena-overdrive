@@ -89,7 +89,8 @@ func _draw() -> void:
 	var pressed := _touch != -1
 	if is_ready:
 		draw_circle(c, r + 5, Color(accent, 0.18 + 0.2 * _flash))
-	draw_circle(c, r, Color(accent.darkened(0.6), 0.85) if is_ready else Color(0.05, 0.08, 0.14, 0.7))
+	# (see-through fill: the fight behind the buttons stays visible on a phone)
+	draw_circle(c, r, Color(accent.darkened(0.6), 0.55) if is_ready else Color(0.05, 0.08, 0.14, 0.45))
 	if fill < 1.0:
 		draw_arc(c, r - 4, -PI / 2, -PI / 2 + TAU * fill, 40, Color(accent, 0.9), 5.0, true)
 	draw_arc(c, r, 0, TAU, 48, Color(accent.lightened(0.3), 0.95 if is_ready else 0.4), 2.5 if not pressed else 4.0, true)

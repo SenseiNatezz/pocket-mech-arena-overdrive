@@ -86,7 +86,7 @@ func _draw() -> void:
 	# The button: glow, dark body, accent rim, the weapon, a crosshair ring.
 	var grow := 1.0 + 0.08 * _pulse
 	draw_circle(c, r * grow + 8.0, Color(accent, 0.16 + (0.22 if held else 0.0)))
-	draw_circle(c, r * grow, Color(0.06, 0.04, 0.1, 0.82))
+	draw_circle(c, r * grow, Color(0.06, 0.04, 0.1, 0.5))
 	draw_circle(c, r * grow * 0.86, Color(accent.darkened(0.55), 0.55 if held else 0.38))
 	draw_arc(c, r * grow, 0, TAU, 72, Color(accent.lightened(0.35), 1.0 if held else 0.8), 4.0 if held else 3.0, true)
 	if _icon:
