@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1794332709|6103132';
+const CACHE_VERSION = '1794486054|5967752';
 /** @type {string} */
 const CACHE_PREFIX = 'Pocket Mech Aren-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
