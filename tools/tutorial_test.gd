@@ -99,11 +99,6 @@ func _run() -> void:
 		await _tap(&"boost")
 		await _frames(70))
 	await _step(&"scatter", func() -> void: await _tap(&"fire_secondary"))
-	await _step(&"heat", func() -> void:
-		await _tap(&"heat_attack_1")
-		await _frames(10)
-		await _tap(&"heat_attack_2")
-		await _frames(10))
 	await _step(&"beam", func() -> void:
 		await _tap(&"beam")
 		await _frames(50))

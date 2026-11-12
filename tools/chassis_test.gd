@@ -54,7 +54,7 @@ func _run() -> void:
 		_check("%s: art (%s)" % [tag, "own sheet" if own else "NIMBUS-07 sheet, tinted"],
 			mech._frames_gun != null and mech._frames_nogun != null
 			and (mech.sprite.self_modulate == Color.WHITE) == own)
-		if own and mech._frames_gun.resource_path.contains("/mechs/"):
+		if own and String(mech._frames_gun.get_meta(&"sheet_dir", mech._frames_gun.resource_path)).contains("/mechs/"):
 			# A sheet from the mech pipeline ships its own per-frame fist table (held weapons stay pinned)
 			# and Hangar portrait. NIMBUS-07's built-in sheet uses HeldWeapon's own tables instead.
 			var dir := Game.MECH_SPRITES.get_base_dir() % String(c["sheet"])

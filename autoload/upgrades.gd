@@ -44,7 +44,6 @@ const CATALOG := {
 	&"blades": {"name": "Orbit Blades", "max": 3, "color": Color(0.85, 0.5, 1.0)},
 	&"explosive": {"name": "Explosive Rounds", "max": 3, "color": Color(1.0, 0.5, 0.15), "not_for": [&"rockets"]},
 	&"salvage": {"name": "Salvage Repair", "max": 3, "color": Color(0.4, 1.0, 0.5)},
-	&"heat_sink": {"name": "Heat Sink", "max": 3, "color": Color(1.0, 0.6, 0.25)},
 	&"magnet": {"name": "Scavenger", "max": 2, "color": Color(0.4, 1.0, 0.85)},
 	# (effects: crit / cryo / executioner in enemies/enemy.gd, drones in player/weapons/bit_drones.gd,
 	# the rest in player/mech.gd)
@@ -57,7 +56,6 @@ const CATALOG := {
 	&"cryo": {"name": "Cryo Rounds", "max": 3, "color": Color(0.55, 0.9, 1.0)},
 	&"redline": {"name": "Redline", "max": 3, "color": Color(1.0, 0.3, 0.3)},
 	&"od_core": {"name": "Reactor Overcharge", "max": 3, "color": Color(1.0, 0.85, 0.3)},
-	&"thermal": {"name": "Thermal Amplifier", "max": 3, "color": Color(1.0, 0.5, 0.2)},
 	# `contract`: only dealt once that contract is done (autoload/contracts.gd). Effect: Game.scrap_mult.
 	&"salvage_protocol": {"name": "Salvage Protocol", "max": 3, "color": Color(1.0, 0.8, 0.28), "contract": &"jackpot"},
 }
@@ -77,8 +75,8 @@ const COMBOS := {
 		"desc": "Every explosion launches 3 homing micro-missiles at nearby robots."},
 	&"blade_storm": {"name": "Blade Storm", "needs": [&"blades", &"shield"],
 		"desc": "Orbit blades grow bigger, spin 60% faster and hit 50% harder."},
-	&"overclock": {"name": "Overclock", "needs": [&"rapid", &"heat_sink"],
-		"desc": "The hotter your mech runs, the faster it fires: up to +40% at full heat."},
+	&"overclock": {"name": "Overclock", "needs": [&"rapid", &"power"],
+		"desc": "Hold the trigger and your mech spins up: up to +40% fire rate after 3 s of firing."},
 	&"railgun": {"name": "Railgun", "needs": [&"pierce", &"power"], "only": [&"blaster", &"gatling", &"dual_pistols"],
 		"desc": "Every 6th shot is a railgun slug: 4x damage, pierces everything."},
 	&"nano_repair": {"name": "Nano Repair", "needs": [&"salvage", &"armor"],
@@ -442,8 +440,6 @@ func describe(id: StringName) -> String:
 			return "%d%% chance for hits to explode, damaging nearby enemies." % roundi(explosive_chance(n) * 100.0)
 		&"salvage":
 			return "Every kill repairs %d HP." % roundi(salvage_heal(n))
-		&"heat_sink":
-			return "+%d%% heat and overdrive gain from damage dealt." % roundi((heat_mult(n) - 1.0) * 100.0)
 		&"magnet":
 			return "XP shards fly to you from %d%% farther, and give +%d%% XP." % [
 				roundi((magnet_mult(n) - 1.0) * 100.0), roundi((xp_mult(n) - 1.0) * 100.0)]
@@ -469,9 +465,6 @@ func describe(id: StringName) -> String:
 		&"od_core":
 			return "Overdrive lasts %ds longer and charges %d%% faster." % [roundi(od_bonus_time(n)),
 				roundi((od_gain(n) - 1.0) * 100.0)]
-		&"thermal":
-			return "Nova + Cone cost %d%% less heat and deal +%d%% damage." % [roundi((1.0 - ability_cost_mult(n)) * 100.0),
-				roundi((ability_damage_mult(n) - 1.0) * 100.0)]
 		&"salvage_protocol":
 			return "+15%% scrap from everything for the rest of this run (total +%d%%)." % (n * 15)
 		&"field_repair":
@@ -563,8 +556,9 @@ func salvage_heal(lvl := -1) -> float:
 	return 2.0 * _lv(&"salvage", lvl)
 
 
-func heat_mult(lvl := -1) -> float:
-	return (1.0 + 0.35 * _lv(&"heat_sink", lvl)) * _part("heat", lvl)
+## Overdrive gain from the mech's PARTS (Reactor Arms / Gunner Arms).
+func od_part_mult(lvl := -1) -> float:
+	return _part("overdrive", lvl)
 
 
 func magnet_mult(lvl := -1) -> float:
@@ -639,9 +633,3 @@ func od_gain(lvl := -1) -> float:
 	return 1.0 + 0.2 * _lv(&"od_core", lvl)
 
 
-func ability_cost_mult(lvl := -1) -> float:
-	return (1.0 - 0.12 * _lv(&"thermal", lvl)) * _part("ability_cost", lvl)
-
-
-func ability_damage_mult(lvl := -1) -> float:
-	return 1.0 + 0.2 * _lv(&"thermal", lvl)

@@ -33,6 +33,14 @@ func _frames(n: int, mech: Mech = null) -> void:
 			get_tree().paused = false
 
 
+## SCARAB tunnels under the sand and can't be hit while buried: wait for it to come back up first.
+func _surfaced(boss: Node, mech: Mech) -> void:
+	for i in 600:
+		if not is_instance_valid(boss) or not boss.get("_buried"):
+			return
+		await _frames(1, mech)
+
+
 func _enemy_bullets() -> int:
 	var n := 0
 	var pool := get_tree().current_scene.get_node_or_null("Combat")
@@ -61,11 +69,14 @@ func _run() -> void:
 	arena.banner.connect(func(t: String, _c: Color) -> void: banners.append(t))
 	# Down through phases 2 and 3 (waiting out each roar).
 	for want in [2, 3]:
+		await _surfaced(boss, mech)
 		boss.take_damage(boss.hp - boss.max_hp * (0.66 if want == 2 else 0.33) + 1.0, boss.global_position, mech)
 		_check("phase %d at %.0f%% HP" % [want, boss.hp / boss.max_hp * 100.0], boss.phase == want)
 		await _frames(110, mech)
+	await _surfaced(boss, mech)
 	boss.take_damage(boss.hp - boss.max_hp * 0.3, boss.global_position, mech)
 	_check("still phase 3 at 30%", boss.phase == 3)
+	await _surfaced(boss, mech)
 	boss.take_damage(boss.hp - boss.max_hp * (WardenBoss.OVERDRIVE_AT - 0.01), boss.global_position, mech)
 	_check("OVERDRIVE (phase 4) at %.0f%% HP" % (boss.hp / boss.max_hp * 100.0), boss.phase == 4)
 	_check("it roars (invulnerable for a moment)", boss._roar > 1.0)
@@ -90,6 +101,7 @@ func _run() -> void:
 	_check("attacks still cycle in OVERDRIVE", boss._state != &"" )
 	# And it still dies.
 	await _frames(60, mech)
+	await _surfaced(boss, mech)
 	boss.take_damage(boss.hp + 10.0, boss.global_position, mech)
 	await _frames(200, mech)
 	_check("it dies normally", not is_instance_valid(boss) or boss.dead)

@@ -5,13 +5,13 @@ extends Node
 ## Every other part trades a plus for a minus (`mods`), and most add a PERK:
 ##   mods   +/- fractions on a stat, read live through mult() (crit through add(), in chance points): hp,
 ##          damage, crit, rate (every weapon), fire_rate (guns), melee_rate, speed, dash (boost speed),
-##          accel (handling), boost_cd, heat (heat + overdrive gain), magnet (pickup radius), scrap. Numbers
-##          a perk explains instead (ability_cost, boosts) sit in mods too but get no stat line on the cards.
+##          accel (handling), boost_cd, overdrive (overdrive gain), magnet (pickup radius), scrap. Numbers
+##          a perk explains instead (boosts) sit in mods too but get no stat line on the cards.
 ##   perk   STEADY (no recoil from your own weapons), SCRAPPER (kills repair while you hold a melee weapon),
-##          VENTS (cheaper Heat Nova / Magma Cone), HOVER (lava pools, steam vents and shock panels can't hurt
+##          HOVER (lava pools, steam vents and shock panels can't hurt
 ##          you), DOUBLE DASH (a spare boost), and `start`: every run begins with that level-up upgrade at
 ##          LV 1 (TARGET LOCK, MICRO-MISSILE POD, IMPULSE BURST). Chassis abilities stack on top.
-## Where they land: Upgrades (damage, speed, crit, heat, pickup radius, boost cooldown and ability cost, live;
+## Where they land: Upgrades (damage, speed, crit, overdrive gain, pickup radius and boost cooldown, live;
 ## the `start` upgrades in reset()), the mech (_apply_parts at spawn: HP, dash, handling, boost charges and the
 ## BACKPACK's thruster flames; _weapon_rate; recoil; DOUBLE DASH), Game.scrap_mult (scrap), lava_pool.gd and
 ## the floor hazards (HOVER, via hovers()), and SCRAPPER here.
@@ -29,13 +29,12 @@ const STATS: Array[Array] = [
 	["hp", "MAX HP", 1], ["damage", "DAMAGE", 1], ["crit", "CRIT CHANCE", 1], ["rate", "ATTACK SPEED", 1],
 	["fire_rate", "GUN FIRE RATE", 1], ["melee_rate", "MELEE SPEED", 1], ["speed", "MOVE SPEED", 1],
 	["dash", "DASH DISTANCE", 1], ["accel", "HANDLING", 1], ["boost_cd", "BOOST COOLDOWN", -1],
-	["heat", "HEAT GAIN", 1], ["magnet", "PICKUP RADIUS", 1], ["scrap", "SCRAP", 1],
+	["overdrive", "OVERDRIVE GAIN", 1], ["magnet", "PICKUP RADIUS", 1], ["scrap", "SCRAP", 1],
 ]
 ## Perk keyword -> [name on the card, what it does]. (`start` parts name their upgrade instead.)
 const PERKS := {
 	&"steady": ["STEADY", "No recoil from your own weapons."],
 	&"scrapper": ["SCRAPPER", "Kills repair 2 HP while you hold a melee weapon."],
-	&"vents": ["VENTS", "Heat Nova and Magma Cone cost 15% less heat."],
 	&"hover": ["HOVER", "Lava pools, steam vents and shock panels can't hurt you."],
 	&"double_dash": ["DOUBLE DASH", "A spare boost: dash twice in a row."],
 }
@@ -56,14 +55,15 @@ const LIST: Array[Dictionary] = [
 	{"id": &"arms_stock", "slot": &"arms", "name": "Stock Arms", "cost": 0, "mods": {},
 		"desc": "Balanced servos for guns and blades alike."},
 	{"id": &"arms_gunner", "slot": &"arms", "name": "Gunner Arms", "cost": 2500,
-		"mods": {"fire_rate": 0.15, "heat": -0.2}, "perk": &"steady",
-		"desc": "Fast trigger servos and braced elbows. The vents can't keep up."},
+		"mods": {"fire_rate": 0.15, "overdrive": -0.2}, "perk": &"steady",
+		"desc": "Fast trigger servos and braced elbows. The reactor can't keep up."},
 	{"id": &"arms_brawler", "slot": &"arms", "name": "Brawler Arms", "cost": 2500,
 		"mods": {"melee_rate": 0.2, "hp": -0.1}, "perk": &"scrapper",
 		"desc": "Light, quick arms for blade work. Less plating."},
-	{"id": &"arms_thermal", "slot": &"arms", "name": "Thermal Arms", "cost": 3500,
-		"mods": {"heat": 0.3, "ability_cost": -0.15, "rate": -0.1}, "perk": &"vents",
-		"desc": "Heat sinks that feed Nova and Cone. Heavy to swing."},
+	# (id kept from the old Thermal Arms, so saves that own it keep it)
+	{"id": &"arms_thermal", "slot": &"arms", "name": "Reactor Arms", "cost": 3500,
+		"mods": {"overdrive": 0.35, "damage": 0.05, "rate": -0.1},
+		"desc": "Reactor lines run down both arms: overdrive fills fast. Heavy to swing."},
 	# LEGS (movement)
 	{"id": &"legs_stock", "slot": &"legs", "name": "Stock Legs", "cost": 0, "mods": {},
 		"desc": "Steady footing, no surprises."},

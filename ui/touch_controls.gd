@@ -9,9 +9,8 @@ extends CanvasLayer
 ##           action games. The auto-aim target gets a lock-on marker (ui/auto_aim_marker.gd).
 ## The right-hand cluster is laid out in code for landscape and portrait (Layout.changed); everything
 ## else keeps the anchors/offsets authored in the scene.
-## SIMPLE layout (Settings > Touch: Simple, the default): FIRE, BOOST, ALT FIRE, BEAM and one smart
-## HEAT button (Nova when robots are close, else Cone - Mech._smart_heat); Self-repair and Overdrive
-## trigger on their own (Mech, touch + simple). FULL layout: every ability gets its own button.
+## SIMPLE layout (Settings > Touch: Simple, the default): FIRE, BOOST, ALT FIRE and BEAM; Self-repair and
+## Overdrive trigger on their own (Mech, touch + simple). FULL layout: they get their own buttons too.
 ## With AUTO-FIRE (Settings, default on) the mech also fires at the auto-aim target by itself
 ## (Controls.auto_firing); FIRE is still there to aim by hand.
 
@@ -20,22 +19,20 @@ const TOUCH_BUTTON := preload("res://ui/touch_button.gd")
 ## [node, ring (1 = inner, 2 = outer), angle in degrees around the FIRE button (180 = left, 270 = up), size]
 const CLUSTER := [
 	["Boost", 1, 180.0, 96.0],
-	["AltFire", 1, 214.0, 84.0],
-	["Beam", 1, 247.0, 84.0],
-	["Nova", 1, 280.0, 84.0],
-	["Cone", 2, 196.0, 84.0],
-	["Repair", 2, 228.0, 84.0],
-	["Overdrive", 2, 260.0, 96.0],
+	["AltFire", 1, 222.0, 86.0],
+	["Beam", 1, 264.0, 86.0],
+	["Repair", 2, 206.0, 88.0],
+	["Overdrive", 2, 246.0, 96.0],
+	["Mode", 2, 277.0, 76.0],
 ]
 const SIMPLE_CLUSTER := [
 	["Boost", 1, 180.0, 100.0],
 	["AltFire", 1, 222.0, 86.0],
 	["Beam", 1, 264.0, 86.0],
-	["Heat", 2, 208.0, 100.0],
+	["Mode", 2, 222.0, 76.0],
 ]
 ## Buttons only one of the two layouts shows.
-const FULL_ONLY := ["Nova", "Cone", "Repair", "Overdrive"]
-const SIMPLE_ONLY := ["Heat"]
+const FULL_ONLY := ["Repair", "Overdrive"]
 ## Per orientation: FIRE button centre (from the bottom-right corner), its size, inner/outer arc radius.
 const LANDSCAPE_GEOM := {"center": Vector2(-165, -155), "fire": 170.0, "inner": 170.0, "outer": 285.0}
 const PORTRAIT_GEOM := {"center": Vector2(-150, -160), "fire": 160.0, "inner": 165.0, "outer": 262.0}
@@ -57,16 +54,6 @@ func _ready() -> void:
 	# one frame on desktop when an arena loaded.
 	visible = _wanted and not get_tree().paused
 	Controls.device_changed.connect(_on_device_changed)
-	# SIMPLE layout's smart HEAT button (its own action; the mech picks Nova or Cone).
-	if not InputMap.has_action(&"heat_smart"):
-		InputMap.add_action(&"heat_smart")
-	var heat: Control = TOUCH_BUTTON.new()
-	heat.name = "Heat"
-	heat.set("action", &"heat_smart")
-	heat.set("label", "HEAT")
-	heat.set("accent", Color(1.0, 0.5, 0.15))
-	heat.set("indicator", TOUCH_BUTTON.Indicator.HEAT_COST_CONE)
-	$Root.add_child(heat)
 	for c: Control in $Root.get_children():
 		_authored[c.name] = [c.anchor_left, c.anchor_top, c.anchor_right, c.anchor_bottom,
 			c.offset_left, c.offset_top, c.offset_right, c.offset_bottom]
@@ -109,8 +96,8 @@ func _apply_layout(portrait: bool) -> void:
 		_place_corner($Root.get_node(String(p[0])), cluster_center(p[0], portrait, _simple), p[3])
 	for n: String in FULL_ONLY:
 		($Root.get_node(n) as Control).visible = not _simple
-	for n: String in SIMPLE_ONLY:
-		($Root.get_node(n) as Control).visible = _simple
+	# WALK / HOVER: only for a mech that has both (Game.chassis_can_switch).
+	($Root/Mode as Control).visible = Game.chassis_can_switch()
 	if portrait:
 		var use := $Root/Use as Control
 		use.offset_left = PORTRAIT_USE[0]
@@ -141,3 +128,5 @@ func _process(_delta: float) -> void:
 		visible = show
 	if _simple != Game.touch_simple:
 		_apply_layout(Layout.portrait)
+	# The WALK / FLY button says what a tap does: FLY while walking, WALK while flying.
+	$Root/Mode.set(&"label", "WALK" if Game.hover_mode else "FLY")

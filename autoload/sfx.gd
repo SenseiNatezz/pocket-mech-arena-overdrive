@@ -15,7 +15,7 @@ const FILE_GAIN_DB := 7.0
 const MAX_VOICES := 4
 const VOICE_CAP := {&"shoot": 3, &"enemy_shoot": 4, &"hit": 3, &"select": 2, &"pickup": 3, &"missile": 3,
 	&"explode": 4, &"saber": 3, &"dash": 2, &"alarm": 1, &"levelup": 1, &"charge": 2, &"laser": 1,
-	&"scatter": 3, &"boost": 2, &"nova": 2, &"cone": 2, &"repair": 1, &"overdrive": 1, &"deny": 1, &"coin": 3,
+	&"scatter": 3, &"boost": 2, &"repair": 1, &"overdrive": 1, &"deny": 1, &"coin": 3,
 	&"sparkle": 1, &"beam_shot": 3, &"gatling_shot": 4, &"pistol_shot": 4, &"drone_shot": 2, &"death_boom": 3,
 	&"heartbeat": 1, &"boss_braam": 1, &"step": 2}
 
@@ -114,8 +114,6 @@ func _build() -> void:
 	# Dedicated ability sounds (each used to borrow one of the sounds above).
 	_streams[&"scatter"] = _synth(0.15, 260, 110, 0.3, 0.5, 0.75, 0.5, 0.2, 2.0)
 	_streams[&"boost"] = _synth(0.4, 160, 70, 0.25, 0.2, 0.85, 0.3, 0.08, 1.6)
-	_streams[&"nova"] = _synth(0.7, 80, 30, 0.6, 0.1, 0.9, 0.3, 0.03, 1.6)
-	_streams[&"cone"] = _synth(0.6, 140, 90, 0.2, 0.0, 0.95, 0.45, 0.15, 1.2, 0.03)
 	_streams[&"repair"] = _synth(0.4, 500, 1300, 0.35, 0.0, 0.15, 0.3, 0.3, 1.3)
 	_streams[&"overdrive"] = _synth(0.9, 120, 600, 0.45, 0.5, 0.4, 0.15, 0.4, 1.0, 0.02)
 	_streams[&"deny"] = _synth(0.12, 170, 150, 0.35, 0.8, 0.0, 0.0, 0.0, 0.6)

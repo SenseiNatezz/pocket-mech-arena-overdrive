@@ -51,7 +51,7 @@ func _run() -> void:
 	var mech := get_tree().get_first_node_in_group("player") as Mech
 	_check("the range reloaded with RAVEN CLAW", mech != null and mech._chassis_id == &"phantom")
 	_check("the weapon carried over (sniper)", mech != null and mech.weapon == &"sniper")
-	_check("own art, not the tinted NIMBUS sheet", mech != null and mech._frames_gun.resource_path.contains("/mechs/raven/"))
+	_check("own art, not the tinted NIMBUS sheet", mech != null and mech.walk_art == "raven" and mech._hover and String(mech._frames_gun.get_meta(&"sheet_dir", "")).contains("/mechs/raven"))
 	_check("save() would still write the Hangar chassis (%s)" % home, Game.range_chassis_restore == home)
 	var tog: Button = _range().panel.get("_mech_toggle")
 	_check("toggle names the mech (%s)" % tog.text, tog.text.begins_with("MECH: RAVEN CLAW"))

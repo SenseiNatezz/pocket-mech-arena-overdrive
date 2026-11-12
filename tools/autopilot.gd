@@ -55,10 +55,6 @@ func _physics_process(delta: float) -> void:
 		if best < 280.0 and _alt_t <= 0.0:
 			_alt_t = 1.2
 			_tap(&"fire_secondary")
-		if best < 170.0 and mech.heat >= mech.nova_cost:
-			_tap(&"heat_attack_1")
-		elif best < 260.0 and mech.heat >= mech.cone_cost + 45.0:
-			_tap(&"heat_attack_2")
 	else:
 		Input.action_release(&"fire_primary")
 		move = _follow(pos, _objective(pos), delta)

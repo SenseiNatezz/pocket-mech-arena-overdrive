@@ -32,6 +32,21 @@ const DEMO := [
 	["circle", 240, Vector2.RIGHT, Vector2.ZERO, -1],
 	["circle_dash", 150, Vector2.RIGHT, Vector2.ZERO, 70],
 ]
+## --walk-modes: the WALK / HOVER switch - the same short run on foot, then `switch` flips the mode and it is
+## flown again.
+const MODES := [
+	["free_right", 50, Vector2.RIGHT, Vector2.ZERO, -1],
+	["free_down", 50, Vector2.DOWN, Vector2.ZERO, -1],
+	["stop", 30, Vector2.ZERO, Vector2.ZERO, -1],
+	["circle", 200, Vector2.RIGHT, Vector2.ZERO, -1],
+	["circle_dash", 110, Vector2.RIGHT, Vector2.ZERO, 50],
+	["switch", 40, Vector2.ZERO, Vector2.ZERO, -1],
+	["free_right", 50, Vector2.RIGHT, Vector2.ZERO, -1],
+	["free_down", 50, Vector2.DOWN, Vector2.ZERO, -1],
+	["stop", 30, Vector2.ZERO, Vector2.ZERO, -1],
+	["circle", 200, Vector2.RIGHT, Vector2.ZERO, -1],
+	["circle_dash", 110, Vector2.RIGHT, Vector2.ZERO, 50],
+]
 const CIRCLE_FRAMES := 170.0
 
 var _out := "user://walk"
@@ -78,11 +93,21 @@ func _run() -> void:
 	var home := mech.global_position
 	var n := 0
 	var seen := {}
-	var demo := OS.get_cmdline_user_args().has("--walk-demo")
+	var modes := OS.get_cmdline_user_args().has("--walk-modes")
+	var demo := OS.get_cmdline_user_args().has("--walk-demo") or modes
 	var dummy: Enemy
 	if demo:
 		Controls.force_auto_aim = true
-	for step: Array in (DEMO if demo else STEPS):
+	for step: Array in (MODES if modes else (DEMO if demo else STEPS)):
+		if step[0] == "switch":
+			var was := mech._hover
+			_check(Game.chassis_can_switch(mech._chassis_id), "this mech has both walking and hovering art")
+			Input.action_press(&"hover_toggle")
+			await get_tree().physics_frame
+			Input.action_release(&"hover_toggle")
+			await get_tree().physics_frame
+			_check(mech._hover != was and mech.walk_art.ends_with("_hover") == mech._hover, "the switch flips walk / hover (%s)" % mech.walk_art)
+			_check(WalkTables.TABLES.has(mech.walk_art), "hand offsets exist for %s" % mech.walk_art)
 		if String(step[0]).begins_with("circle") and dummy == null:
 			# The ring the mech walks has this radius; the target robot stands in the middle of it.
 			var r := mech.move_speed * Upgrades.move_mult() * CIRCLE_FRAMES / 60.0 / TAU
@@ -134,10 +159,11 @@ func _run() -> void:
 	if walks and not demo:
 		_check(seen.has("stand:stand"), "stands on its legs")
 		_check(seen.has("forward:walk"), "walk cycle plays while moving")
-		_check(seen.has("turn:walk"), "legs shuffle round under a turned body")
+		_check(seen.has("turn:stand" if mech._hover else "turn:walk"), "legs come round under a turned body")
 		_check(seen.has("dash:slide"), "dash uses the slide pose")
 		_check(seen.has("forward:body_walk"), "the upper body walks in step with the legs")
 		_check(Sfx._from_file.get(&"step", false), "the footstep sound is loaded from its recording")
+		_check(WalkTables.TABLES.has(mech.walk_art), "hand / rifle-tip walk offsets exist for %s" % mech.walk_art)
 		_check(not seen.has("flight"), "body never plays a flight pose")
 	print("WALK SHOTS %s (%d failed, %d crops)" % ["OK" if _failed == 0 else "FAILED", _failed, n])
 	get_tree().quit(1 if _failed > 0 else 0)

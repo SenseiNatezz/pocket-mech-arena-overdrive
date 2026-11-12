@@ -238,6 +238,9 @@ var camera_zoom := 1
 var fullscreen := true
 var auto_fire := true
 var touch_simple := true
+## WALK / HOVER switch (the `hover_toggle` button, player/mech.gd): true = a mech that has both sets of art
+## (assets/sprites/walk/<sheet>_hover_*.png next to its walking ones) floats instead of walking.
+var hover_mode := OS.get_cmdline_user_args().has("--hover-mode")
 ## Settings: DYNAMIC CAMERA (zoom follows the fight, punch-ins, boss focus - player/mech_camera.gd),
 ## controller RUMBLE (Combat.rumble) and floating DAMAGE NUMBERS (Combat.damage_number). All on by default.
 var dynamic_camera := true
@@ -917,9 +920,11 @@ func chassis_frames(id: StringName = &"", gun := true) -> SpriteFrames:
 	return _frames_cache[key]
 
 
-## WALKING art (art_src/halo_forge/tools/render_walk.py): a design with a legs sheet walks on the ground -
-## its legs turn the way it moves and the upper body turns to the aim on top (player/mech.gd). "" = the
-## design has none and hovers as before. Chassis that borrow NIMBUS-07's art walk on NIMBUS-07's legs.
+## TWO-LAYER art (art_src/halo_forge/tools/render_walk.py): the legs and the upper body are separate sprites -
+## the legs turn the way the mech moves and the upper body turns to the aim on top (player/mech.gd). "" = the
+## design has none (the old one-piece hover art). Chassis that borrow NIMBUS-07's art walk on NIMBUS-07's legs.
+## Every design WALKS on the ground except the ones in WALK_HOVERS, which float on the same two layers.
+const WALK_HOVERS: Array[String] = ["raven"]
 const WALK_SPRITES := "res://assets/sprites/walk/%s_%s.png"
 ## The hip joint in sheet px from the cell centre (render_walk.py prints HIP_PX; front of the mech is -y).
 const WALK_HIP := Vector2(0, -8.2)
@@ -931,7 +936,24 @@ func chassis_walk_art(id: StringName = &"") -> String:
 	var sheet := String(chassis_info(id).get("sheet", &"nimbus"))
 	if chassis_placeholder(id):
 		sheet = "nimbus"
+	if hover_mode and ResourceLoader.exists(WALK_SPRITES % [sheet + "_hover", "legs"]):
+		return sheet + "_hover"
 	return sheet if ResourceLoader.exists(WALK_SPRITES % [sheet, "legs"]) else ""
+
+
+## True for a two-layer chassis that hovers instead of walking (RAVEN CLAW always; a mech with both sets of
+## art while the WALK / HOVER switch is on HOVER).
+func chassis_hovers(id: StringName = &"") -> bool:
+	var art := chassis_walk_art(id)
+	return art in WALK_HOVERS or art.ends_with("_hover")
+
+
+## True when this chassis can switch between walking and hovering (it has both sets of art).
+func chassis_can_switch(id: StringName = &"") -> bool:
+	if OS.get_cmdline_user_args().has("--hover"):
+		return false
+	var sheet := "nimbus" if chassis_placeholder(id) else String(chassis_info(id).get("sheet", &"nimbus"))
+	return ResourceLoader.exists(WALK_SPRITES % [sheet, "legs"]) and ResourceLoader.exists(WALK_SPRITES % [sheet + "_hover", "legs"])
 
 
 ## The chassis's sprite frames with the legs cut away (same animations and cells as chassis_frames).
@@ -942,6 +964,7 @@ func chassis_torso_frames(id: StringName = &"", gun := true) -> SpriteFrames:
 		var tex: Texture2D = load(WALK_SPRITES % [art, "torso" if gun else "torso_nogun"])
 		var src := chassis_frames(id, gun)
 		var out := SpriteFrames.new()
+		out.set_meta(&"sheet_dir", src.resource_path.get_base_dir())  # (held_weapon.gd finds fists.tres by it)
 		out.remove_animation(&"default")
 		for anim in src.get_animation_names():
 			out.add_animation(anim)
@@ -1456,6 +1479,7 @@ func save() -> void:
 	cfg.set_value("settings", "fullscreen", fullscreen)
 	cfg.set_value("settings", "auto_fire", auto_fire)
 	cfg.set_value("settings", "touch_simple", touch_simple)
+	cfg.set_value("settings", "hover_mode", hover_mode)
 	cfg.set_value("settings", "dynamic_camera", dynamic_camera)
 	cfg.set_value("settings", "rumble", rumble)
 	cfg.set_value("settings", "damage_numbers", damage_numbers)
@@ -1602,6 +1626,7 @@ func _load() -> void:
 	fullscreen = bool(cfg.get_value("settings", "fullscreen", true))
 	auto_fire = bool(cfg.get_value("settings", "auto_fire", true))
 	touch_simple = bool(cfg.get_value("settings", "touch_simple", true))
+	hover_mode = bool(cfg.get_value("settings", "hover_mode", false)) or OS.get_cmdline_user_args().has("--hover-mode")
 	dynamic_camera = bool(cfg.get_value("settings", "dynamic_camera", true))
 	rumble = bool(cfg.get_value("settings", "rumble", true))
 	damage_numbers = bool(cfg.get_value("settings", "damage_numbers", true))

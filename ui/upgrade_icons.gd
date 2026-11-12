@@ -66,11 +66,6 @@ static func draw(ci: CanvasItem, id: StringName, c: Vector2, s: float, col: Colo
 		&"salvage", &"field_repair":
 			ci.draw_rect(Rect2(c - Vector2(s * 0.22, s * 0.8), Vector2(s * 0.44, s * 1.6)), col)
 			ci.draw_rect(Rect2(c - Vector2(s * 0.8, s * 0.22), Vector2(s * 1.6, s * 0.44)), col)
-		&"heat_sink":
-			ci.draw_arc(c + Vector2(0, s * 0.45), s * 0.35, 0, TAU, 24, col, w, true)
-			ci.draw_circle(c + Vector2(0, s * 0.45), s * 0.22, Color(1.0, 0.5, 0.2))
-			ci.draw_rect(Rect2(c + Vector2(-s * 0.13, -s * 0.9), Vector2(s * 0.26, s * 1.1)), col, false, w)
-			ci.draw_rect(Rect2(c + Vector2(-s * 0.05, -s * 0.3), Vector2(s * 0.1, s * 0.6)), Color(1.0, 0.5, 0.2))
 		&"salvage_protocol":
 			# A gold scrap nut with a rising chevron (more scrap).
 			var nut := PackedVector2Array()
@@ -151,11 +146,5 @@ static func draw(ci: CanvasItem, id: StringName, c: Vector2, s: float, col: Colo
 				var d := Vector2.from_angle(TAU * i / 8.0)
 				ci.draw_line(c + d * s * 0.6, c + d * s * (0.95 if i % 2 == 0 else 0.8), col, w)
 			ci.draw_circle(c, s * 0.18, Color(1, 1, 1, 0.95))
-		&"thermal":
-			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -s * 0.9), c + Vector2(s * 0.5, -s * 0.05),
-				c + Vector2(s * 0.42, s * 0.5), c + Vector2(0, s * 0.85), c + Vector2(-s * 0.42, s * 0.5),
-				c + Vector2(-s * 0.5, -s * 0.05)]), Color(col, 0.85))
-			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(0, -s * 0.2), c + Vector2(s * 0.24, s * 0.3),
-				c + Vector2(0, s * 0.6), c + Vector2(-s * 0.24, s * 0.3)]), Color(1.0, 0.9, 0.5))
 		_:
 			ci.draw_circle(c, s * 0.5, col)

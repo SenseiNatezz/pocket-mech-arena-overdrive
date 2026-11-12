@@ -7,21 +7,20 @@ extends CharacterBody2D
 ##                    (player/weapons/melee_kit.gd). The gatling + rockets are drawn in the gun hand.
 ##   fire_secondary - scatter blast (6 pellets), short cooldown
 ##   boost          - quick dash with i-frames, cooldown shown as a ring around the mech
-##   heat_attack_1  - Heat Nova: shockwave around the mech (costs heat)
-##   heat_attack_2  - Magma Cone: cone blast toward the aim (costs heat)
 ##   self_repair    - heal using a limited repair charge
 ##   overdrive      - when the meter is full: faster fire, more damage, more speed for a few seconds
 ##   use            - interact with the nearest interactable (repair stations, doors, terminals)
 ##   beam           - Beam Cannon: charge, then a sustained piercing beam (see weapons/beam_cannon.gd)
-##   heat_smart     - touch SIMPLE layout's HEAT button: Nova when robots are close, otherwise Cone
-## Heat and overdrive both build up from damage the mech deals.
+## Overdrive builds up from damage the mech deals.
 ## Level-up upgrades (autoload/upgrades.gd) are read live from Upgrades: stat multipliers, Triple Shot,
 ## Target Lock, Defense Shield, Orbit Blades, Salvage Repair, Bit Drones, Micro-Missiles, Arc Emitter,
-## Cryo Rounds, Redline, Impulse Burst, Reactive Armor, Reactor Overcharge, Thermal Amplifier...
+## Cryo Rounds, Redline, Impulse Burst, Reactive Armor, Reactor Overcharge, Overclock...
 ## CHASSIS tricks (Game.CHASSIS): Standard = 4 level-up cards (Upgrades.card_count), Striker = boost
 ## slices + kills recharge the boost, Bulwark = boost rams + SIEGE MODE (hold still to brace).
 
 signal stats_changed
+## The WALK / HOVER switch was flipped (true = now hovering).
+signal mode_changed(hover: bool)
 signal died
 ## A hit landed (after the shield): `amount` HP lost, `from` = where it came from (the shooter / attacker when
 ## known, else the hit's origin) - the HUD's hit-direction markers and big-hit flash (ui/hud.gd).
@@ -41,17 +40,6 @@ signal hurt(amount: float, from: Vector2)
 @export var bolt_speed := 1100.0
 @export var secondary_cooldown := 0.9
 @export var pellet_damage := 14.0
-
-@export_group("Heat")
-@export var heat_max := 100.0
-## Heat gained per point of damage dealt.
-@export var heat_per_damage := 0.22
-@export var nova_cost := 40.0
-@export var nova_radius := 175.0
-@export var nova_damage := 60.0
-@export var cone_cost := 30.0
-@export var cone_range := 270.0
-@export var cone_damage := 45.0
 
 @export_group("Survival")
 @export var max_hp := 100.0
@@ -131,7 +119,9 @@ const BLINK_CRIT := 2.0
 const AUTO_REPAIR_HP := 0.35
 
 var hp := 100.0
-var heat := 0.0
+## OVERCLOCK combo: 0..1, rising while the trigger is held (full after OVERCLOCK_SPIN s), falling when not.
+var _spin_up := 0.0
+const OVERCLOCK_SPIN := 3.0
 var overdrive_meter := 0.0
 var overdrive_left := 0.0
 var repair_charges := 3
@@ -183,14 +173,18 @@ var _frames_nogun: SpriteFrames
 ## the mech moves (or the opposite way, stepping backwards, when that is behind the aim) while the upper
 ## body turns to the aim; a dash drops them into the slide pose. null = this design hovers (old art).
 var legs: AnimatedSprite2D
+## Which design's two-layer art this is ("" = none; WalkTables key), and whether it floats (RAVEN CLAW): the
+## same layers and upper-body motion, but the legs hang tucked and trail, with no footsteps.
+var walk_art := ""
+var _hover := false
 var _legs_back := false
 var _legs_turning := false
 const LEGS_TURN := 14.0
 ## WALKING mechs: the upper body is alive on top of the legs. It swings round to the aim on a spring (a
 ## little overshoot and settle instead of a stiff snap), the shoulders counter-swing against the hips on
 ## every step, each shot kicks the gun shoulder back, and the body leans into the way it is walking.
-const TORSO_STIFF := 380.0
-const TORSO_DAMP := 21.0
+const TORSO_STIFF := 200.0
+const TORSO_DAMP := 17.0
 const STEP_TWIST := 0.05         # extra shoulder counter-swing per step, radians each way (most is drawn)
 const STEP_BOB := 0.035          # the body swells / shrinks this much as it rises and drops on each step
 const RECOIL_TWIST := 0.014      # radians per px of the sprite's recoil kick
@@ -200,6 +194,16 @@ var _torso_vel := 0.0
 var _step_twist := 0.0
 var _sprite_scale := Vector2.ONE
 var _last_step := -1
+var _hover_t := 0.0
+## HOVERING: the body has weight like URAGUN's mech - it pitches into the way it starts moving, rocks back
+## when it stops (a spring, a little underdamped), and the hanging legs trail behind it. It also glides:
+## slower to pick up speed and to stop than a walking mech.
+const HOVER_LEAN := 10.0         # px the body leans at full speed
+const HOVER_LEAN_STIFF := 70.0
+const HOVER_LEAN_DAMP := 7.0
+const HOVER_GLIDE := 0.5         # share of the walking acceleration
+var _lean := Vector2.ZERO
+var _lean_vel := Vector2.ZERO
 ## TEMPEST salvo timer; RAVEN CLAW crit window after a blink.
 var _salvo_t := 1.5
 var _crit_t := 0.0
@@ -220,10 +224,8 @@ var _arcing := false
 ## PARTS DOUBLE DASH (Twin Booster): spare boosts ready on top of the usual one, and how many it holds.
 var _boost_spare := 0
 var _boost_spares_max := 0
-## Base values the Reactor Overcharge / Thermal Amplifier upgrades scale.
+## Base value the Reactor Overcharge upgrade scales.
 var _base_od_time := 8.0
-var _base_nova_cost := 40.0
-var _base_cone_cost := 30.0
 
 ## HP lost when falling into a pit.
 const PIT_DAMAGE := 15.0
@@ -276,8 +278,6 @@ func _ready() -> void:
 		siege.mech = self
 		add_child(siege)
 	_base_od_time = overdrive_time
-	_base_nova_cost = nova_cost
-	_base_cone_cost = cone_cost
 	_refresh_upgrade_stats()
 	stats_changed.emit.call_deferred()
 	_safe_pos = global_position
@@ -287,20 +287,7 @@ func _ready() -> void:
 	# A chassis whose own design isn't rendered yet flies NIMBUS-07's art tinted in its colour.
 	sprite.self_modulate = Game.chassis_tint(_chassis_id)
 	_sprite_scale = sprite.scale
-	if Game.chassis_walk_art(_chassis_id) != "":
-		_frames_gun = Game.chassis_torso_frames(_chassis_id, true)
-		_frames_nogun = Game.chassis_torso_frames(_chassis_id, false)
-		sprite.sprite_frames = _frames_gun
-		sprite.play(&"idle")
-		legs = AnimatedSprite2D.new()
-		legs.sprite_frames = Game.chassis_legs_frames(_chassis_id)
-		legs.material = sprite.material  # (shared: armor paint + hit flash)
-		legs.self_modulate = sprite.self_modulate
-		legs.scale = _sprite_scale * _body_scale
-		legs.rotation = body.rotation
-		add_child(legs)
-		move_child(legs, body.get_index())
-		legs.play(&"stand")
+	_setup_layers()
 	muzzle_flash.modulate = Game.energy_color()
 	for t in thrusters:
 		t.modulate = Game.booster_color().lightened(0.25)
@@ -328,12 +315,8 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("boost"):
 		_try_boost(move)
-	if Input.is_action_just_pressed("heat_attack_1"):
-		_heat_nova()
-	if Input.is_action_just_pressed("heat_attack_2"):
-		_magma_cone()
-	if InputMap.has_action(&"heat_smart") and Input.is_action_just_pressed("heat_smart"):
-		_smart_heat()
+	if Input.is_action_just_pressed("hover_toggle"):
+		toggle_hover()
 	if Input.is_action_just_pressed("self_repair"):
 		_self_repair()
 	if Input.is_action_just_pressed("overdrive"):
@@ -357,7 +340,7 @@ func _physics_process(delta: float) -> void:
 			_afterimage_t = 0.025
 			_spawn_afterimage()
 	else:
-		velocity = velocity.move_toward(move * speed, acceleration * delta)
+		velocity = velocity.move_toward(move * speed, acceleration * (HOVER_GLIDE if _hover else 1.0) * delta)
 	velocity += _knockback
 	_knockback = _knockback.lerp(Vector2.ZERO, 1.0 - exp(-12.0 * delta))
 	var tractor := _tractor if _boost_left <= 0.0 else Vector2.ZERO
@@ -391,6 +374,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _tick_timers(delta: float) -> void:
+	_spin_up = clampf(_spin_up + delta * (1.0 / OVERCLOCK_SPIN if Controls.is_firing() else -1.0), 0.0, 1.0)
 	boost_cooldown_left = maxf(boost_cooldown_left - delta, 0.0)
 	# PARTS DOUBLE DASH: a finished cooldown tops up a spare boost first (and recharges on for the next).
 	if boost_cooldown_left <= 0.0 and _boost_spare < _boost_spares_max:
@@ -833,38 +817,6 @@ func _boost_contact() -> void:
 		Sfx.play(&"hit", -6.0, 0.1)
 
 
-func _heat_nova() -> void:
-	if heat < nova_cost:
-		_deny()
-		return
-	heat -= nova_cost
-	Combat.area_damage(global_position, nova_radius, nova_damage * Upgrades.damage_mult() * Upgrades.ability_damage_mult(),
-		self, false, Vector2.ZERO, PI, 520.0)
-	Combat.shockwave(global_position, nova_radius, Color(1.0, 0.5, 0.15))
-	Combat.shockwave(global_position, nova_radius * 0.6, Color(1.0, 0.85, 0.4), 0.25)
-	Sfx.play(&"nova", -2.0)
-	Combat.shake(0.3)
-	stats_changed.emit()
-
-
-func _magma_cone() -> void:
-	if heat < cone_cost:
-		_deny()
-		return
-	heat -= cone_cost
-	Combat.area_damage(global_position, cone_range, cone_damage * Upgrades.damage_mult() * Upgrades.ability_damage_mult(),
-		self, false, aim_dir, deg_to_rad(35.0), 320.0)
-	var cone := Node2D.new()
-	cone.set_script(preload("res://player/weapons/cone_fx.gd"))
-	cone.set("origin", global_position)
-	cone.set("dir", aim_dir)
-	cone.set("reach", cone_range)
-	get_parent().add_child(cone)
-	Sfx.play(&"cone", -4.0)
-	Combat.shake(0.2)
-	stats_changed.emit()
-
-
 func _self_repair() -> void:
 	if repair_charges <= 0 or hp >= max_hp or _repair_cd > 0.0:
 		_deny()
@@ -893,17 +845,6 @@ func _activate_overdrive() -> void:
 
 func _deny() -> void:
 	Sfx.play(&"deny", -10.0, 0.0)
-
-
-## Touch SIMPLE layout's HEAT button: Heat Nova when two or more robots (or a boss) are inside its
-## radius, otherwise Magma Cone at the aim.
-func _smart_heat() -> void:
-	var close := Combat.enemies_in_area(global_position, nova_radius)
-	var boss_close := close.any(func(n: Node) -> bool: return n.is_in_group("boss"))
-	if heat >= nova_cost and (close.size() >= 2 or boss_close):
-		_heat_nova()
-	else:
-		_magma_cone()
 
 
 ## MICRO-MISSILE POD volley: small homing missiles fanned out of the shoulders.
@@ -967,17 +908,14 @@ func arc_from(from: Variant, hit_damage: float, jumps: int) -> void:
 ## Stats that come from upgrades but live on the mech (so the HUD's bars and ticks follow them).
 func _refresh_upgrade_stats() -> void:
 	overdrive_time = _base_od_time + Upgrades.od_bonus_time()
-	nova_cost = roundf(_base_nova_cost * Upgrades.ability_cost_mult())
-	cone_cost = roundf(_base_cone_cost * Upgrades.ability_cost_mult())
 
 
-## Heat + overdrive build from damage this mech deals. On-hit upgrades roll here too: ARC EMITTER
+## Overdrive builds from damage this mech deals. On-hit upgrades roll here too: ARC EMITTER
 ## (lightning to nearby robots) and CRYO ROUNDS (chill).
 func _on_damage_dealt(amount: float, source: Node, target: Node) -> void:
 	if source != self:
 		return
-	var gain := Upgrades.heat_mult()
-	heat = minf(heat + amount * heat_per_damage * gain, heat_max)
+	var gain := Upgrades.od_part_mult()
 	if overdrive_left <= 0.0:
 		var iaido := IAIDO_OD if _chassis_id == &"duelist" and Game.is_melee(weapon) else 1.0
 		overdrive_meter = minf(overdrive_meter + amount * overdrive_per_damage * gain * Upgrades.od_gain() * iaido, 100.0)
@@ -1094,11 +1032,11 @@ func take_damage(amount: float, _from_pos: Vector2, _source: Node = null) -> voi
 			Combat.spark(global_position, Upgrades.color(&"reactive"), 2.0)).call_deferred()
 
 
-## OVERCLOCK combo: fire rate rises with heat (up to +40% at full heat).
+## OVERCLOCK combo: the longer the trigger is held, the faster it fires (up to +40% after OVERCLOCK_SPIN s).
 func _overclock() -> float:
 	if Upgrades.level_of(&"overclock") <= 0:
 		return 1.0
-	return 1.0 + 0.4 * clampf(heat / heat_max, 0.0, 1.0)
+	return 1.0 + 0.4 * _spin_up
 
 
 func _apply_damage(amount: float) -> void:
@@ -1194,9 +1132,6 @@ func heal(amount: float) -> void:
 	stats_changed.emit()
 
 
-func add_heat(amount: float) -> void:
-	heat = minf(heat + amount, heat_max)
-	stats_changed.emit()
 
 
 func add_repair_charge() -> void:
@@ -1289,7 +1224,7 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 		sprite.speed_scale = 1.0
 	held.sync(weapon, delta, Controls.is_firing())
 	for t in thrusters:
-		if legs:
+		if legs and not _hover:
 			t.amount_ratio = 1.0 if _boost_left > 0.0 else 0.12
 		else:
 			t.amount_ratio = 1.0 if move.length() > 0.2 or _boost_left > 0.0 else 0.4
@@ -1309,6 +1244,48 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 	if aura.visible:
 		aura.scale = Vector2.ONE * (2.3 + sin(Time.get_ticks_msec() * 0.02) * 0.15)
 	ring.queue_redraw()
+
+
+## Builds (or rebuilds, after the WALK / HOVER switch) the two sprite layers of this chassis's art.
+func _setup_layers() -> void:
+	walk_art = Game.chassis_walk_art(_chassis_id)
+	_hover = Game.chassis_hovers(_chassis_id)
+	if walk_art == "":
+		return
+	_frames_gun = Game.chassis_torso_frames(_chassis_id, true)
+	_frames_nogun = Game.chassis_torso_frames(_chassis_id, false)
+	sprite.sprite_frames = _frames_gun if weapon == &"blaster" else _frames_nogun
+	sprite.play(&"idle")
+	if legs == null:
+		legs = AnimatedSprite2D.new()
+		legs.material = sprite.material  # (shared: armor paint + hit flash)
+		legs.self_modulate = sprite.self_modulate
+		legs.scale = _sprite_scale * _body_scale
+		legs.rotation = body.rotation
+		add_child(legs)
+		move_child(legs, body.get_index())
+	legs.sprite_frames = Game.chassis_legs_frames(_chassis_id)
+	legs.scale = _sprite_scale * _body_scale
+	legs.play(&"stand")
+	_last_step = -1
+
+
+## The WALK / HOVER switch (`hover_toggle`): a mech with both sets of art lifts off / sets down. Kept in the
+## settings (Game.hover_mode), so it stays the way you left it.
+func toggle_hover() -> void:
+	if not Game.chassis_can_switch(_chassis_id) or _boost_left > 0.0:
+		_deny()
+		return
+	Game.hover_mode = not Game.hover_mode
+	Game.save()
+	_setup_layers()
+	_lean = Vector2.ZERO
+	_lean_vel = Vector2.ZERO
+	Sfx.play(&"boost", -9.0, 0.08)
+	for i in 6:
+		var dir := Vector2.from_angle(TAU * i / 6.0)
+		SmokePuff.spawn(global_position + dir * 16.0 * _body_scale, Color(0.7, 0.72, 0.78, 0.35), 11.0 * _body_scale, 0.5, dir * 60.0, 1)
+	mode_changed.emit(_hover)
 
 
 ## WALKING mechs: turns and animates the legs layer under the body.
@@ -1334,6 +1311,8 @@ func _update_legs(delta: float, move: Vector2) -> void:
 		anim = &"walk"
 		var top := maxf(move_speed * Upgrades.move_mult(), 1.0)
 		pace = lerpf(0.55, 1.2, clampf(velocity.length() / top, 0.0, 1.0)) * (-1.0 if _legs_back else 1.0)
+		if _hover:
+			pace = 0.55  # (a slow glide kick, whichever way it drifts)
 		_legs_turning = false
 	else:
 		# Standing: once the body has twisted far round, the legs shuffle round under it.
@@ -1345,7 +1324,7 @@ func _update_legs(delta: float, move: Vector2) -> void:
 		if _legs_turning:
 			want = body.rotation
 			turn = 7.0
-			anim = &"walk"
+			anim = &"stand" if _hover else &"walk"
 	legs.rotation = lerp_angle(legs.rotation, want, 1.0 - exp(-turn * delta))
 	if legs.animation != anim:
 		legs.play(anim)
@@ -1355,26 +1334,53 @@ func _update_legs(delta: float, move: Vector2) -> void:
 	var twist := 0.0
 	if anim == &"walk":
 		var phase := (legs.frame + legs.frame_progress) / 8.0
-		sway = Vector2.RIGHT.rotated(legs.rotation) * sin(phase * TAU) * 2.2 * _body_scale
+		sway = Vector2.RIGHT.rotated(legs.rotation) * sin(phase * TAU) * (1.4 if _hover else 2.2) * _body_scale
 		twist = -sin(phase * TAU) * STEP_TWIST  # (the hips turn +, the shoulders swing against them)
 		if not _legs_turning:
 			var top := maxf(move_speed * Upgrades.move_mult(), 1.0)
-			sway += velocity.limit_length(top) / top * WALK_LEAN * _body_scale
-		# Rise and drop twice a stride, and a puff of dust where each foot comes down.
-		sprite.scale = _sprite_scale * (1.0 + STEP_BOB * cos(phase * 2.0 * TAU))
+			sway += velocity.limit_length(top) / top * WALK_LEAN * (1.7 if _hover else 1.0) * _body_scale
+		# Rise and drop twice a stride, and a puff of dust where each foot comes down (a hovering mech
+		# just rides one slow swell and touches nothing).
+		sprite.scale = _sprite_scale * (1.0 + STEP_BOB * cos(phase * (1.0 if _hover else 2.0) * TAU))
 		var step := int(floor(phase * 2.0 + 0.25)) % 2
-		if step != _last_step:
+		if _hover:
+			_last_step = -1
+		elif step != _last_step:
 			_last_step = step
 			var foot := Vector2(-22.0 if step == 0 else 22.0, -14.0).rotated(legs.rotation) * _body_scale
 			SmokePuff.spawn(global_position + foot, Color(0.62, 0.58, 0.5, 0.3), 9.0 * _body_scale, 0.45, -velocity * 0.08, 1)
 			Sfx.play(&"step", -13.0 if _legs_turning else -10.0, 0.12)
 	else:
-		sprite.scale = sprite.scale.lerp(_sprite_scale, 1.0 - exp(-18.0 * delta))
+		# Standing: a hovering mech keeps bobbing on its thrusters.
+		var rest := _sprite_scale * (1.0 + 0.02 * sin(_hover_t * 2.4)) if _hover else _sprite_scale
+		sprite.scale = sprite.scale.lerp(rest, 1.0 - exp(-18.0 * delta))
 		_last_step = -1
+	_hover_t += delta
+	if _hover:
+		legs.scale = _sprite_scale * _body_scale * (sprite.scale.x / _sprite_scale.x)
 	_step_twist = lerpf(_step_twist, twist, 1.0 - exp(-20.0 * delta))
-	body.position = body.position.lerp(sway, 1.0 - exp(-18.0 * delta))
 	var hip := Game.WALK_HIP * _sprite_scale.x * _body_scale
-	legs.position = body.position + hip.rotated(body.rotation) - hip.rotated(legs.rotation)
+	var shadow := get_node_or_null(^"Shadow") as Node2D
+	if _hover:
+		# Weight: the body pitches into the move on a spring and rocks back as it stops; the legs hang behind.
+		var top := maxf(move_speed * Upgrades.move_mult(), 1.0)
+		var tgt := velocity.limit_length(top) / top * HOVER_LEAN * _body_scale
+		if _boost_left > 0.0:
+			tgt = _boost_dir * HOVER_LEAN * 1.5 * _body_scale
+		_lean_vel += ((tgt - _lean) * HOVER_LEAN_STIFF - _lean_vel * HOVER_LEAN_DAMP) * delta
+		_lean += _lean_vel * delta
+		var rock := Vector2.RIGHT.rotated(legs.rotation) * sin(_hover_t * 2.4) * 1.2 * _body_scale
+		body.position = _lean + rock
+		legs.position = body.position + hip.rotated(body.rotation) - hip.rotated(legs.rotation) - _lean * 1.5
+		if shadow:  # (higher off the ground: the shadow sits further away and smaller)
+			shadow.position = shadow.position.lerp(Vector2(10, 24), 1.0 - exp(-8.0 * delta))
+			shadow.scale = shadow.scale.lerp(Vector2(1.3, 1.04), 1.0 - exp(-8.0 * delta))
+	else:
+		body.position = body.position.lerp(sway, 1.0 - exp(-18.0 * delta))
+		legs.position = body.position + hip.rotated(body.rotation) - hip.rotated(legs.rotation)
+		if shadow:
+			shadow.position = shadow.position.lerp(Vector2(6, 14), 1.0 - exp(-8.0 * delta))
+			shadow.scale = shadow.scale.lerp(Vector2(1.5, 1.2), 1.0 - exp(-8.0 * delta))
 
 
 func _spawn_afterimage() -> void:
@@ -1417,7 +1423,7 @@ func _boost_cd() -> float:
 
 ## PARTS (autoload/parts.gd, Hangar > PARTS): what the mech takes from its parts once, at spawn - HP, dash,
 ## handling and DOUBLE DASH's spare boost - and the BACKPACK's thruster flames (colour + size). Speed, fire
-## rate, damage, crit, heat and pickup radius are read live (Upgrades / _weapon_rate).
+## rate, damage, crit, overdrive gain and pickup radius are read live (Upgrades / _weapon_rate).
 func _apply_parts() -> void:
 	_base_max_hp *= Parts.mult("hp")
 	max_hp = _base_max_hp + Upgrades.max_hp_bonus()

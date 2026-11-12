@@ -4,7 +4,7 @@ extends Node2D
 ## the mech starts on the launch pad = world origin). Main menu Settings > Tutorial, and offered
 ## to new pilots before their first New Game / Endless run). One step at a time, each with prompts for
 ## the device in use (keyboard/mouse, gamepad or touch) and a progress bar:
-##   move -> aim & attack -> boost -> scatter shot -> heat attacks -> beam cannon -> real enemies + XP
+##   move -> aim & attack -> boost -> scatter shot -> beam cannon -> real enemies + XP
 ##   -> level-up pick -> repair kit -> overdrive -> done (play the campaign / endless / main menu)
 ## The mech can't be destroyed here, and nothing records waves or unlocks.
 
@@ -30,9 +30,6 @@ const STEPS := [
 	[&"scatter", "SCATTER SHOT", "RIGHT CLICK  fires a wide scatter blast - perfect up close. Try it.",
 		"LT  fires a wide scatter blast - perfect up close. Try it.",
 		"ALT FIRE  shoots a wide scatter blast - perfect up close. Try it."],
-	[&"heat", "HEAT ATTACKS", "Damage you deal builds HEAT. Spend it:  E = Heat Nova,  Q = Magma Cone. Use two.",
-		"Damage you deal builds HEAT. Spend it:  Y = Heat Nova,  RB = Magma Cone. Use two.",
-		"Damage you deal builds HEAT. Spend it with  NOVA  and  CONE. Use two."],
 	[&"beam", "BEAM CANNON", "Press  C  (or middle click) to charge the Beam Cannon. It pierces everything in a line.",
 		"Press  X  to charge the Beam Cannon. It pierces everything in a line.",
 		"Tap  BEAM  to charge the Beam Cannon. It pierces everything in a line."],
@@ -61,7 +58,6 @@ var _targets: Array[Node2D] = []
 var _enemies: Array[Enemy] = []
 var _count := 0
 var _was_boosting := false
-var _last_heat := 0.0
 var _kits := 0
 var deck: PaintedDeck
 
@@ -115,11 +111,6 @@ func _begin(i: int) -> void:
 				_targets.append(_dummy(_near(off), 60.0))
 		&"boost":
 			_was_boosting = false
-		&"heat":
-			mech.heat = mech.heat_max
-			_last_heat = mech.heat
-			for a in 4:
-				_targets.append(_dummy(_near(Vector2.from_angle(a * TAU / 4.0 + 0.4) * 150.0), 400.0))
 		&"beam":
 			mech.beam.state = BeamCannon.State.READY
 			mech.beam.cooldown_left = 0.0
@@ -183,13 +174,6 @@ func _progress(_delta: float) -> float:
 			if Input.is_action_just_pressed("fire_secondary"):
 				_count += 1
 			return float(_count)
-		&"heat":
-			# Spending shows up as a sudden drop; refill so the second attack is always affordable.
-			if mech.heat < _last_heat - 20.0:
-				_count += 1
-				mech.heat = mech.heat_max
-			_last_heat = mech.heat
-			return _count / 2.0
 		&"beam":
 			return 1.0 if mech.beam.state == BeamCannon.State.FIRE else 0.0
 		&"fight":

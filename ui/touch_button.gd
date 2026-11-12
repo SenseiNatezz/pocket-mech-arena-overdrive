@@ -1,9 +1,10 @@
 extends Control
 ## Round on-screen button that presses an Input Map action while touched (multi-touch safe).
-## `indicator` draws live status on the button: boost cooldown ring, heat cost fill, repair
+## `indicator` draws live status on the button: boost cooldown ring, repair
 ## charges, overdrive meter, or (for USE) only shows the button when something is in range.
 
-enum Indicator { NONE, BOOST_COOLDOWN, HEAT_COST_NOVA, HEAT_COST_CONE, REPAIR_CHARGES, OVERDRIVE_METER, USE_CONTEXT, BEAM_COOLDOWN }
+## (2 and 3 were the old heat-cost fills; the numbers stay so saved scenes keep their indicators.)
+enum Indicator { NONE, BOOST_COOLDOWN, _UNUSED_2, _UNUSED_3, REPAIR_CHARGES, OVERDRIVE_METER, USE_CONTEXT, BEAM_COOLDOWN }
 
 @export var action := &"boost"
 @export var label := "BOOST"
@@ -70,12 +71,6 @@ func _draw() -> void:
 			Indicator.BOOST_COOLDOWN:
 				fill = m.boost_ready_fraction()
 				is_ready = fill >= 1.0
-			Indicator.HEAT_COST_NOVA:
-				fill = clampf(m.heat / m.nova_cost, 0.0, 1.0)
-				is_ready = m.heat >= m.nova_cost
-			Indicator.HEAT_COST_CONE:
-				fill = clampf(m.heat / m.cone_cost, 0.0, 1.0)
-				is_ready = m.heat >= m.cone_cost
 			Indicator.REPAIR_CHARGES:
 				is_ready = m.repair_charges > 0
 				sub = "x%d" % m.repair_charges

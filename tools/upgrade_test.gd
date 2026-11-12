@@ -485,12 +485,10 @@ func _new_upgrade_checks() -> void:
 	Upgrades.reset()
 	await _clear_enemies()
 
-	# Thermal Amplifier / Reactor Overcharge change the mech's own numbers (the HUD follows them).
-	var nova_before := mech.nova_cost
+	# Reactor Overcharge changes the mech's own numbers (the HUD follows them).
 	var od_before := mech.overdrive_time
-	Upgrades.apply(&"thermal")
 	Upgrades.apply(&"od_core")
-	_check("thermal amplifier: cheaper Nova (%.0f -> %.0f)" % [nova_before, mech.nova_cost], mech.nova_cost < nova_before)
+	_check("no heat upgrades are dealt any more", not Upgrades.CATALOG.has(&"heat_sink") and not Upgrades.CATALOG.has(&"thermal"))
 	_check("reactor overcharge: longer overdrive (%.0f -> %.0f s)" % [od_before, mech.overdrive_time], mech.overdrive_time == od_before + 2.0)
 	Upgrades.reset()
 	mech._refresh_upgrade_stats()

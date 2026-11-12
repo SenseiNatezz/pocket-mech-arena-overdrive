@@ -79,7 +79,7 @@ func _run() -> void:
 	for simple in [false, true]:
 		Game.touch_simple = simple
 		await _frames(3)
-		var names := ["FireStick", "Boost", "AltFire", "Beam"] + (["Heat"] if simple else ["Nova", "Cone", "Repair", "Overdrive"])
+		var names := ["FireStick", "Boost", "AltFire", "Beam"] + ([] if simple else ["Repair", "Overdrive"])
 		var on_screen := true
 		var overlaps := 0
 		for i in names.size():
@@ -96,12 +96,13 @@ func _run() -> void:
 		var tag := "simple" if simple else "full"
 		_check("%s: button arc fits the %s screen (%dx%d)" % [tag, "portrait" if Layout.portrait else "landscape", vp.x, vp.y], on_screen)
 		_check("%s: no two touch buttons overlap (%d)" % [tag, overlaps], overlaps == 0)
-		var hidden := ["Nova", "Cone", "Repair", "Overdrive"] if simple else ["Heat"]
+		var hidden := ["Repair", "Overdrive"] if simple else []
 		_check("%s: the other layout's buttons are hidden" % tag, hidden.all(func(n: String) -> bool:
 			return not (root.get_node(n) as Control).visible))
+		_check("%s: no heat buttons left" % tag, not root.has_node("Heat") and not root.has_node("Nova") and not root.has_node("Cone"))
 		var move_home := (root.get_node("MoveStick") as Control).get_global_rect()
 		_check("%s: move stick home clear of the button arc" % tag,
-			not move_home.intersects((root.get_node("Heat" if simple else "Cone") as Control).get_global_rect()))
+			not move_home.intersects((root.get_node("Boost" if simple else "Repair") as Control).get_global_rect()))
 
 	# Auto-aim: stand in the top firing lane facing away; the mech turns to the nearest drone.
 	var lane: Vector2 = scene.get_node("Dummies/Lane1").global_position
@@ -171,13 +172,8 @@ func _run() -> void:
 	await _frames(2)
 	_check("auto-fire off = no fire", not Controls.is_firing())
 
-	# SIMPLE layout: the HEAT button picks an ability (Cone with nothing close), Overdrive goes off by itself.
+	# SIMPLE layout: Overdrive goes off by itself.
 	Game.touch_simple = true
-	mech.heat = mech.heat_max
-	var heat_btn := root.get_node("Heat") as Control
-	await _touch(heat_btn.get_global_rect().get_center(), true, 2)
-	await _touch(heat_btn.get_global_rect().get_center(), false, 2)
-	_check("HEAT button spends heat (%.0f left)" % mech.heat, mech.heat < mech.heat_max)
 	mech.overdrive_meter = 100.0
 	await _frames(5)
 	_check("simple layout: overdrive triggers by itself", mech.overdrive_left > 0.0)

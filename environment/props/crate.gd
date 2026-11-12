@@ -10,7 +10,7 @@ const TEX := preload("res://assets/hq/crate.png")
 const HEAVY_HIT := 40.0
 
 @export var max_hp := 24.0
-## Chance to drop something (health / heat / repair charge / overdrive).
+## Chance to drop something (health / repair charge / overdrive).
 @export var drop_chance := 0.85
 @export var texture: Texture2D
 @export var box := Vector2(40, 40)
@@ -53,7 +53,7 @@ func take_hit(amount: float, from_pos: Vector2) -> void:
 		Sfx.play(&"hit", -6.0)
 		if randf() < drop_chance:
 			var p: Node2D = PICKUP.new()
-			p.kind = [&"health", &"health", &"heat", &"repair", &"overdrive"].pick_random()
+			p.kind = [&"health", &"health", &"repair", &"overdrive"].pick_random()
 			p.position = position
 			get_parent().add_child.call_deferred(p)
 		queue_free()

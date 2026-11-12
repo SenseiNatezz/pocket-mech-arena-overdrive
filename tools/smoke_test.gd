@@ -61,33 +61,23 @@ func _run() -> void:
 	await _frames(70)
 	_check("boost recharges", mech.boost_ready_fraction() >= 1.0)
 
-	# Fire at a dummy: damage builds heat + overdrive.
+	# Fire at a dummy: damage builds overdrive.
 	mech.global_position = Vector2(200, -160)
 	await _frames(2)
 	Controls.touch_aim = Vector2.RIGHT
 	Input.action_press(&"fire_primary")
 	await _frames(60)
 	Input.action_release(&"fire_primary")
-	_check("primary fire builds heat (%.1f)" % mech.heat, mech.heat > 5.0)
 	_check("primary fire builds overdrive (%.1f)" % mech.overdrive_meter, mech.overdrive_meter > 1.0)
-	var heat_before := mech.heat
+	var od_before := mech.overdrive_meter
 	await _frames(60)
 	Input.action_press(&"fire_secondary")
 	await _frames(3)
 	Input.action_release(&"fire_secondary")
 	await _frames(20)
-	_check("secondary fire hits", mech.heat > heat_before)
-
-	# Heat attacks.
-	mech.heat = 100.0
-	await _tap(&"heat_attack_1")
-	_check("heat nova spends 40 heat", absf(mech.heat - (100.0 - mech.nova_cost)) < 12.0)
-	mech.heat = 100.0
-	await _tap(&"heat_attack_2")
-	_check("magma cone spends 30 heat", absf(mech.heat - (100.0 - mech.cone_cost)) < 12.0)
-	mech.heat = 0.0
-	await _tap(&"heat_attack_1")
-	_check("nova denied with no heat", mech.heat < 1.0)
+	_check("secondary fire hits", mech.overdrive_meter > od_before or mech.overdrive_left > 0.0)
+	_check("the heat system is gone (no Nova / Cone actions)", not InputMap.has_action(&"heat_attack_1")
+		and not InputMap.has_action(&"heat_attack_2") and not &"heat" in mech)
 
 	# Self-repair.
 	mech.hp = 30.0

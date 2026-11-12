@@ -102,7 +102,7 @@ func _stock_checks() -> void:
 	var ones := true
 	for s: Array in Parts.STATS:
 		ones = ones and Parts.mult(s[0]) == 1.0
-	for k in ["ability_cost", "accel", "dash", "boost_cd"]:
+	for k in ["accel", "dash", "boost_cd"]:
 		ones = ones and Parts.mult(k) == 1.0
 	_check("...so every part multiplier is 1, with no crit, perk, spare boost, starting upgrade or flame change",
 		ones and Parts.add("crit") == 0.0 and Parts.extra_boosts() == 0 and Parts.starting_upgrades().is_empty()
@@ -243,17 +243,17 @@ func _stat_checks() -> void:
 	var gun := mech._weapon_rate()
 	mech.weapon = melee_id
 	var melee := mech._weapon_rate()
-	_check("GUNNER ARMS: +15% gun fire rate, melee untouched, -20% heat gain", _near(gun / gun0, 1.15)
-		and _near(melee / melee0, 1.0) and _near(Upgrades.heat_mult(), 0.8))
+	_check("GUNNER ARMS: +15% gun fire rate, melee untouched, -20% overdrive gain", _near(gun / gun0, 1.15)
+		and _near(melee / melee0, 1.0) and _near(Upgrades.od_part_mult(), 0.8))
 	_wear([&"arms_brawler"])
 	melee = mech._weapon_rate()  # (still holding the melee weapon)
 	mech.weapon = &"blaster"
 	_check("BRAWLER ARMS: +20% melee speed, guns untouched", _near(melee / melee0, 1.2) and _near(mech._weapon_rate() / gun0, 1.0))
 	_wear([&"arms_thermal"])
 	mech._refresh_upgrade_stats()
-	_check("THERMAL ARMS: +30%% heat gain, -10%% attack speed, Nova costs 15%% less (%.0f heat)" % mech.nova_cost,
-		_near(Upgrades.heat_mult(), 1.3) and _near(mech._weapon_rate() / gun0, 0.9)
-		and mech.nova_cost == roundf(mech._base_nova_cost * 0.85))
+	_check("REACTOR ARMS (old Thermal Arms id): +35% overdrive gain, +5% damage, -10% attack speed",
+		_near(Upgrades.od_part_mult(), 1.35) and _near(mech._weapon_rate() / gun0, 0.9)
+		and Parts.info(&"arms_thermal")["name"] == "Reactor Arms")
 	mech.weapon = w0
 	_wear([])
 	mech._refresh_upgrade_stats()

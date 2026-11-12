@@ -5,7 +5,7 @@ extends Node
 ##   get_aim(from_world)  -> Vector2 (unit)   mouse position / right stick / dragged touch FIRE button /
 ##                                            touch auto-aim
 ##
-## Buttons are plain Input Map actions (fire_primary, boost, heat_attack_1, ...). On-screen touch
+## Buttons are plain Input Map actions (fire_primary, boost, beam, ...). On-screen touch
 ## buttons press those same actions via Input.action_press(), so gameplay code never needs to know
 ## which device is in use.
 ##
@@ -28,7 +28,7 @@ signal bindings_changed
 const REBINDABLE := [
 	[&"move_up", "Move up"], [&"move_down", "Move down"], [&"move_left", "Move left"], [&"move_right", "Move right"],
 	[&"fire_primary", "Fire"], [&"fire_secondary", "Scatter shot"], [&"boost", "Boost"], [&"beam", "Beam cannon"],
-	[&"heat_attack_1", "Heat Nova"], [&"heat_attack_2", "Magma Cone"], [&"self_repair", "Self-repair"],
+	[&"self_repair", "Self-repair"], [&"hover_toggle", "Walk / Fly"],
 	[&"overdrive", "Overdrive"], [&"use", "Use"], [&"pause", "Pause"],
 ]
 

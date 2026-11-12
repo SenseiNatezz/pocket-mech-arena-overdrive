@@ -1,6 +1,6 @@
 extends Node2D
 ## Pickup dropped by crates. Drifts toward the player when close and is collected on contact.
-##   health    +25 HP          heat      +35 heat
+##   health    +25 HP
 ##   repair    +1 repair charge overdrive +35 overdrive meter
 
 const MAGNET_RANGE := 150.0
@@ -10,9 +10,9 @@ var kind := &"health"
 var _t := 0.0
 var _life := 20.0
 
-const COLORS := {&"health": Color(0.4, 1.0, 0.5), &"heat": Color(1.0, 0.55, 0.15), &"repair": Color(0.3, 0.9, 1.0),
+const COLORS := {&"health": Color(0.4, 1.0, 0.5), &"repair": Color(0.3, 0.9, 1.0),
 	&"overdrive": Color(1.0, 0.85, 0.25)}
-const LABELS := {&"health": "+HP", &"heat": "HEAT", &"repair": "+KIT", &"overdrive": "OD"}
+const LABELS := {&"health": "+HP", &"repair": "+KIT", &"overdrive": "OD"}
 
 
 func _process(delta: float) -> void:
@@ -36,7 +36,6 @@ func _process(delta: float) -> void:
 func _collect(mech: Mech) -> void:
 	match kind:
 		&"health": mech.heal(25.0)
-		&"heat": mech.add_heat(35.0)
 		&"repair": mech.add_repair_charge()
 		&"overdrive": mech.add_overdrive(35.0)
 	Combat.shockwave(global_position, 50.0, COLORS[kind], 0.25)

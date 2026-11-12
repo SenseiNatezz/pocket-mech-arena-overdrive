@@ -152,13 +152,12 @@ func _run() -> void:
 	crate.take_hit(999.0, crate.global_position)
 	await _frames(3)
 	_check("crate drops a pickup", _count("pickup.gd") >= 1)
-	mech.heat = 0.0
 	mech.hp = 50.0
 	mech.repair_charges = 0
 	mech.overdrive_meter = 0.0
 	mech.global_position = crate_pos + Vector2(0, 5)
 	await _wait_until(func() -> bool: return _count("pickup.gd") == 0, 3.0)
-	_check("pickup collected", _count("pickup.gd") == 0 and (mech.hp > 50.0 or mech.heat > 0.0 or mech.repair_charges > 0 or mech.overdrive_meter > 0.0))
+	_check("pickup collected", _count("pickup.gd") == 0 and (mech.hp > 50.0 or mech.repair_charges > 0 or mech.overdrive_meter > 0.0))
 	mech.hp = mech.max_hp
 	mech.repair_charges = mech.repair_charges_max
 

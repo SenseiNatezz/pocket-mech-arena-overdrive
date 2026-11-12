@@ -1,6 +1,6 @@
 extends CanvasLayer
 ## In-game HUD + menus. Everything here is built in code:
-##   top-left   HP (+ shield pips), heat (with Cone/Nova cost ticks), overdrive, repair kits, boost
+##   top-left   HP (+ shield pips), overdrive, repair kits, boost
 ##              cooldown dial, beam cooldown, pilot level + XP bar + equipped weapon
 ##   top-center objective, wave/zone banners (upper third, on a dark strip), boss health bar
 ##   boss card  letterbox + the boss's name and epithet whenever a boss arrives (see _show_boss_card)
@@ -242,6 +242,8 @@ func _hook_scene() -> void:
 	if mech:
 		mech.died.connect(func() -> void: get_tree().create_timer(1.6).timeout.connect(_show_game_over))
 		mech.hurt.connect(_on_hurt)
+		mech.mode_changed.connect(func(flying: bool) -> void:
+			show_banner("FLYING" if flying else "WALKING", Color(0.6, 0.8, 1.0)))
 	arena = get_tree().get_first_node_in_group("arena")
 	if Game.is_endless():
 		(_pause_panel.find_child("Btn1", true, false) as Button).text = "RESTART RUN"
@@ -352,10 +354,10 @@ func _refresh_help() -> void:
 	var move: String = k.call(&"move_up") + k.call(&"move_left") + k.call(&"move_down") + k.call(&"move_right")
 	if move.length() != 4:
 		move = "%s/%s/%s/%s" % [k.call(&"move_up"), k.call(&"move_left"), k.call(&"move_down"), k.call(&"move_right")]
-	_help.text = "KB/Mouse: %s move, mouse aim, %s fire, %s scatter, %s boost,\n%s nova, %s cone, %s repair, %s overdrive, %s use, %s beam\n" % [
-		move, k.call(&"fire_primary"), k.call(&"fire_secondary"), k.call(&"boost"), k.call(&"heat_attack_1"),
-		k.call(&"heat_attack_2"), k.call(&"self_repair"), k.call(&"overdrive"), k.call(&"use"), k.call(&"beam")] \
-		+ "Gamepad: sticks move/aim, RT fire, LT scatter, LB boost,\nY nova, RB cone, B repair, R3 overdrive, A use, X beam"
+	_help.text = "KB/Mouse: %s move, mouse aim, %s fire, %s scatter, %s boost,\n%s repair, %s overdrive, %s use, %s beam\n" % [
+		move, k.call(&"fire_primary"), k.call(&"fire_secondary"), k.call(&"boost"),
+		k.call(&"self_repair"), k.call(&"overdrive"), k.call(&"use"), k.call(&"beam")] \
+		+ "Gamepad: sticks move/aim, RT fire, LT scatter, LB boost,\nB repair, R3 overdrive, A use, X beam"
 
 
 func show_banner(text: String, color := Color.WHITE) -> void:
@@ -1450,14 +1452,13 @@ func _text(font: Font, pos: Vector2, s: String, size: int, col: Color) -> void:
 
 ## Compact pilot card (top-left):
 ##   [LV badge, ring = XP]  HP bar (shield diamonds inside, number on the right)
-##                          HEAT bar (Cone / Nova cost ticks light up when affordable)
 ##                          OVERDRIVE bar (pulses + READY when full)
 ##   weapon name            repair kits, boost dial, beam dial  (desktop / gamepad only - on touch
 ##                                                               screens the buttons show these)
 func _draw_status(c: Control, font: Font) -> void:
 	var touch := Controls.device == Controls.Device.TOUCH
 	var o := Vector2(12, 10)
-	var size := Vector2(360, 96 if touch else 104)
+	var size := Vector2(360, 78 if touch else 86)
 	var cut := 12.0
 	var frame := PackedVector2Array([o, o + Vector2(size.x - cut, 0), o + Vector2(size.x, cut), o + size,
 		o + Vector2(cut, size.y), o + Vector2(0, size.y - cut)])
@@ -1508,24 +1509,8 @@ func _draw_status(c: Control, font: Font) -> void:
 	c.draw_string(font, Vector2(bar.position.x, bar.end.y - 5), hp_txt, HORIZONTAL_ALIGNMENT_RIGHT, bar.size.x - 6, 13,
 		Color.WHITE)
 
-	# Heat, with the Cone / Nova costs marked.
-	bar = Rect2(x0, o.y + 38, bw, 13)
-	c.draw_rect(bar, Color(0, 0, 0, 0.65))
-	var heat_frac := mech.heat / mech.heat_max
-	c.draw_rect(Rect2(bar.position, Vector2(bar.size.x * heat_frac, bar.size.y)),
-		Color(1.0, 0.45, 0.1).lerp(Color(1, 0.85, 0.3), heat_frac))
-	for m in [[mech.cone_cost, "CONE"], [mech.nova_cost, "NOVA"]]:
-		var mx: float = bar.position.x + bar.size.x * m[0] / mech.heat_max
-		var ok: bool = mech.heat >= m[0]
-		c.draw_line(Vector2(mx, bar.position.y - 2), Vector2(mx, bar.end.y + 2), Color(1, 1, 1, 0.95 if ok else 0.35), 2.0)
-		if ok:
-			c.draw_colored_polygon(PackedVector2Array([Vector2(mx - 4, bar.position.y - 6), Vector2(mx + 4, bar.position.y - 6),
-				Vector2(mx, bar.position.y - 1)]), Color(1.0, 0.85, 0.4))
-	c.draw_rect(bar, Color(1, 1, 1, 0.35), false, 1.0)
-	_bar_label(font, bar, "HEAT", Color(1.0, 0.8, 0.55))
-
 	# Overdrive.
-	bar = Rect2(x0, o.y + 56, bw, 13)
+	bar = Rect2(x0, o.y + 38, bw, 13)
 	var od_active := mech.overdrive_left > 0.0
 	var od_ready := mech.overdrive_meter >= 100.0 and not od_active
 	c.draw_rect(bar, Color(0, 0, 0, 0.65))

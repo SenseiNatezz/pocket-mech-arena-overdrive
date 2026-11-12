@@ -10,7 +10,7 @@ Eight levels on painted top-down maps: Frozen Outpost, Jungle Megafactory, Alien
 Junction, Ruined Plaza, the Volcanic Forge, the Titan Graveyard and the Orbital Dry Dock. Survive 5 waves
 of robots on each, then a boss drops in (Warden, Ronin, Seraph, Warden Mk-II, Shogun, VULCAN the Forge
 Titan, SCARAB the Dune Colossus and ZENITH the Orbital Dreadnought). Every boss has three phases and an
-OVERDRIVE at 20% health (aura, faster attacks, nova rings). Heat and Overdrive build up from the damage
+OVERDRIVE at 20% health (aura, faster attacks, nova rings). Overdrive builds up from the damage
 you deal. Die during a boss fight and RETRY BOSS puts you straight back into it.
 
 **Save Backup** (Settings): copy your whole save as a text code and load it on another device or browser.
@@ -28,10 +28,10 @@ Graveyard brings the Dune Burrower (tunnels under the sand and erupts beneath yo
 (blinks beside you), the Mag Mine Drone (seeds the deck with mines) and the Grav Tug (tractor beam).
 
 **Leveling up:** defeated enemies drop XP shards. Each level-up pauses the game and offers 3 upgrades
-(4 with the VX-7 Standard) from 23: Target Lock, Triple Shot, Defense Shield, Piercing Rounds, Rapid
-Fire, Power Core, Armor Plating, Thrusters, Orbit Blades, Explosive Rounds, Salvage Repair, Heat Sink,
+(4 with the VX-7 Standard) from 21: Target Lock, Triple Shot, Defense Shield, Piercing Rounds, Rapid
+Fire, Power Core, Armor Plating, Thrusters, Orbit Blades, Explosive Rounds, Salvage Repair,
 Scavenger, Critical Targeting, Bit Drones, Micro-Missile Pod, Arc Emitter, Impulse Burst, Reactive
-Armor, Cryo Rounds, Redline, Reactor Overcharge and Thermal Amplifier (a 24th, Salvage Protocol: +15%
+Armor, Cryo Rounds, Redline and Reactor Overcharge (a 22nd, Salvage Protocol: +15%
 scrap per level, joins once the Jackpot contract is done). Two upgrades you've invested in
 unlock a gold COMBO card (9 combos, e.g. Cluster Missiles, Storm Bits, Shatter, Executioner). Under the
 cards: REROLL (2 per run, +1 per NEXT ARENA), BANISH (1 per run: that upgrade never shows up again) and
@@ -42,9 +42,11 @@ after level 5, 10 and 15. Upgrades carry over when you press NEXT ARENA.
 robots and kills recharge the boost), VX-9 Bulwark (heavy; boost rams robots, and SIEGE MODE braces it
 when you stand still: +30% damage, -30% damage taken).
 
-**Walking mechs:** NIMBUS-07 (and ARROWHEAD, RAMPART and CORVID, which share its frame) walk on the ground
-instead of hovering: the legs step the way you move (backwards when that is behind your aim), the upper body
-turns to your aim on top with its own walk cycle, and a boost drops into a slide. The other four mechs still hover.
+**Walking mechs:** every mech is two layers - the legs step the way you move (backwards when that is behind
+your aim) and the upper body swings round to your aim on top, with its own walk cycle, recoil kick and a slide
+on boost. **WALK / FLY:** press V (D-pad up, or the FLY / WALK touch button) to lift off and fly on your
+thrusters with the legs tucked, or set down and walk again; the game remembers your pick. RAVEN CLAW always
+flies: same moving upper body, legs tucked under its thrusters.
 
 **Gold Salvager:** every 2-3 minutes of waves a gold drone pops up near you and flees for 11 seconds.
 Shoot it down for a random prize: SCRAP FRENZY (all scrap x7 for 20 s), LUCKY (15% of the run's scrap at
@@ -71,8 +73,8 @@ XP, +10% scrap). Gold Rush opens the Salvager Beacon Hangar row and Jackpot the 
 LEGS (movement) and BACKPACK (booster). Each starts on a free STOCK part; the 12 others cost scrap, and
 every one trades a strength for a weakness, most with a perk on top. Head: Longsight Optics (+crit),
 Salvage Dish (+pickup radius and scrap), Lock-On Head (starts runs with Target Lock). Arms: Gunner (+gun
-fire rate, STEADY: no recoil), Brawler (+melee speed, SCRAPPER: melee kills repair), Thermal (+heat gain,
-VENTS: cheaper Nova / Cone). Legs: Sprinter (+speed and dash), Anchor (+HP), Hover Skirt (HOVER: lava
+fire rate, STEADY: no recoil), Brawler (+melee speed, SCRAPPER: melee kills repair), Reactor (+overdrive gain
+and damage, slower attacks). Legs: Sprinter (+speed and dash), Anchor (+HP), Hover Skirt (HOVER: lava
 pools, steam vents and shock panels can't hurt you). Backpack: Twin Booster (DOUBLE DASH), Missile Rack
 (starts runs with the Micro-Missile Pod), Overburn Booster (starts runs with Impulse Burst); each backpack
 has its own thruster flame. The cards show what a part changes against the one you have on. Buying a part
@@ -83,7 +85,7 @@ open with the Campaigner, Survivor and Tank Buster contracts.
 Dynamic Camera (the view pulls out as robots crowd in and during boss fights, punches in on big kills,
 glides over to a boss as it lands), Damage Numbers, controller Rumble, fullscreen (also F11 / Alt+Enter), CONTROLS (rebind every keyboard / mouse action), and on touch
 screens Auto-Fire (fires at the auto-aim target by itself) and the touch layout: Simple (FIRE, BOOST,
-ALT FIRE, BEAM and one smart HEAT button; Repair and Overdrive trigger on their own) or Full.
+ALT FIRE and BEAM; Repair and Overdrive trigger on their own) or Full.
 
 **Weapons (Armory):** 13 weapons, unlocked by the total number of waves you've beaten in any mode:
 Beam Rifle (start), Beam Saber (3), Sniper Beam (5), Dual Beam Pistols (6: one in each fist firing in turn,
@@ -110,8 +112,6 @@ Bastion and the armored Tidebreaker crab (all spawnable in the Weapon Range too)
 | Fire | Left mouse | RT | Automatic with Auto-Fire (or hold the big FIRE button) |
 | Scatter shot | Right mouse | LT | ALT FIRE |
 | Boost (dash, crosses pits) | Space | LB | BOOST |
-| Heat Nova (40 heat) | E | Y | HEAT (Simple layout: Nova when robots are close) / NOVA |
-| Magma Cone (30 heat) | Q | RB | HEAT (Simple layout: Cone otherwise) / CONE |
 | Self-repair | F | B | Automatic below 35% HP (Simple) / REPAIR |
 | Overdrive | Shift | R3 | Automatic when full (Simple) / OVERDRIVE |
 | Use (repair stations) | R | A | USE |
