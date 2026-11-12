@@ -48,6 +48,7 @@ static func scorch(pos: Vector2, r: float, burning := false) -> void:
 	s.burning = burning
 	s.global_position = pos
 	Combat.world().add_child(s)
+	GroundFx.char_mark(pos, r)  # (the lasting charred patch left once this fresh one fades)
 
 
 ## The extras on top of Combat.explosion_fx for a destroyed robot: a scorch mark (burning for big ones),

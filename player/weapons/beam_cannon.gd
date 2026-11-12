@@ -113,6 +113,7 @@ func update(delta: float, aim: Vector2, muzzle: Vector2, overdrive: bool) -> voi
 			_dir = aim.normalized()
 			_start = muzzle
 			_end = _trace(muzzle, _dir)
+			GroundFx.glow(get_instance_id(), muzzle, 50.0 + 90.0 * clampf(_t / charge_time, 0.0, 1.0), _col, 0.4)
 			if _t >= charge_time:
 				state = State.FIRE
 				_t = 0.0
@@ -131,6 +132,9 @@ func update(delta: float, aim: Vector2, muzzle: Vector2, overdrive: bool) -> voi
 			_dir = Vector2.from_angle(a)
 			_start = muzzle
 			_end = _trace(muzzle, _dir)
+			# The beam floods the floor along its whole length with its colour, brightest where it hits.
+			GroundFx.glow_line(get_instance_id(), _start, _end, 140.0, _col, 0.42)
+			GroundFx.glow(get_instance_id() + 1, _end, 190.0, _col.lightened(0.3), 0.55)
 			if mech and mech.has_method("recoil"):
 				mech.recoil(-_dir * 450.0 * delta)
 			_tick_t -= delta

@@ -4,7 +4,7 @@ extends Control
 ## charges, overdrive meter, or (for USE) only shows the button when something is in range.
 
 ## (2 and 3 were the old heat-cost fills; the numbers stay so saved scenes keep their indicators.)
-enum Indicator { NONE, BOOST_COOLDOWN, _UNUSED_2, _UNUSED_3, REPAIR_CHARGES, OVERDRIVE_METER, USE_CONTEXT, BEAM_COOLDOWN }
+enum Indicator { NONE, BOOST_COOLDOWN, FLY_FUEL, _UNUSED_3, REPAIR_CHARGES, OVERDRIVE_METER, USE_CONTEXT, BEAM_COOLDOWN }
 
 @export var action := &"boost"
 @export var label := "BOOST"
@@ -71,6 +71,11 @@ func _draw() -> void:
 			Indicator.BOOST_COOLDOWN:
 				fill = m.boost_ready_fraction()
 				is_ready = fill >= 1.0
+			Indicator.FLY_FUEL:
+				# WALK / FLY: the ring is the fuel left; greyed while grounded with too little to take off.
+				if m.fuel_on:
+					fill = m.fly_fuel
+					is_ready = m._hover or m.can_take_off()
 			Indicator.REPAIR_CHARGES:
 				is_ready = m.repair_charges > 0
 				sub = "x%d" % m.repair_charges

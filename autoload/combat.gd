@@ -232,6 +232,7 @@ func explosion_fx(pos: Vector2, radius: float, color := Color(1.0, 0.55, 0.2)) -
 	shockwave(pos, radius, color, 0.4)
 	shockwave(pos, radius * 0.55, Color(1, 0.95, 0.8), 0.22)
 	BlastFx.fireball(pos, clampf(radius * 0.42, 22.0, 140.0))
+	GroundFx.flash(pos, clampf(radius * 2.0, 110.0, 520.0), Color(1.0, 0.55, 0.22), 0.75, 0.6)
 	BlastFx.smoke(pos, clampf(radius * 0.32, 14.0, 90.0), 2 if radius < 140.0 else 4)
 	spark(pos, color, radius / 40.0)
 	burst(pos, color, radius * 3.0, 1.4)
@@ -316,6 +317,7 @@ func spark(pos: Vector2, color: Color, size := 1.0) -> void:
 	s.position = pos
 	s.scale = Vector2.ONE * 0.25 * size
 	s.visible = true
+	GroundFx.flash(pos, 46.0 * clampf(size, 0.5, 3.0), color, 0.35, 0.16)
 	var tw := s.create_tween().set_parallel()
 	tw.tween_property(s, "scale", Vector2.ONE * 0.8 * size, 0.12)
 	tw.tween_property(s, "modulate:a", 0.0, 0.14)

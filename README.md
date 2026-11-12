@@ -45,8 +45,15 @@ when you stand still: +30% damage, -30% damage taken).
 **Walking mechs:** every mech is two layers - the legs step the way you move (backwards when that is behind
 your aim) and the upper body swings round to your aim on top, with its own walk cycle, recoil kick and a slide
 on boost. **WALK / FLY:** press V (D-pad up, or the FLY / WALK touch button) to lift off and fly on your
-thrusters with the legs tucked, or set down and walk again; the game remembers your pick. RAVEN CLAW always
-flies: same moving upper body, legs tucked under its thrusters.
+thrusters with the legs tucked, or set down and walk again; the game remembers your pick. **FLIGHT FUEL:**
+flying is 35% faster but burns fuel (about 6 s a tank; the arc on the left of your ring and the FLY button
+show it). Run dry and you drop and must wait for a full tank; land early and it refills at once. RAVEN CLAW
+always flies (no fuel): a slower glide, but +20% damage.
+
+**Living maps:** mechs and robots cast soft shadows (yours drops away when you fly); shots, blasts, the beam
+and thrusters light the floor; blasts leave scorch marks, robots leave scrap and walking leaves footprints in
+snow and sand; the floor has drawn details (snow drifts, cracks, sand ripples, cables...); the lamps, lava,
+crystals and beacons painted on each map pulse, flicker and blink; and each map has its own colour mood.
 
 **Gold Salvager:** every 2-3 minutes of waves a gold drone pops up near you and flees for 11 seconds.
 Shoot it down for a random prize: SCRAP FRENZY (all scrap x7 for 20 s), LUCKY (15% of the run's scrap at

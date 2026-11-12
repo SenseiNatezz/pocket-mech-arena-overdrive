@@ -21,6 +21,8 @@ extends CharacterBody2D
 signal stats_changed
 ## The WALK / HOVER switch was flipped (true = now hovering).
 signal mode_changed(hover: bool)
+## Flying ran the tank dry: the mech dropped to the ground and can't fly again until the tank is full.
+signal fuel_empty
 signal died
 ## A hit landed (after the shield): `amount` HP lost, `from` = where it came from (the shooter / attacker when
 ## known, else the hit's origin) - the HUD's hit-direction markers and big-hit flash (ui/hud.gd).
@@ -173,6 +175,21 @@ var _frames_nogun: SpriteFrames
 ## the mech moves (or the opposite way, stepping backwards, when that is behind the aim) while the upper
 ## body turns to the aim; a dash drops them into the slide pose. null = this design hovers (old art).
 var legs: AnimatedSprite2D
+## The soft drop shadow of the mech's own shape (player/mech_shadow.gd), under the legs; `lift` = flying.
+var shadow_caster: MechShadow
+
+## FLIGHT FUEL (mechs with the WALK / FLY switch): flying is faster but burns fuel. Run the tank dry and the
+## mech drops to the ground and stays grounded until the tank has refilled ALL the way; land early and it
+## refills right away and you can take off again with a little in the tank. (RAVEN CLAW always flies: no fuel.)
+const FLY_SPEED := 1.35          # top speed while flying, x walking
+const FLY_FUEL_TIME := 6.0       # seconds of flight on a full tank
+const FLY_REFILL_TIME := 5.0     # seconds on the ground to refill an empty tank
+const FLY_REFILL_DELAY := 0.4    # after landing, before the tank starts refilling
+const FLY_MIN_TAKEOFF := 0.15    # fuel needed to take off again after landing early
+var fuel_on := false             # this chassis can switch (so it flies on fuel)
+var fly_fuel := 1.0              # 0..1
+var fly_locked := false          # ran dry: grounded until full
+var _refill_wait := 0.0
 ## Which design's two-layer art this is ("" = none; WalkTables key), and whether it floats (RAVEN CLAW): the
 ## same layers and upper-body motion, but the legs hang tucked and trail, with no footsteps.
 var walk_art := ""
@@ -333,6 +350,9 @@ func _physics_process(delta: float) -> void:
 	var speed := move_speed * Upgrades.move_mult() * (1.2 if overdrive_left > 0.0 else 1.0) * beam.move_factor()
 	if weapon == &"gatling" and Controls.is_firing():
 		speed *= 0.8
+	if fuel_on and _hover:
+		speed *= FLY_SPEED
+	_update_fuel(delta)
 	if _boost_left > 0.0:
 		velocity = _boost_dir * boost_speed
 		_afterimage_t -= delta
@@ -730,9 +750,9 @@ func _over_pit(p: Vector2) -> bool:
 	return false
 
 
-## Chassis damage on every attack: FROSTBLADE's IAIDO (melee up, guns down) and RAVEN CLAW's post-blink criticals.
+## Chassis damage on every attack: the frame's own `damage` (RAVEN CLAW), FROSTBLADE's IAIDO (melee up, guns down) and RAVEN CLAW's post-blink criticals.
 func _chassis_damage_mult() -> float:
-	var m := 1.0
+	var m := float(_chassis.get("damage", 1.0))  # (RAVEN CLAW: +20%)
 	if _chassis_id == &"duelist":
 		m = IAIDO_MELEE if Game.is_melee(weapon) else IAIDO_GUNS
 	if _crit_t > 0.0:
@@ -1238,6 +1258,14 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 		muzzle_flash.modulate = Game.energy_color()
 	if muzzle_flash.visible:
 		muzzle_flash.rotation = randf() * TAU
+	# Floor light (GroundFx): the muzzle flash, and the thrusters while flying or boosting, light the ground.
+	var key := get_instance_id()
+	if muzzle_flash.visible:
+		GroundFx.glow(key, muzzle_flash.global_position, 95.0 * _body_scale, muzzle_flash.modulate, 0.45)
+	if _hover or _boost_left > 0.0:
+		var thrust := 0.42 if _boost_left > 0.0 else 0.22 + 0.04 * sin(_hover_t * 23.0)
+		GroundFx.glow(key + 1, global_position + Vector2(8, 14) * _body_scale, 110.0 * _body_scale,
+			Game.booster_color(), thrust)
 	_flash = move_toward(_flash, 0.0, delta * 6.0)
 	(sprite.material as ShaderMaterial).set_shader_parameter("flash", _flash)
 	aura.visible = overdrive_left > 0.0
@@ -1250,7 +1278,16 @@ func _update_visuals(delta: float, move: Vector2) -> void:
 func _setup_layers() -> void:
 	walk_art = Game.chassis_walk_art(_chassis_id)
 	_hover = Game.chassis_hovers(_chassis_id)
+	fuel_on = Game.chassis_can_switch(_chassis_id)
+	if shadow_caster == null:
+		shadow_caster = MechShadow.new()
+		shadow_caster.name = "ShadowCaster"
+		add_child(shadow_caster)
+		var contact := get_node_or_null(^"Shadow")
+		move_child(shadow_caster, contact.get_index() + 1 if contact else 0)
+		shadow_caster.lift = 1.0 if _hover else 0.0
 	if walk_art == "":
+		shadow_caster.sources.assign([sprite])
 		return
 	_frames_gun = Game.chassis_torso_frames(_chassis_id, true)
 	_frames_nogun = Game.chassis_torso_frames(_chassis_id, false)
@@ -1268,6 +1305,7 @@ func _setup_layers() -> void:
 	legs.scale = _sprite_scale * _body_scale
 	legs.play(&"stand")
 	_last_step = -1
+	shadow_caster.sources.assign([legs, sprite])
 
 
 ## The WALK / HOVER switch (`hover_toggle`): a mech with both sets of art lifts off / sets down. Kept in the
@@ -1276,7 +1314,45 @@ func toggle_hover() -> void:
 	if not Game.chassis_can_switch(_chassis_id) or _boost_left > 0.0:
 		_deny()
 		return
-	Game.hover_mode = not Game.hover_mode
+	# Taking off needs fuel: none while the tank refills after running dry, or when it's nearly empty.
+	if not _hover and not can_take_off():
+		_deny()
+		return
+	_set_flying(not _hover)
+
+
+## True when this mech may take off now (it has the fuel for it).
+func can_take_off() -> bool:
+	return not fuel_on or (not fly_locked and fly_fuel >= FLY_MIN_TAKEOFF)
+
+
+## Burns fuel while flying, refills it on the ground; an empty tank forces a landing.
+func _update_fuel(delta: float) -> void:
+	if not fuel_on:
+		return
+	if _hover:
+		fly_fuel = maxf(fly_fuel - delta / FLY_FUEL_TIME, 0.0)
+		_refill_wait = FLY_REFILL_DELAY
+		if fly_fuel <= 0.0 and _boost_left <= 0.0:
+			fly_locked = true
+			_set_flying(false)
+			Sfx.play(&"slam", -8.0, 0.05)
+			Combat.shake(0.15)
+			fuel_empty.emit()
+	else:
+		_refill_wait -= delta
+		if _refill_wait <= 0.0 and fly_fuel < 1.0:
+			fly_fuel = minf(fly_fuel + delta / FLY_REFILL_TIME, 1.0)
+			if fly_fuel >= 1.0 and fly_locked:
+				fly_locked = false
+				Sfx.play(&"select", -8.0, 0.0)  # (ready to fly again)
+
+
+## Lifts off / sets down (the WALK / FLY switch). Kept in the settings (Game.hover_mode).
+func _set_flying(on: bool) -> void:
+	if on == _hover:
+		return
+	Game.hover_mode = on
 	Game.save()
 	_setup_layers()
 	_lean = Vector2.ZERO
@@ -1349,6 +1425,7 @@ func _update_legs(delta: float, move: Vector2) -> void:
 			_last_step = step
 			var foot := Vector2(-22.0 if step == 0 else 22.0, -14.0).rotated(legs.rotation) * _body_scale
 			SmokePuff.spawn(global_position + foot, Color(0.62, 0.58, 0.5, 0.3), 9.0 * _body_scale, 0.45, -velocity * 0.08, 1)
+			GroundFx.footprint(global_position + foot, legs.rotation, 1.15 * _body_scale)
 			Sfx.play(&"step", -13.0 if _legs_turning else -10.0, 0.12)
 	else:
 		# Standing: a hovering mech keeps bobbing on its thrusters.
@@ -1372,15 +1449,19 @@ func _update_legs(delta: float, move: Vector2) -> void:
 		var rock := Vector2.RIGHT.rotated(legs.rotation) * sin(_hover_t * 2.4) * 1.2 * _body_scale
 		body.position = _lean + rock
 		legs.position = body.position + hip.rotated(body.rotation) - hip.rotated(legs.rotation) - _lean * 1.5
-		if shadow:  # (higher off the ground: the shadow sits further away and smaller)
-			shadow.position = shadow.position.lerp(Vector2(10, 24), 1.0 - exp(-8.0 * delta))
-			shadow.scale = shadow.scale.lerp(Vector2(1.3, 1.04), 1.0 - exp(-8.0 * delta))
+		if shadow:  # (up in the air: the contact patch spreads out and fades; the shape's shadow drops away)
+			shadow.position = shadow.position.lerp(Vector2(26, 38) * _body_scale, 1.0 - exp(-6.0 * delta))
+			shadow.scale = shadow.scale.lerp(Vector2(1.8, 1.45) * _body_scale, 1.0 - exp(-6.0 * delta))
+			shadow.modulate.a = lerpf(shadow.modulate.a, 0.14, 1.0 - exp(-6.0 * delta))
 	else:
 		body.position = body.position.lerp(sway, 1.0 - exp(-18.0 * delta))
 		legs.position = body.position + hip.rotated(body.rotation) - hip.rotated(legs.rotation)
-		if shadow:
-			shadow.position = shadow.position.lerp(Vector2(6, 14), 1.0 - exp(-8.0 * delta))
-			shadow.scale = shadow.scale.lerp(Vector2(1.5, 1.2), 1.0 - exp(-8.0 * delta))
+		if shadow:  # (on the ground: a tight dark patch under the feet)
+			shadow.position = shadow.position.lerp(Vector2(3, 7) * _body_scale, 1.0 - exp(-8.0 * delta))
+			shadow.scale = shadow.scale.lerp(Vector2(1.25, 1.0) * _body_scale, 1.0 - exp(-8.0 * delta))
+			shadow.modulate.a = lerpf(shadow.modulate.a, 0.6, 1.0 - exp(-8.0 * delta))
+	if shadow_caster:
+		shadow_caster.lift = move_toward(shadow_caster.lift, 1.0 if _hover else 0.0, delta * 2.2)
 
 
 func _spawn_afterimage() -> void:

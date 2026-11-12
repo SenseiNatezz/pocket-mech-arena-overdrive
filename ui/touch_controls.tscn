@@ -118,6 +118,7 @@ mouse_filter = 2
 script = ExtResource("3")
 action = &"hover_toggle"
 label = "FLY"
+indicator = 2
 accent = Color(0.6, 0.8, 1, 1)
 
 [node name="Repair" type="Control" parent="Root"]

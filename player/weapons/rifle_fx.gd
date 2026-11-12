@@ -89,6 +89,7 @@ static func impact(pos: Vector2, dir: Vector2, col: Color, burst_size := 1.0) ->
 	fx.global_position = pos
 	fx.rotation = dir.angle()
 	fx.scale = Vector2.ONE * burst_size * IMPACT_SCALE
+	GroundFx.flash(pos, 70.0 * burst_size, col, 0.5, 0.22)
 	# Sparks streak out, mostly back toward the shooter and to the sides.
 	for i in 9:
 		var a := PI + randf_range(-1.9, 1.9)
@@ -103,6 +104,7 @@ static func gat_impact(pos: Vector2, dir: Vector2) -> void:
 	fx.kind = Kind.GAT_IMPACT
 	fx.color = TRACER
 	fx.z_index = 5
+	GroundFx.flash(pos, 44.0, TRACER, 0.35, 0.12)
 	fx.global_position = pos
 	fx.rotation = dir.angle()
 	for i in 6:

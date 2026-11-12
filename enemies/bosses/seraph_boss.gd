@@ -264,3 +264,8 @@ func _draw() -> void:
 		var k := 1.0 - _cage_t / CAGE_TIME
 		draw_arc(to_local(_cage_center), CAGE_RADIUS, 0.0, TAU, 64, Color(accent, 0.2 + 0.3 * k), 3.0, true)
 		draw_circle(to_local(_cage_center), 60.0 * k, Color(1.0, 0.3, 0.6, 0.15 * k))
+
+
+
+func _has_ground_shadow() -> bool:
+	return false  # (flies / floats)

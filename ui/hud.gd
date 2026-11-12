@@ -244,6 +244,7 @@ func _hook_scene() -> void:
 		mech.hurt.connect(_on_hurt)
 		mech.mode_changed.connect(func(flying: bool) -> void:
 			show_banner("FLYING" if flying else "WALKING", Color(0.6, 0.8, 1.0)))
+		mech.fuel_empty.connect(func() -> void: show_banner("OUT OF FUEL - REFUELING", Color(1.0, 0.65, 0.3)))
 	arena = get_tree().get_first_node_in_group("arena")
 	if Game.is_endless():
 		(_pause_panel.find_child("Btn1", true, false) as Button).text = "RESTART RUN"

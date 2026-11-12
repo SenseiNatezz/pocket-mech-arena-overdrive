@@ -255,3 +255,8 @@ func _star(p: Vector2, s: float, col: Color) -> void:
 	draw_colored_polygon(PackedVector2Array([p + Vector2(0, -s), p + Vector2(s * 0.25, -s * 0.25), p + Vector2(s, 0),
 		p + Vector2(s * 0.25, s * 0.25), p + Vector2(0, s), p + Vector2(-s * 0.25, s * 0.25), p + Vector2(-s, 0),
 		p + Vector2(-s * 0.25, -s * 0.25)]), col)
+
+
+
+func _has_ground_shadow() -> bool:
+	return false  # (flies / floats)

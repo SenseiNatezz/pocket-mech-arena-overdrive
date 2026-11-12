@@ -221,3 +221,8 @@ func _draw() -> void:
 	elif _state == &"gun_warn":
 		var k := clampf(1.0 - _state_t / GUN_WARN, 0.0, 1.0)
 		draw_circle(_prow() - global_position, 10.0 + 24.0 * k, Color(MAGENTA, 0.3 + 0.5 * k))
+
+
+
+func _has_ground_shadow() -> bool:
+	return false  # (flies / floats)

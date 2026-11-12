@@ -172,6 +172,12 @@ func deactivate() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# The round lights the floor under it as it flies (GroundFx).
+	if player_owned:
+		GroundFx.glow(get_instance_id(), global_position, 40.0 * clampf(scale.x, 0.7, 2.0),
+			RifleFx.TRACER if look == Look.TRACER else _color, 0.28)
+	else:
+		GroundFx.glow(get_instance_id(), global_position, 48.0, ENEMY_SHOT, 0.36)
 	if rifle_style:
 		_age += delta
 		var grown := _reach < _full_length()

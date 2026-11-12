@@ -78,12 +78,20 @@ const ESCORT_KINDS: Array[String] = ["striker", "shooter", "tank"]
 func _ready() -> void:
 	add_to_group("arena")
 	BlastFx.pale_floor = pale_floor
+	# The ground under the fight (fx/ground_fx.gd): footprints on snow / sand, softer floor light on pale ice.
+	var ground := "snow" if weather == "snow" else ("sand" if weather in ["sandstorm", "dust"] else "")
+	GroundFx.set_floor(self, ground, 0.7 if pale_floor else 1.0)
 	if Game.is_endless():
 		arena_name = "Endless - " + arena_name
 		intro_subtitle = "Endless mode  //  survive as long as you can  -  a boss every %d waves" % Game.ENDLESS_BOSS_EVERY
 	_layout = map_layout.new()
 	_k = map_scale
 	_build_art()
+	# Floor details, the painted lights coming alive, and the map's colour mood (environment/map_life.gd).
+	var life := MapLife.new()
+	life.name = "MapLife"
+	add_child(life)
+	life.setup(_layout, _k, weather, map_texture.resource_path.get_file().trim_prefix("env_").trim_suffix("_topdown.png"), arena_name)
 	_build_collision()
 	_spawn_props()
 	_setup_flow()
@@ -172,8 +180,8 @@ func _build_art() -> void:
 	art.centered = false
 	art.scale = Vector2(_k, _k)
 	art.z_index = -10
-	if pale_floor:
-		art.self_modulate = PALE_FLOOR_SHADE
+	var shade: Color = PALE_FLOOR_SHADE if pale_floor else MapLife.SHADES.get(weather, Color.WHITE)
+	art.self_modulate = shade
 	add_child(art)
 	move_child(art, 0)
 	# Occluders: the same painting, cut to the tall scenery's outline, drawn above characters.
@@ -187,8 +195,7 @@ func _build_art() -> void:
 		o.polygon = pts
 		o.uv = poly
 		o.z_index = 6
-		if pale_floor:
-			o.self_modulate = PALE_FLOOR_SHADE
+		o.self_modulate = shade
 		add_child(o)
 		_occluders.append(o)
 		_occluder_world.append(pts)

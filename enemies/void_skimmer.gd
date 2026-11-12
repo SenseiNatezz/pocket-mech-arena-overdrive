@@ -111,3 +111,8 @@ func _draw() -> void:
 	draw_texture(TEX, -half, tint(Color(1, 1, 1, _fade)))
 	draw_set_transform(Vector2.ZERO)
 	draw_hp_bar(-hit_radius - 22)
+
+
+
+func _has_ground_shadow() -> bool:
+	return false  # (flies / floats)

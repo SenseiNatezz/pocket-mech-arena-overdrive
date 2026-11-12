@@ -79,6 +79,11 @@ func _ready() -> void:
 	hs.shape = hc
 	hurt.add_child(hs)
 	add_child(hurt)
+	# Soft dark patch where it meets the ground (under its own drawn drop shadow), so it stands IN the map.
+	if _has_ground_shadow():
+		var sh := ContactShadow.new()
+		sh.radius = hit_radius
+		add_child(sh)
 	_agent = NavigationAgent2D.new()
 	_agent.path_desired_distance = 28.0
 	_agent.target_desired_distance = 28.0
@@ -264,6 +269,7 @@ func die() -> void:
 	# Scorch mark; big robots / elites burn, go off in a chain of blasts, boom and punch the camera in.
 	var big := hit_radius >= 40.0 or elite
 	BlastFx.robot_death(global_position, hit_radius, big)
+	GroundFx.wreck(global_position, hit_radius, tint)  # scrap left on the ground (fades after a while)
 	if big:
 		Combat.hitstop(0.07 if hit_radius >= 55.0 else 0.05)
 	Combat.report_kill(self)
@@ -332,3 +338,24 @@ class EliteAura:
 			var h := 7.0 if i == 1 else 5.0
 			draw_colored_polygon(PackedVector2Array([top + Vector2(x - 4, 0), top + Vector2(x, -h), top + Vector2(x + 4, 0)]),
 				Color(g, 0.9))
+
+
+
+## Robots that fly or float return false (they draw their own shadow further away, or none).
+func _has_ground_shadow() -> bool:
+	return true
+
+
+## The contact shadow: a soft dark patch a little down-right of the robot, drawn once, behind it.
+class ContactShadow:
+	extends Node2D
+	var radius := 22.0
+
+	func _ready() -> void:
+		z_index = -1
+		show_behind_parent = true
+
+	func _draw() -> void:
+		var r := radius
+		var col := Color(0.04, 0.07, 0.13, 0.36) if BlastFx.pale_floor else Color(0, 0, 0, 0.42)
+		draw_texture_rect(GroundFx.GLOW, Rect2(Vector2(-r * 1.25 + 3.0, -r * 1.05 + 5.0), Vector2(r * 2.5, r * 2.1)), false, col)

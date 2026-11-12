@@ -68,3 +68,8 @@ func _draw() -> void:
 	var pulse := 0.5 + 0.5 * sin(_t * 6.0)
 	draw_circle(Vector2(0, bob), 8.0 + 4.0 * pulse, Color(VIOLET, 0.25 + 0.2 * pulse))
 	draw_hp_bar(-hit_radius - 20)
+
+
+
+func _has_ground_shadow() -> bool:
+	return false  # (flies / floats)

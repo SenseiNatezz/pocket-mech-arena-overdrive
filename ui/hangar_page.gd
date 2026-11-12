@@ -323,6 +323,9 @@ class ChassisCard:
 		y += 21.0
 		var stats := "HP %d%%   SPEED %d%%   BOOST %s" % [roundi(float(info["hp"]) * 100.0), roundi(float(info["speed"]) * 100.0),
 			"FAST" if float(info["boost_cd"]) < 1.0 else ("SLOW" if float(info["boost_cd"]) > 1.0 else "STD")]
+		if float(info.get("damage", 1.0)) != 1.0:
+			stats = "HP %d%%   DMG %d%%   SPEED %d%%" % [roundi(float(info["hp"]) * 100.0),
+				roundi(float(info["damage"]) * 100.0), roundi(float(info["speed"]) * 100.0)]
 		var fs := 12
 		while fs > 8 and font.get_string_size(stats, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > w - 16:
 			fs -= 1

@@ -123,4 +123,7 @@ func _trick(id: StringName, tag: String, mech: Mech) -> void:
 				await _frames(2)
 			_check("%s: PHASE BLINK jumps at once (%.0f px)" % [tag, moved], moved > 100.0)
 			_check("%s: attacks after a blink are critical (x%.1f)" % [tag, mech._chassis_damage_mult()],
-				is_equal_approx(mech._chassis_damage_mult(), Mech.BLINK_CRIT))
+				is_equal_approx(mech._chassis_damage_mult(), 1.2 * Mech.BLINK_CRIT))
+			mech._crit_t = 0.0
+			_check("%s: +20%% damage on every attack (x%.2f)" % [tag, mech._chassis_damage_mult()],
+				is_equal_approx(mech._chassis_damage_mult(), 1.2))

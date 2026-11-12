@@ -78,3 +78,8 @@ func _draw() -> void:
 		draw_circle(facing * 10.0, 7.0 + 6.0 * k, Color(STING, 0.3 + 0.4 * k))
 		draw_line(facing * 20.0, facing * 190.0, Color(STING, 0.15 + 0.3 * k), 2.0)
 	draw_hp_bar(-hit_radius - 16)
+
+
+
+func _has_ground_shadow() -> bool:
+	return false  # (flies / floats)

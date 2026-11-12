@@ -312,7 +312,7 @@ const HANGAR := {
 const HANGAR_MK_STEP := 0.02
 ## ...and costs this much more than the level before it (MK II = the last listed cost x1.15).
 const HANGAR_MK_COST := 1.15
-## Mech chassis (Hangar): multipliers on the standard frame. `ability` is the frame's signature trick
+## Mech chassis (Hangar): multipliers on the standard frame (`damage`, optional: on every attack, Mech._chassis_damage_mult). `ability` is the frame's signature trick
 ## (player/mech.gd), `role` the frame class shown under the name, `sheet` the mech design whose sprite sheet
 ## it flies (assets/sprites/mechs/<sheet>/, see chassis_frames; designs in Mech Designs\New 10 - DESIGNS.md).
 const CHASSIS: Array[Dictionary] = [
@@ -347,9 +347,10 @@ const CHASSIS: Array[Dictionary] = [
 		"desc": "Lets its drones fight: -15% HP, takes 5% more damage."},
 	# RAVEN CLAW (unit 12, the user's sheet 11-09) took over the VESPER slot: same PHASE BLINK kit, own art.
 	{"id": &"phantom", "name": "RAVEN CLAW", "role": "Phantom frame", "sheet": &"raven", "cost": 7000, "hp": 0.8,
-		"speed": 1.1, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9, "color": Color(1.0, 0.24, 0.26),
+		"speed": 0.88, "damage": 1.2, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9,
+		"color": Color(1.0, 0.24, 0.26),
 		"ability": "PHASE BLINK: boost is an instant blink, and attacks within 1.5 s of a blink are critical (x2 damage).",
-		"desc": "Glass cannon: -20% HP, +10% speed, boost recharges 30% faster."},
+		"desc": "Glass cannon that always flies: +20% damage, -20% HP, a slower glide (-12% speed), boost recharges 30% faster."},
 ]
 ## Where a chassis's rendered sprite frames live (the Blender pipeline writes frames.tres + frames_nogun.tres).
 const MECH_SPRITES := "res://assets/sprites/mechs/%s/%s.tres"
