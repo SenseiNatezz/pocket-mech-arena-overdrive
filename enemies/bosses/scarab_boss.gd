@@ -317,6 +317,7 @@ func _draw() -> void:
 	draw_texture(SCARAB_TEX, -half, Color(0, 0, 0, 0.45 * (1.0 - _sink)))
 	draw_set_transform(shake, rot, s)
 	draw_texture(SCARAB_TEX, -half, tint(Color(1, 1, 1, 1.0 - 0.5 * _sink)))
+	note_body(SCARAB_TEX, shake, rot, s, tint(Color(1, 1, 1, (1.0 - 0.5 * _sink) * (1.0 - _sink))))
 	draw_set_transform(shake)
 	# Sun disk: pulses faster each phase; blazes while a flare charges.
 	var pulse := 0.5 + 0.5 * sin(_t * (3.0 + phase * 2.0))

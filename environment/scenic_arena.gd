@@ -65,6 +65,9 @@ var _boss_started := false
 ## SALVAGER_EVERY seconds (the first after SALVAGER_FIRST), never two at once; the Hangar's Salvager Beacon
 ## shortens the wait (Game.salvager_interval_mult). `-- --salvager=S`: the first one after S seconds.
 const SALVAGER := preload("res://enemies/gold_salvager.gd")
+const RIVAL := preload("res://enemies/rival_mech.gd")
+## The wave a Campaign rival drops into: the middle one (wave 3 of 5).
+const RIVAL_DELAY := 2.4
 const SALVAGER_FIRST := Vector2(70.0, 110.0)
 const SALVAGER_EVERY := Vector2(120.0, 180.0)
 var _salvager_t := 0.0
@@ -580,7 +583,8 @@ func _setup_flow() -> void:
 	else:
 		zone.wave_started.connect(func(i: int, n: int) -> void:
 			banner.emit("WAVE %d / %d" % [i, n], Color(1.0, 0.8, 0.3))
-			objective_changed.emit("Wave %d / %d - destroy all hostiles" % [i, n]))
+			objective_changed.emit("Wave %d / %d - destroy all hostiles" % [i, n])
+			_maybe_rival(i, n))
 		zone.wave_cleared.connect(func(i: int, n: int) -> void:
 			if i < n:
 				banner.emit("WAVE BROKEN - REINFORCEMENTS INBOUND" if zone.last_overlapped else "WAVE CLEARED", Color(0.4, 1.0, 0.6)))
@@ -668,6 +672,46 @@ func _salvager_tick(delta: float) -> void:
 		spawn_salvager()
 
 
+## RIVAL PILOTS: the Campaign's middle wave brings this arena's rival (Game.ARENA_RIVALS). Not in the
+## Weapon Range / tutorial (they aren't ScenicArenas) and not with `--no-rival` (tests / captures).
+func _maybe_rival(i: int, n: int) -> void:
+	if OS.get_cmdline_user_args().has("--no-rival") or n < 3 or i != int((n + 1) / 2.0):
+		return
+	_send_rival(Game.ARENA_RIVALS[clampi(Game.arena_index, 0, Game.ARENA_RIVALS.size() - 1)])
+
+
+## Announces a rival in mech `id`, then warps it in near the pilot a moment later (the wave waits for it).
+func _send_rival(id: StringName) -> void:
+	if zone == null:
+		return
+	zone.reserve()
+	var info := Game.chassis_info(id)
+	get_tree().create_timer(RIVAL_DELAY, false).timeout.connect(func() -> void:
+		banner.emit("RIVAL  %s" % String(info["name"]), Color(1.0, 0.4, 0.35))
+		var pos := _rival_spot()
+		for k in 3:
+			get_tree().create_timer(k * 0.22, false).timeout.connect(func() -> void:
+				Combat.shockwave(pos, 90.0 - k * 20.0, RivalMech.RED, 0.3))
+		get_tree().create_timer(0.75, false).timeout.connect(func() -> void:
+			if not is_inside_tree() or zone == null:
+				return
+			var r: RivalMech = RIVAL.new()
+			r.chassis_id = id
+			zone.add_special(r, pos)))
+
+
+## Open floor 420-700 px from the pilot (the arena's spawn points), else any spawn point.
+func _rival_spot() -> Vector2:
+	var mech := world.get_node_or_null("Mech") as Mech
+	var near: Array[Vector2] = []
+	if mech:
+		for p in zone.spawn_points:
+			var d := p.distance_to(mech.global_position)
+			if d > 420.0 and d < 700.0:
+				near.append(p)
+	return near.pick_random() if not near.is_empty() else zone._pick_spawn_point()
+
+
 ## Sends a Gold Salvager in on open floor near (not on top of) the pilot. Its HP grows with the pilot level.
 func spawn_salvager() -> Enemy:
 	var mech := world.get_node_or_null("Mech") as Mech
@@ -725,6 +769,14 @@ func _on_endless_wave_started(i: int, _n: int) -> void:
 	else:
 		banner.emit("WAVE %d" % i, Color(1.0, 0.8, 0.3))
 		objective_changed.emit("Wave %d - destroy all hostiles" % i)
+		if i % Game.RIVAL_ENDLESS_EVERY == 3:
+			# Endless: a random rival (not your own mech) every RIVAL_ENDLESS_EVERY waves (3, 9, 21, 27...; the
+			# boss waves skip it).
+			var pool: Array[StringName] = []
+			for c in Game.CHASSIS:
+				if c["id"] != Game.chassis:
+					pool.append(c["id"])
+			_send_rival(pool.pick_random())
 
 
 func _on_endless_wave_cleared(i: int, _n: int) -> void:

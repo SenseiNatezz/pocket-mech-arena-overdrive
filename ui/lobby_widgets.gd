@@ -161,9 +161,11 @@ class Card extends Base:
 	func _draw_tall() -> void:
 		var x := 20.0
 		draw_rect(Rect2(0, 16, 3, 30), accent)
-		LobbyKit.text(self, LobbyKit.tracked(LobbyKit.COND_B, 3), Vector2(x, 31), kicker, 14, accent)
-		var tfs := LobbyKit.fit(LobbyKit.HEAD, title, 32, size.x - x - 60.0, 20)
-		LobbyKit.text(self, LobbyKit.HEAD, Vector2(x - 1, 66), title, tfs, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1, 3)
+		var kf := LobbyKit.tracked(LobbyKit.COND_B, 3)
+		LobbyKit.text(self, kf, Vector2(x, 31), kicker, 14, accent)
+		UiFont.draw_kata(self, Vector2(x + LobbyKit.width_of(kf, kicker, 14) + 12.0, 31), UiFont.kata(title), 12)
+		var tfs := LobbyKit.fit(LobbyKit.HEAD, title, 30, size.x - x - 60.0, 18)
+		UiFont.draw_display(self, Vector2(x - 1, 67), title, tfs, Color.WHITE)
 		var ifs := LobbyKit.fit(LobbyKit.COND, info, 18, size.x - x - 24.0, 13)
 		LobbyKit.text(self, LobbyKit.COND, Vector2(x, 91), info, ifs, LobbyKit.TEXT, HORIZONTAL_ALIGNMENT_LEFT, -1, 3)
 		var y := size.y - 22.0
@@ -181,7 +183,8 @@ class Card extends Base:
 			LobbyKit.text(self, LobbyKit.COND_B, Vector2(x + pips.size() * 20.0 + 6.0, y + 5.0), "%d / %d CLEARED" % [done, pips.size()],
 				14, Color(LobbyKit.DIM, 0.95))
 		elif progress >= 0.0 or progress_text != "":
-			if progress_text != "":
+			# (a short card - Large text on a wide screen - has no room for it under the info line)
+			if progress_text != "" and y - 3.0 - 12.0 > 91.0 + 6.0:
 				var pfs := LobbyKit.fit(LobbyKit.COND_B, progress_text, 14, size.x - x - 70.0, 11)
 				LobbyKit.text(self, LobbyKit.COND_B, Vector2(x, y - 3.0), progress_text, pfs, Color(LobbyKit.DIM, 0.95))
 			if progress >= 0.0:
@@ -259,8 +262,13 @@ class Launch extends Base:
 		draw_polyline(LobbyKit.closed(pts), Color(1.0, 0.97, 0.82, 0.95), 1.5 + hl, true)
 		# Title + what it starts.
 		var x := sw + 18.0
-		var tfs := LobbyKit.fit(LobbyKit.HEAD, title, 42 if size.y >= 88.0 else 36, size.x - x - 110.0, 24)
+		var kj := UiFont.kata(title)
+		var kw := LobbyKit.width_of(UiFont.kata_font(17), kj, 17) + 30.0 if kj != "" else 0.0
+		var tfs := LobbyKit.fit(LobbyKit.HEAD, title, 40 if size.y >= 88.0 else 34, size.x - x - 110.0 - kw, 22)
 		LobbyKit.text(self, LobbyKit.HEAD, Vector2(x, size.y * 0.5 + 9.0), title, tfs, LobbyKit.NAVY)
+		if kj != "":
+			UiFont.draw_kata(self, Vector2(x + LobbyKit.width_of(LobbyKit.HEAD, title, tfs) + 12.0, size.y * 0.5 + 9.0 - tfs * 0.42),
+				kj, 17, Color(0.55, 0.09, 0.03), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 0)
 		var sfs := LobbyKit.fit(LobbyKit.COND_B, sub, 17, size.x - x - 30.0, 11)
 		LobbyKit.text(self, LobbyKit.COND_B, Vector2(x + 1, size.y * 0.5 + 31.0), sub, sfs, Color(LobbyKit.NAVY, 0.78))
 		# Chevrons flowing right.
@@ -432,7 +440,8 @@ class Unit extends Control:
 		var r := Rect2(Vector2.ZERO, size)
 		LobbyKit.panel(self, r, 14.0)
 		draw_rect(Rect2(0, 14, 3, 40), LobbyKit.GOLD)
-		LobbyKit.text(self, LobbyKit.tracked(LobbyKit.COND_B, 3), Vector2(16, 23), "MOBILE UNIT", 13, LobbyKit.CYAN)
+		var uf := LobbyKit.tracked(LobbyKit.COND_B, 3)
+		LobbyKit.text(self, uf, Vector2(16, 23), "MOBILE UNIT", 13, LobbyKit.CYAN)
 		# chassis tag (top right)
 		var cfs := 13
 		var cw := LobbyKit.width_of(LobbyKit.COND_B, chassis, cfs) + 14.0
@@ -441,8 +450,12 @@ class Unit extends Control:
 		draw_rect(tag, Color(chassis_color, 0.8), false, 1.0)
 		LobbyKit.text(self, LobbyKit.COND_B, Vector2(tag.position.x, tag.end.y - 5.0), chassis, cfs, chassis_color.lightened(0.25),
 			HORIZONTAL_ALIGNMENT_CENTER, tag.size.x)
-		LobbyKit.text(self, LobbyKit.HEAD, Vector2(15, 54), mech_name, LobbyKit.fit(LobbyKit.HEAD, mech_name, 28, size.x - 40.0, 18),
-			Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1, 3)
+		var nfs := LobbyKit.fit(LobbyKit.HEAD, mech_name, 26, size.x - 40.0, 16)
+		UiFont.draw_display(self, Vector2(15, 55), mech_name, nfs, Color.WHITE)
+		var nk := UiFont.kata(mech_name)
+		var nx := 15.0 + LobbyKit.width_of(LobbyKit.HEAD, mech_name, nfs) + 12.0
+		if nk != "" and nx + LobbyKit.width_of(UiFont.kata_font(11), nk, 11) < size.x - 14.0:
+			UiFont.draw_kata(self, Vector2(nx, 55.0 - nfs * 0.42), nk, 11)
 		draw_line(Vector2(16, 64), Vector2(size.x - 16, 64), Color(LobbyKit.CYAN, 0.25), 1.0)
 		# equipped weapon: art lying flat (muzzle / tip to the right), name, mastery
 		var wy := 64.0 + (size.y - 64.0) / 2.0
@@ -479,7 +492,9 @@ class Frame extends Control:
 		LobbyKit.fill_h(self, Rect2(0, 0, size.x, HEADER), 0.0, [[0.0, Color(0.12, 0.26, 0.5, 0.45)], [0.7, Color(0.12, 0.26, 0.5, 0.08)],
 			[1.0, Color(0.12, 0.26, 0.5, 0.0)]])
 		draw_rect(Rect2(0, 13, 4, 28), LobbyKit.GOLD)
-		LobbyKit.text(self, LobbyKit.HEAD, Vector2(PAD, 36), title, 24, Color.WHITE)
+		var tfs := LobbyKit.fit(LobbyKit.HEAD, title, 22, size.x - 2.0 * PAD - 120.0, 14)
+		UiFont.draw_display(self, Vector2(PAD, 37), title, tfs, Color.WHITE)
+		UiFont.draw_kata(self, Vector2(PAD + LobbyKit.width_of(LobbyKit.HEAD, title, tfs) + 14.0, 37 - tfs * 0.45), UiFont.kata(title), 11)
 		var hint := "ESC  BACK"
 		LobbyKit.text(self, LobbyKit.tracked(LobbyKit.COND_B, 2), Vector2(size.x - PAD - 18.0 - LobbyKit.width_of(
 			LobbyKit.tracked(LobbyKit.COND_B, 2), hint, 12), 33), hint, 12, Color(LobbyKit.DIM, 0.8))

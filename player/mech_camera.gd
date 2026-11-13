@@ -86,7 +86,8 @@ func _ready() -> void:
 
 
 func _base_zoom() -> float:
-	return (_touch_zoom if Controls.device == Controls.Device.TOUCH else DESKTOP_ZOOM) * Game.camera_zoom_mult()
+	# (divided by Settings > Text Size, which scales the whole canvas: the battlefield keeps its size)
+	return (_touch_zoom if Controls.device == Controls.Device.TOUCH else DESKTOP_ZOOM) * Game.camera_zoom_mult() 		/ Game.text_scale()
 
 
 func add_trauma(amount: float) -> void:

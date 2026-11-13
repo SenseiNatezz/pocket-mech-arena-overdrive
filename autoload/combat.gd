@@ -412,6 +412,7 @@ func damage_number(pos: Vector2, amount: float, color := Color(1, 0.85, 0.6), ta
 		if shown >= MAX_NUMBERS:
 			return
 		l = Label.new()
+		l.add_theme_font_override("font", UiFont.DISPLAY)  # the title lettering (ui/ui_font.gd)
 		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 		l.add_theme_constant_override("outline_size", 6)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -464,7 +465,7 @@ func _retire_number(l: Label) -> void:
 
 ## Rough on-screen width of a number's text.
 func _number_w(l: Label) -> float:
-	return float(l.text.length()) * float(l.get_theme_font_size("font_size")) * 0.62
+	return float(l.text.length()) * float(l.get_theme_font_size("font_size")) * 0.72
 
 
 ## Lays the numbers out every frame (two side by side used to read as one, e.g. "172" + "142" = "172142",
@@ -509,7 +510,7 @@ func _layout_numbers(delta: float) -> void:
 ## (Re)starts a number's pop + hold + fade. Merged hits restart the hold so it stays while you keep hitting.
 func _show_number(l: Label, total: float, color: Color, bump: bool) -> void:
 	l.text = str(roundi(total))
-	var fs := 20 + int(clampf(total / 300.0, 0.0, 1.0) * 10.0)
+	var fs := 17 + int(clampf(total / 300.0, 0.0, 1.0) * 9.0)
 	l.add_theme_font_size_override("font_size", fs)
 	l.add_theme_color_override("font_color", color if total < 150.0 else color.lerp(Color(1.0, 0.65, 0.2), 0.6))
 	l.pivot_offset = Vector2(NUMBER_W / 2, 17)

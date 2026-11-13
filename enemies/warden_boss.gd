@@ -53,11 +53,15 @@ var _dying := 0.0
 var _nova_t := 0.0
 var _nova_charge := 0.0
 var _aura: Node2D
+## The arms / legs drawn again above the mech (fx/boss_limbs.gd), fed by note_body().
+var _limbs: BossLimbs
 
 
 func _ready() -> void:
 	super._ready()
 	add_to_group("boss")
+	_limbs = BossLimbs.new()
+	add_child(_limbs)
 	if body_radius > 0.0:
 		for c in get_children():
 			if c is CollisionShape2D and c.shape is CircleShape2D:
@@ -301,6 +305,13 @@ func _pick_attack() -> void:
 			_step_t = 0.2
 
 
+## Each boss's _draw calls this right after drawing its body sprite (centred `tex` at `pos`, turned `rot`,
+## scaled `s`, in `col`), so BossLimbs can draw the same arms / legs over the mech, leaving the core under it.
+func note_body(tex: Texture2D, pos: Vector2, rot: float, s: Vector2, col: Color) -> void:
+	if _limbs:
+		_limbs.paint(tex, Transform2D(rot, s, 0.0, pos), col, (keep_out if keep_out > 0.0 else hit_radius) * 0.8)
+
+
 func _end_attack() -> void:
 	_state = &"idle"
 	_state_t = randf_range(0.9, 1.5) / (1.0 + (phase - 1) * 0.3)
@@ -319,6 +330,7 @@ func _draw() -> void:
 	draw_texture(TEX, -half, Color(0, 0, 0, 0.45))
 	draw_set_transform(shake, rot, s)
 	draw_texture(TEX, -half, tint(body_tint))
+	note_body(TEX, shake, rot, s, tint(body_tint))
 	draw_set_transform(shake)
 	# Reactor core glow (pulses faster each phase).
 	var pulse := 0.5 + 0.5 * sin(_t * (3.0 + phase * 2.5))

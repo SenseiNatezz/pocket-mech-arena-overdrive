@@ -192,6 +192,7 @@ func _draw() -> void:
 	if _state == &"dash_windup":
 		body = body.lerp(Color(1.6, 1.1, 0.8), 0.4 + 0.4 * sin(_t * 30.0))
 	draw_texture(RONIN_TEX, -half, body)
+	note_body(RONIN_TEX, shake, rot, s, body)
 	draw_set_transform(shake)
 	# Slash arcs, always in FRONT of the Ronin. During the blade flurry they sweep left / right in turn.
 	if _slash_fx > 0.0:

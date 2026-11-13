@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://ddstk3nwm0jjw"
-path="res://.godot/imported/ChakraPetch-Bold.ttf-36b1681cc4458f50138f3d51061f0fbc.fontdata"
+uid="uid://b80cr2oyaq4sw"
+path="res://.godot/imported/SairaCondensed-Bold.ttf-c25ac5a8d65cbb27b7a008718867b5cc.fontdata"
 
 [deps]
 
-source_file="res://assets/fonts/ChakraPetch-Bold.ttf"
-dest_files=["res://.godot/imported/ChakraPetch-Bold.ttf-36b1681cc4458f50138f3d51061f0fbc.fontdata"]
+source_file="res://assets/fonts/SairaCondensed-Bold.ttf"
+dest_files=["res://.godot/imported/SairaCondensed-Bold.ttf-c25ac5a8d65cbb27b7a008718867b5cc.fontdata"]
 
 [params]
 

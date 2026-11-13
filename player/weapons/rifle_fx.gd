@@ -193,11 +193,18 @@ static func draw_bolt(ci: CanvasItem, frame: int, col: Color, seed: int, reach :
 	var l := minf(BOLT_LENGTH, maxf(reach + 16.0, 24.0))
 	var clear := Color(col, 0.0)
 	var hot := col.lightened(0.55)
-	# Bloom, coloured shell, hot inner shell, white core.
-	_bolt_shape(ci, l * 1.08, w * 3.0, Color(col, 0.22), clear)
-	_bolt_shape(ci, l, w * 1.3, Color(col.lightened(0.12), 0.92), clear)
-	_bolt_shape(ci, l * 0.86, w * 0.78, Color(hot, 1.0), Color(col, 0.0))
-	_bolt_shape(ci, l * 0.72, w * 0.36, Color.WHITE, Color(1, 1, 1, 0))
+	if BlastFx.pale_floor:
+		# Painted (not added) on pale ice: a dark rim and a deeper colour so the beam reads on white.
+		_bolt_shape(ci, l * 1.02, w * 1.75, Color(col.darkened(0.55), 0.55), Color(col.darkened(0.55), 0.0))
+		_bolt_shape(ci, l, w * 1.3, Color(col.darkened(0.08), 0.95), clear)
+		_bolt_shape(ci, l * 0.86, w * 0.78, Color(hot, 1.0), Color(col, 0.0))
+		_bolt_shape(ci, l * 0.72, w * 0.36, Color.WHITE, Color(1, 1, 1, 0))
+	else:
+		# Bloom, coloured shell, hot inner shell, white core.
+		_bolt_shape(ci, l * 1.08, w * 3.0, Color(col, 0.22), clear)
+		_bolt_shape(ci, l, w * 1.3, Color(col.lightened(0.12), 0.92), clear)
+		_bolt_shape(ci, l * 0.86, w * 0.78, Color(hot, 1.0), Color(col, 0.0))
+		_bolt_shape(ci, l * 0.72, w * 0.36, Color.WHITE, Color(1, 1, 1, 0))
 	# Two energy strands twisting round the beam: tight near the head, opening out down the tail.
 	var n := 18
 	for s in 2:

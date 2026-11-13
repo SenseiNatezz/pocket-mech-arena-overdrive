@@ -204,6 +204,7 @@ func _draw() -> void:
 	draw_texture(ZENITH_TEX, -half, Color(0, 0, 0, 0.35))
 	draw_set_transform(shake + Vector2(0, hover), rot, s)
 	draw_texture(ZENITH_TEX, -half, tint(Color.WHITE))
+	note_body(ZENITH_TEX, shake + Vector2(0, hover), rot, s, tint(Color.WHITE))
 	draw_set_transform(shake + Vector2(0, hover))
 	var pulse := 0.5 + 0.5 * sin(_t * (2.5 + phase * 2.0))
 	draw_circle(Vector2.ZERO, 34.0 + 12.0 * pulse, Color(VIOLET, 0.16 + 0.12 * pulse))

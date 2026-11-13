@@ -28,6 +28,8 @@ var level_menu: CanvasLayer
 var _bars: Control
 var _objective: Label
 var _banner: Label
+## The small Japanese label over the banner word (UiFont.kata), hidden when the banner has none.
+var _banner_kata: Label
 var _banner_box: PanelContainer
 var _banner_style: StyleBoxFlat
 var _banner_tw: Tween
@@ -128,10 +130,15 @@ func _ready() -> void:
 	_banner_style.content_margin_bottom = 2
 	_banner_box.add_theme_stylebox_override("panel", _banner_style)
 	_banner_box.modulate.a = 0.0
+	var stack := VBoxContainer.new()
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_theme_constant_override("separation", -6)
+	_banner_box.add_child(stack)
+	_banner_kata = UiFont.kata_label("", 15)
+	stack.add_child(_banner_kata)
 	_banner = _label(46, Color.WHITE)
-	_banner.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
-	_banner.add_theme_constant_override("outline_size", 12)
-	_banner_box.add_child(_banner)
+	UiFont.display_label(_banner, 44, Color.WHITE)
+	stack.add_child(_banner)
 	root.add_child(_banner_box)
 
 	_pause_panel = _panel("PAUSED", [["RESUME", _resume], ["RESTART ARENA", _restart], ["SCREEN SHAKE: ON", _toggle_shake],
@@ -170,6 +177,7 @@ func _ready() -> void:
 	Game.salvager_spotted.connect(_on_salvager_spotted)
 	Game.salvager_caught.connect(_on_salvager_caught)
 	Game.salvager_escaped.connect(_on_salvager_escaped)
+	Game.rival_defeated.connect(_on_rival_defeated)
 	Game.threat_won.connect(_on_threat_won)
 	_scrap_seen = Game.run_scrap_landed()
 	_scrap_shown = _scrap_seen
@@ -280,6 +288,7 @@ func _show_intro_card(tex: Texture2D, title: String, subtitle: String) -> void:
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(shade)
 	var t := _label(64, Color(0.9, 0.95, 1.0))
+	UiFont.display_label(t, 40 if Layout.portrait else 56, Color(0.92, 0.96, 1.0))
 	t.text = title
 	t.set_anchors_preset(Control.PRESET_CENTER)
 	t.position = Vector2(-600, -70)
@@ -288,8 +297,12 @@ func _show_intro_card(tex: Texture2D, title: String, subtitle: String) -> void:
 	var s := _label(20, Color(0.55, 0.95, 1.0))
 	s.text = subtitle
 	s.set_anchors_preset(Control.PRESET_CENTER)
-	s.position = Vector2(-600, 20)
-	s.size = Vector2(1200, 40)
+	# Wraps onto two lines on a narrow (portrait) screen instead of running off both edges.
+	var sw := minf(1200.0, _screen_size().x - 40.0)
+	s.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	s.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	s.position = Vector2(-sw / 2.0, 24)
+	s.size = Vector2(sw, 70)
 	card.add_child(s)
 	art.pivot_offset = get_viewport().get_visible_rect().size / 2
 	var tw := card.create_tween()
@@ -332,8 +345,16 @@ func _panel(title: String, buttons: Array, with_help := false) -> Control:
 	v.add_theme_constant_override("separation", 12)
 	v.custom_minimum_size = Vector2(380, 0)
 	box.add_child(v)
-	v.add_child(_label(34, Color(0.6, 0.9, 1.0)))
-	(v.get_child(0) as Label).text = title
+	var head := _label(34, Color(0.6, 0.9, 1.0))
+	UiFont.display_label(head, 30, Color(0.6, 0.9, 1.0))
+	head.text = title
+	v.add_child(head)
+	# The Japanese label sits just above the title (a child, so the panel's rows keep their order).
+	var kata := UiFont.kata_label(UiFont.kata(title), 14)
+	kata.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	kata.offset_top = -22.0
+	kata.offset_bottom = -2.0
+	head.add_child(kata)
 	for i in buttons.size():
 		var b := MenuButtonFactory.make(buttons[i][0])
 		b.name = "Btn%d" % i
@@ -367,6 +388,12 @@ func show_banner(text: String, color := Color.WHITE) -> void:
 		return
 	_banner.text = text
 	_banner.add_theme_color_override("font_color", color)
+	# The red print shadow, or a dark one under text that is red already.
+	_banner.add_theme_color_override("font_shadow_color", Color(0.3, 0.02, 0.03) if color.r > 0.8 and color.g < 0.5
+		else UiFont.SHADOW)
+	_banner_kata.text = UiFont.kata(text)
+	_banner_kata.visible = _banner_kata.text != ""
+	_banner_style.content_margin_top = 4 if _banner_kata.visible else 0
 	_banner_style.border_color = Color(color, 0.85)
 	if _banner_tw:
 		_banner_tw.kill()
@@ -383,7 +410,12 @@ func show_banner(text: String, color := Color.WHITE) -> void:
 ## landscape, under the boss bar in portrait. Returns the scale that fits it on screen (long banners on a
 ## narrow portrait screen shrink).
 func _place_banner() -> float:
-	_banner.add_theme_font_size_override("font_size", 38 if Layout.portrait else 46)
+	var fs := 34 if Layout.portrait else 42
+	_banner.add_theme_font_size_override("font_size", fs)
+	_banner.add_theme_constant_override("outline_size", UiFont.outline_size(fs))
+	_banner.add_theme_constant_override("shadow_outline_size", UiFont.outline_size(fs))
+	_banner.add_theme_constant_override("shadow_offset_x", int(UiFont.shadow_offset(fs)))
+	_banner.add_theme_constant_override("shadow_offset_y", int(UiFont.shadow_offset(fs)))
 	_banner_box.reset_size()
 	var sz := _banner_box.get_combined_minimum_size()
 	_banner_box.size = sz
@@ -471,10 +503,8 @@ func _show_boss_card(b: Node) -> void:
 	var name_y := 262.0 if Layout.portrait else roundf(vp.y * 0.68)
 	var name_l := _label(52 if Layout.portrait else 66, Color.WHITE)
 	name_l.text = title[0]
-	name_l.add_theme_color_override("font_outline_color", Color(accent.darkened(0.75), 0.95))
-	name_l.add_theme_constant_override("outline_size", 14)
-	name_l.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	name_l.add_theme_constant_override("shadow_offset_y", 5)
+	# Title-card lettering with the print shadow in the boss's own colour.
+	UiFont.display_label(name_l, 50 if Layout.portrait else 62, Color.WHITE, Color(accent, 0.95))
 	name_l.size = Vector2(vp.x, 90)
 	name_l.position = Vector2(0, name_y - 45)
 	name_l.pivot_offset = name_l.size / 2
@@ -488,6 +518,12 @@ func _show_boss_card(b: Node) -> void:
 	sub.size = Vector2(vp.x, 30)
 	sub.position = Vector2(0, name_y - 82)
 	card.add_child(sub)
+	# The boss's name in Japanese under the rule, fading in with the subtitle.
+	var kata := UiFont.kata_label(UiFont.kata(title[0]), 18, accent.lightened(0.35))
+	kata.size = Vector2(vp.x, 28)
+	kata.position = Vector2(0, name_y + 52)
+	kata.modulate.a = 0.0
+	card.add_child(kata)
 	var rule_w := minf(vp.x - 80.0, 620.0)
 	var rule := ColorRect.new()
 	rule.color = accent
@@ -508,6 +544,7 @@ func _show_boss_card(b: Node) -> void:
 	tw.tween_property(rule, "size:x", rule_w, 0.4).set_delay(0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(rule, "position:x", (vp.x - rule_w) / 2.0, 0.4).set_delay(0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(sub, "modulate:a", 1.0, 0.35).set_delay(0.32)
+	tw.tween_property(kata, "modulate:a", 1.0, 0.35).set_delay(0.4)
 	tw.tween_property(sub, "position:y", name_y - 76, 0.35).set_delay(0.32).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	var out := BOSS_CARD_TIME - 0.45
 	tw.tween_property(card, "modulate:a", 0.0, 0.45).set_delay(out)
@@ -855,6 +892,17 @@ func _on_salvager_caught(prize: StringName, amount: float) -> void:
 	if prize == &"lucky":
 		_scrap_next_label = "LUCKY"
 	Sfx.play(&"levelup", -8.0, 0.0)
+
+
+## A rival pilot went down: the bounty's chips are already flying in; the first win also cuts its price.
+func _on_rival_defeated(id: StringName, first: bool, _bounty: float) -> void:
+	var nm := String(Game.chassis_info(id)["name"])
+	if first:
+		show_banner("RIVAL DEFEATED - %s %d%% OFF" % [nm, roundi(Game.RIVAL_DISCOUNT * 100.0)], Color(1.0, 0.9, 0.4))
+	else:
+		show_banner("RIVAL DEFEATED", Color(1.0, 0.9, 0.4))
+	_scrap_next_label = "RIVAL"
+	Sfx.play(&"levelup", -6.0, 0.0)
 
 
 func _on_salvager_escaped() -> void:
@@ -1375,8 +1423,9 @@ func _scrap_baseline() -> float:
 ## The "+N" pop rises from just under it and fades. Returns the plate's left edge.
 func _draw_scrap(c: Control, font: Font, right: float, y: float) -> float:
 	var txt := Game.fmt_int(roundi(_scrap_shown))
-	var fs := 20
-	var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var fs := 18
+	var big := UiFont.DISPLAY  # the counter in the title lettering
+	var tw := big.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 	var cw := font.get_string_size("SCRAP", HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 	var w := 12.0 + cw + 10.0 + 18.0 + 8.0 + maxf(tw, 24.0) + 12.0
 	var o := Vector2(right - w, y - 21.0)
@@ -1394,8 +1443,8 @@ func _draw_scrap(c: Control, font: Font, right: float, y: float) -> float:
 	_draw_nut(c, Vector2(x + 9.0, y - 7.0), 7.5 * (1.0 + 0.3 * _scrap_bump), _t * 1.5)
 	x += 18.0 + 8.0
 	var col := SCRAP_GOLD.lerp(Color.WHITE, 0.6 * _scrap_bump)
-	c.draw_string_outline(font, Vector2(x, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 5, Color(0, 0, 0, 0.85))
-	c.draw_string(font, Vector2(x, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	c.draw_string_outline(big, Vector2(x, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 5, Color(0, 0, 0, 0.85))
+	c.draw_string(big, Vector2(x, y), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 	if _scrap_pop >= 0.5 and _scrap_pop_t < SCRAP_POP_TIME:
 		var k := _scrap_pop_t / SCRAP_POP_TIME
 		var a := clampf((1.0 - k) * 2.5, 0.0, 1.0)
@@ -1485,8 +1534,8 @@ func _draw_status(c: Control, font: Font) -> void:
 	c.draw_arc(bc, 30.0, 0.0, TAU, 48, Color(xp_col, 0.5), 1.5, true)
 	c.draw_string(font, bc + Vector2(-30, -9), "LV", HORIZONTAL_ALIGNMENT_CENTER, 60, 10, Color(xp_col, 0.8))
 	var lv := str(Upgrades.level)
-	c.draw_string_outline(font, bc + Vector2(-30, 17), lv, HORIZONTAL_ALIGNMENT_CENTER, 60, 26, 4, Color(0, 0, 0, 0.8))
-	c.draw_string(font, bc + Vector2(-30, 17), lv, HORIZONTAL_ALIGNMENT_CENTER, 60, 26, Color.WHITE)
+	var lfs := 24 if lv.length() < 2 else 20
+	UiFont.draw_display(c, bc + Vector2(-30, 16), lv, lfs, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 60, Color(0.2, 0.75, 0.6, 0.9))
 
 	var x0 := o.x + 90.0
 	var bw := size.x - 104.0

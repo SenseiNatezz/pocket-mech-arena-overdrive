@@ -277,6 +277,19 @@ func track(e: Enemy) -> void:
 	_alive.append(e)
 
 
+## A ready-made special enemy (a RIVAL PILOT) joins the current wave at `pos`, scaled like the wave's own
+## robots. Pair with reserve() when it was announced earlier, so the wave waited for it.
+func add_special(e: Enemy, pos: Vector2) -> void:
+	_pending = maxi(_pending - 1, 0)
+	e.position = pos
+	e.max_hp *= hp_mult * (1.0 + hp_ramp * (wave - 1)) * Game.diff("hp") * Game.twist_value("enemy_hp")
+	e.move_speed *= sqrt(Game.diff("speed")) * Game.twist_value("enemy_speed")
+	e.damage_mult = wave_damage_mult()
+	e.died.connect(_on_enemy_died)
+	_alive.append(e)
+	(enemy_parent if enemy_parent else get_parent()).add_child(e)
+
+
 func _telegraph_spawn(kind: String) -> void:
 	var pos := _pick_spawn_point()
 	# Warp-in telegraph: a pulsing magenta ring for 0.7 s.

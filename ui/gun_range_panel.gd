@@ -101,6 +101,12 @@ func _ready() -> void:
 		b.set_meta("name", k[1])
 		_boss_grid.add_child(b)
 		_boss_btns.append(b)
+	# RIVAL: each press sends the next Hangar mech's pilot to spar with.
+	var rival_btn := _button("RIVAL PILOT", func() -> void: pass, Color(1.0, 0.45, 0.4))
+	rival_btn.pressed.connect(func() -> void:
+		var id: StringName = gun_range.spawn_rival()
+		rival_btn.text = "RIVAL: %s" % String(Game.chassis_info(id)["name"]))
+	_boss_grid.add_child(rival_btn)
 	_boss_grid.add_child(_button("CLEAR ALL", gun_range.clear_enemies, Color(1.0, 0.55, 0.45)))
 
 	# MECH picker (toggle + its own panel).

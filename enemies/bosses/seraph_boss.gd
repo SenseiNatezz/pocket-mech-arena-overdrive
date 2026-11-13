@@ -234,6 +234,7 @@ func _draw() -> void:
 	draw_texture(SERAPH_TEX, -half, Color(0, 0, 0, 0.3))
 	draw_set_transform(shake, rot, s)
 	draw_texture(SERAPH_TEX, -half, tint(Color.WHITE))
+	note_body(SERAPH_TEX, shake, rot, s, tint(Color.WHITE))
 	draw_set_transform(shake)
 	var pulse := 0.5 + 0.5 * sin(_t * (3.0 + phase * 2.5))
 	draw_circle(Vector2.ZERO, 31 + pulse * 14, Color(accent, 0.2 + 0.12 * pulse))

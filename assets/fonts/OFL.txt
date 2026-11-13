@@ -1,12 +1,14 @@
-Fonts in this folder (used by the title screen / lobby, ui/lobby_kit.gd):
+Fonts in this folder (the game's lettering, ui/ui_font.gd; Saira Condensed SemiBold is also the project's
+default font, project.godot gui/theme/custom_font):
 
-  Chakra Petch (ChakraPetch-Bold.ttf, ChakraPetch-SemiBold.ttf)
-  Copyright 2018 The Chakra Petch Project Authors (https://github.com/m4rc1e/ChakraPetch)
+  Dela Gothic One (DelaGothicOne-Regular.ttf) - titles, banners, names, big numbers, katakana labels
+  Copyright 2020 The Dela Gothic Project Authors (https://github.com/syakuzen/DelaGothic)
 
-  Barlow Condensed (BarlowCondensed-SemiBold.ttf, BarlowCondensed-Bold.ttf, BarlowCondensed-ExtraBold.ttf)
-  Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+  Saira Condensed (SairaCondensed-Medium.ttf, -SemiBold.ttf, -Bold.ttf, -ExtraBold.ttf) - everything else
+  Copyright 2016 The Saira Project Authors (omnibus.type@gmail.com), with reserved font name "Saira".
 
-Both are licensed under the SIL Open Font License, Version 1.1, reproduced below.
+Both are licensed under the SIL Open Font License, Version 1.1, reproduced below. The font files are used
+unmodified (from github.com/google/fonts).
 This license is also available with a FAQ at: https://openfontlicense.org
 
 -----------------------------------------------------------

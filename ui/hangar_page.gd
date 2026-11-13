@@ -62,6 +62,7 @@ func _ready() -> void:
 	_column.add_child(head)
 	var title := _label("HANGAR", 40, Color.WHITE)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UiFont.page_title(title, 36)
 	head.add_child(title)
 	_scrap_label = _label("", 24, GOLD)
 	head.add_child(_scrap_label)
@@ -316,7 +317,8 @@ class ChassisCard:
 		var tint := Game.chassis_tint(info["id"])
 		draw_texture_rect_region(_tex, art.grow(0), _used, Color(1.35, 1.35, 1.4) * tint if owned else Color(0.5, 0.53, 0.6))
 		var y := 12.0 + PREVIEW_H + 22.0
-		draw_string(font, Vector2(10, y), String(info["name"]).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, w - 20, 18, col.lightened(0.2))
+		UiFont.draw_display(self, Vector2(10, y + 1.0), String(info["name"]).to_upper(), 17, col.lightened(0.25),
+			HORIZONTAL_ALIGNMENT_CENTER, w - 20, Color(col.darkened(0.6), 0.95))
 		y += 17.0
 		draw_string(font, Vector2(10, y), String(info.get("role", "")).to_upper(), HORIZONTAL_ALIGNMENT_CENTER, w - 20, 11,
 			Color(col, 0.75))
@@ -337,8 +339,10 @@ class ChassisCard:
 		for line in _wrap(font, String(info["desc"]), w - 24.0, 12):
 			y += 16.0
 			draw_string(font, Vector2(12, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 24, 12, Color(0.7, 0.78, 0.9))
-		var foot := "SELECTED" if selected else ("SELECT" if owned else "BUY  %s SCRAP" % Game.fmt_int(int(info["cost"])))
-		var fcol := col if selected else (Color.WHITE if owned else (HangarPage.GOLD if Game.scrap >= int(info["cost"]) else Color(1, 0.45, 0.4)))
+		var cost := Game.chassis_cost(info["id"])
+		var off := "  (RIVAL -%d%%)" % roundi(Game.RIVAL_DISCOUNT * 100.0) if cost < int(info["cost"]) else ""
+		var foot := "SELECTED" if selected else ("SELECT" if owned else "BUY  %s SCRAP%s" % [Game.fmt_int(cost), off])
+		var fcol := col if selected else (Color.WHITE if owned else (HangarPage.GOLD if Game.scrap >= cost else Color(1, 0.45, 0.4)))
 		draw_rect(Rect2(10, size.y - 38, w - 20, 28), Color(fcol, 0.14))
 		draw_string(font, Vector2(10, size.y - 18), foot, HORIZONTAL_ALIGNMENT_CENTER, w - 20, 15, fcol)
 

@@ -16,6 +16,9 @@ extends Node
 ## picked from an intensity score (robots alive, elites, the pilot's armor), moving up quickly and back
 ## down only after it has stayed calm for a while. During lulls a low-pass filter muffles the music,
 ## opening up as the fight heats up; radio callouts duck it a little.
+## ARENA THEMES: each Campaign arena has its own battle track (ARENA_MUSIC, arena_<map>.mp3, ElevenLabs
+## Music via Higgsfield, levelled to -10 LUFS). There the three layers all play that one track and only the
+## low-pass changes (muffled in lulls, open in the fight); Endless keeps the shared three-layer set.
 
 const DIR := "res://assets/audio/music/"
 const FADE := 1.6
@@ -24,7 +27,13 @@ const PAUSE_DUCK_DB := -8.0
 const RADIO_DUCK_DB := -5.0
 ## Per-track level (dB) so every track sits at the same loudness (measured from the files).
 const GAIN := {&"boss": -7.2, &"combat": -7.2, &"combat_low": -6.0, &"combat_high": -7.8, &"defeat": 2.4,
-	&"menu": -5.7, &"training": -6.6, &"victory": -3.9}
+	&"menu": -5.7, &"training": -6.6, &"victory": -3.9,
+	&"arena_frozen": -5.7, &"arena_jungle": -5.7, &"arena_alien": -5.7, &"arena_skyway": -5.7, &"arena_ruined": -5.7,
+	&"arena_volcanic": -5.7, &"arena_titan": -5.7, &"arena_dock": -5.7}
+## Each Campaign arena's own battle track (by ScenicArena.arena_name).
+const ARENA_MUSIC := {"Frozen Outpost": &"arena_frozen", "Jungle Megafactory": &"arena_jungle",
+	"Alien Outpost": &"arena_alien", "Skyway Junction": &"arena_skyway", "Ruined Plaza": &"arena_ruined",
+	"Volcanic Forge": &"arena_volcanic", "Titan Graveyard": &"arena_titan", "Orbital Dry Dock": &"arena_dock"}
 const STINGS := [&"victory", &"defeat"]
 const LAYERS := [&"combat_low", &"combat", &"combat_high"]
 ## Intensity score thresholds for the mid / high layers, and how long a calmer score has to hold
@@ -47,6 +56,10 @@ var _duck := 0.0
 var _boss_check := 0.0
 ## Adaptive combat: on in arenas; current score, the layer it wants, and how long it's wanted lower.
 var _adaptive := false
+## The combat layer the fight is at (combat_low / combat / combat_high), and the arena's own track ("" = the
+## shared layer tracks).
+var _layer := &""
+var _arena_track := &""
 var _intensity := 0.0
 var _calm_t := 0.0
 var _since_change := 99.0
@@ -136,25 +149,35 @@ func _update_adaptive(delta: float) -> void:
 	if _score_t <= 0.0:
 		_score_t = 0.5
 		_intensity = _score()
-	if track not in LAYERS:
-		return
+	if _layer == &"" or track != _combat_track(_layer):
+		return  # boss music or a sting is playing
 	_since_change += delta
 	var want: StringName = &"combat_high" if _intensity >= HIGH_AT else (&"combat" if _intensity >= MID_AT else &"combat_low")
-	if LAYERS.find(want) > LAYERS.find(track):
+	if LAYERS.find(want) > LAYERS.find(_layer):
 		# (no flip-flopping: a layer plays at least MIN_HOLD s before stepping up again)
 		if _since_change < MIN_HOLD:
 			return
 		_calm_t = 0.0
 		_since_change = 0.0
-		play(want)
-	elif LAYERS.find(want) < LAYERS.find(track):
+		_play_layer(want)
+	elif LAYERS.find(want) < LAYERS.find(_layer):
 		_calm_t += delta
 		if _calm_t >= STEP_DOWN_AFTER:
 			_calm_t = 0.0
 			_since_change = 0.0
-			play(want)
+			_play_layer(want)
 	else:
 		_calm_t = 0.0
+
+
+## The track a combat layer plays: the arena's own theme when it has one, else the layer's shared track.
+func _combat_track(layer: StringName) -> StringName:
+	return _arena_track if _arena_track != &"" and _streams.has(_arena_track) else layer
+
+
+func _play_layer(layer: StringName) -> void:
+	_layer = layer
+	play(_combat_track(layer))
 
 
 func _process(delta: float) -> void:
@@ -167,7 +190,7 @@ func _process(delta: float) -> void:
 	# Lulls muffle the music (low-pass), which opens up as the fight builds.
 	if _lpf:
 		var target := OPEN_HZ
-		if _adaptive and track == &"combat_low":
+		if _adaptive and _layer == &"combat_low" and track == _combat_track(_layer):
 			target = lerpf(MUFFLED_HZ, 6000.0, clampf(_intensity / MID_AT, 0.0, 1.0))
 		_cutoff = lerpf(_cutoff, target, 1.0 - exp(-2.5 * delta))
 		_lpf.cutoff_hz = _cutoff
@@ -197,14 +220,18 @@ func _process(delta: float) -> void:
 				if not b.get("dead"):
 					alive = true
 			if not alive:
-				play(&"combat")
+				_play_layer(&"combat")
 
 
 func _on_scene(scene: Node) -> void:
 	_adaptive = scene.is_in_group("arena")
 	_calm_t = 0.0
+	_layer = &""
+	_arena_track = &""
 	if scene.is_in_group("arena"):
-		play(&"combat")
+		if not Game.is_endless():
+			_arena_track = ARENA_MUSIC.get(str(scene.get("arena_name")), &"")
+		_play_layer(&"combat")
 		if scene.has_signal("boss_started"):
 			scene.boss_started.connect(func(_b: Node) -> void: play(&"boss"))
 		if scene.has_signal("arena_cleared"):

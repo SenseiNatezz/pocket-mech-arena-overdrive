@@ -111,7 +111,8 @@ func set_dart_style() -> void:
 func _drawn(l: Look, glow_col: Color) -> void:
 	rifle_style = true
 	look = l
-	material = RifleFx.additive()
+	# Added light turns white on pale ice (Frozen Outpost), so there the beams are painted normally instead.
+	material = null if BlastFx.pale_floor else RifleFx.additive()
 	core.visible = false
 	glow.modulate = glow_col
 	_update_rifle_glow()
@@ -258,7 +259,12 @@ func _steer(delta: float) -> void:
 	_home_t -= delta
 	if _home_t <= 0.0 or (is_instance_valid(_home_target) and _home_target.get("dead") == true):
 		_home_t = 0.12
-		_home_target = Combat.nearest_enemy(global_position, 560.0, velocity, deg_to_rad(95.0))
+		if player_owned:
+			_home_target = Combat.nearest_enemy(global_position, 560.0, velocity, deg_to_rad(95.0))
+		else:
+			# Enemy homing shots (a rival's rockets / petals) bend toward the pilot.
+			var p := get_tree().get_first_node_in_group("player") as Node2D
+			_home_target = p if p and not p.get("dead") and global_position.distance_to(p.global_position) < 700.0 else null
 	if not is_instance_valid(_home_target):
 		return
 	var want := (_home_target.global_position - global_position).angle()

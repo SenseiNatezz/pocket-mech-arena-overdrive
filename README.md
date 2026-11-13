@@ -59,6 +59,18 @@ and thrusters light the floor; blasts leave scorch marks, robots leave scrap and
 snow and sand; the floor has drawn details (snow drifts, cracks, sand ripples, cables...); the lamps, lava,
 crystals and beacons painted on each map pulse, flicker and blink; and each map has its own colour mood.
 
+**Rival pilots:** each Campaign arena sends a rival pilot in one of the Hangar mechs during its middle wave
+(Frozen Outpost FROSTBLADE, Jungle Megafactory TUSKER, Alien Outpost AURORA, Skyway Junction GRIFFIN, Ruined
+Plaza TEMPEST, Volcanic Forge SOLSTICE, Titan Graveyard RAVEN CLAW, Orbital Dry Dock NIMBUS-07), and Endless
+sends a random one every 6 waves. A rival keeps its range and circles you, fires 3-shot bursts, boost-dodges
+when you hit it, and uses its mech's own move: FAN BURST, AFTERBURNER dash, SIEGE MODE shells, SALVO rockets,
+IAIDO frost cut, SUN BARRIER, PETAL SWARM, or BLINK behind you. The wave waits until it's down. Beating one pays
+a scrap bounty (bigger the first time) and makes that mech 25% cheaper in the Hangar. Spar with them in the
+Weapon Range (RIVAL PILOT button; no rewards there).
+
+**Arena music:** every Campaign arena has its own battle track (it muffles during lulls and opens up as
+the fight builds); Endless keeps the shared three-layer battle music.
+
 **Gold Salvager:** every 2-3 minutes of waves a gold drone pops up near you and flees for 11 seconds.
 Shoot it down for a random prize: SCRAP FRENZY (all scrap x7 for 20 s), LUCKY (15% of the run's scrap at
 once), XP SURGE, a full Overdrive, or rarely a JACKPOT of little gold drones that each pay scrap. The
@@ -93,7 +105,8 @@ has its own thruster flame. The cards show what a part changes against the one y
 puts it on, and you can swap between owned parts any time. The Hover Skirt, Twin Booster and Missile Rack
 open with the Campaigner, Survivor and Tank Buster contracts.
 
-**Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close),
+**Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close), Text Size
+(Small / Normal / Large: scales the menus, HUD and touch buttons; the battlefield view stays the same),
 Dynamic Camera (the view pulls out as robots crowd in and during boss fights, punches in on big kills,
 glides over to a boss as it lands), Damage Numbers, controller Rumble, fullscreen (also F11 / Alt+Enter), CONTROLS (rebind every keyboard / mouse action), and on touch
 screens Auto-Fire (fires at the auto-aim target by itself) and the touch layout: Simple (FIRE, BOOST,
@@ -157,10 +170,12 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --gun-range --attach=res://tools/energy_sword_test.gd --temp-save` checks the Energy Sword (unlock, held art, combo + CRESCENT NOVA)
 - `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, PETAL SWARM, PHASE BLINK)
 - `godot --path . --resolution 1280x720 -- --gun-range --temp-save --attach=res://tools/walk_shots.gd --walk-out=DIR` walks a mech through a fixed routine, checks its walking legs and saves a crop per frame (`--walk-demo` = free walking + circling a target; `--hover` = the old hover art)
+- `godot --headless --path . -- --arena=4 --no-intro --temp-save --attach=res://tools/rival_test.gd` checks every rival pilot (art, moving, shooting, signature move, bounty, Hangar discount), the middle-wave arrival and the arena's own music
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena
 - `godot --headless --path . -- --temp-save --scrap=4200 --attach=res://tools/lobby_test.gd --lobby-nav-test` checks keyboard / gamepad navigation on the title lobby (add `--portrait` for the phone layout)
 
 ## Credits
-- Fonts: Chakra Petch and Barlow Condensed, SIL Open Font License 1.1 (`assets/fonts/OFL.txt`)
+- Fonts: Dela Gothic One (titles, banners, names and the Japanese labels) and Saira Condensed (everything else),
+  SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). The lettering lives in `ui/ui_font.gd`.

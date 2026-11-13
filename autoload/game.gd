@@ -15,6 +15,9 @@ signal pool_checkpoint(index: int)
 signal salvager_spotted
 signal salvager_caught(prize: StringName, amount: float)
 signal salvager_escaped
+## A RIVAL PILOT (enemies/rival_mech.gd) was shot down: `first` = the first time this mech's rival lost
+## (its chassis is now RIVAL_DISCOUNT cheaper), `bounty` = the scrap it paid.
+signal rival_defeated(id: StringName, first: bool, bounty: float)
 ## THREAT TIERS: a run on Extreme was won at `tier` (0 = plain Extreme): an arena's boss beaten, or Endless
 ## wave THREAT_ENDLESS_WAVE survived. `bounty` = scrap the weapon's bounty paid (0 = none / claimed before),
 ## `opened` = it unlocked the next tier.
@@ -235,6 +238,12 @@ var sfx_volume := 0.9
 const CAMERA_ZOOMS: Array[Dictionary] = [{"name": "Far", "mult": 0.8}, {"name": "Normal", "mult": 1.0},
 	{"name": "Close", "mult": 1.15}]
 var camera_zoom := 1
+## Settings: TEXT SIZE scales the whole interface (menus, HUD, touch buttons, so the text with it) through the
+## window's content scale; player/mech_camera.gd divides its zoom by the same factor, so the battlefield view
+## doesn't change. `-- --text-size=N` tries one without saving (captures).
+const TEXT_SIZES: Array[Dictionary] = [{"name": "Small", "mult": 0.9}, {"name": "Normal", "mult": 1.0},
+	{"name": "Large", "mult": 1.2}]
+var text_size := 1
 var fullscreen := true
 var auto_fire := true
 var touch_simple := true
@@ -344,7 +353,7 @@ const CHASSIS: Array[Dictionary] = [
 		"ability": "BARRIER: always carries a shield charge that recharges 25% faster; when it breaks it blasts robots back.",
 		"desc": "Defensive frame: +10% HP and +1 Defense Shield charge, a little slower."},
 	{"id": &"carrier", "name": "AURORA", "role": "Carrier frame", "sheet": &"aurora", "cost": 6000, "hp": 0.85,
-		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 0.98, "color": Color(1.0, 0.55, 0.85),
+		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 1.1, "color": Color(1.0, 0.55, 0.85),
 		"ability": "PETAL SWARM: launches with 2 Bit Drones (the upgrade adds a 3rd), and kills can fire homing petal blades.",
 		"desc": "Lets its drones fight: -15% HP, takes 5% more damage."},
 	# RAVEN CLAW (unit 12, the user's sheet 11-09) took over the VESPER slot: same PHASE BLINK kit, own art.
@@ -382,7 +391,18 @@ const SCRAP_WAVE := 50.0
 const SCRAP_CLEAR := 400.0
 ## Order + labels of the results screen's breakdown (the `part` given to earn_scrap / credit_scrap).
 const SCRAP_PARTS := [[&"kills", "Kills"], [&"waves", "Waves"], [&"boss", "Boss"], [&"arena", "Arena clear"],
-	[&"gold", "Gold Salvager"], [&"bounty", "Bounty"]]
+	[&"gold", "Gold Salvager"], [&"bounty", "Bounty"], [&"rival", "Rival"]]
+## RIVAL PILOTS: each Campaign arena (by index) sends this Hangar mech's pilot in its middle wave
+## (ScenicArena._maybe_rival); Endless sends a random one every RIVAL_ENDLESS_EVERY waves. Beating one pays
+## RIVAL_BOUNTY scrap (+ RIVAL_FIRST_BONUS the first time), and from then on that chassis costs
+## RIVAL_DISCOUNT less in the Hangar ("salvaged parts").
+const ARENA_RIVALS: Array[StringName] = [&"duelist", &"bulwark", &"carrier", &"striker", &"artillery", &"guardian",
+	&"phantom", &"standard"]
+const RIVAL_BOUNTY := 300.0
+const RIVAL_FIRST_BONUS := 600.0
+const RIVAL_DISCOUNT := 0.25
+const RIVAL_ENDLESS_EVERY := 6
+var rivals_beaten: Array[StringName] = []
 ## GOLD SALVAGER prize SCRAP FRENZY: every scrap gain x FRENZY_MULT for FRENZY_TIME seconds (the extra is
 ## filed under "gold"). `frenzy_t` = seconds left (counts down only while the game runs).
 const FRENZY_MULT := 7.0
@@ -455,6 +475,10 @@ func _ready() -> void:
 		_migrate_save()
 	_load()
 	_apply_volume()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--text-size="):
+			text_size = clampi(int(a.trim_prefix("--text-size=")), 0, TEXT_SIZES.size() - 1)
+	_apply_text_size()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--look="):  # debug: try a look without saving it
 			var v := a.trim_prefix("--look=").split(",")
@@ -538,6 +562,22 @@ func set_camera_zoom(i: int) -> void:
 
 func camera_zoom_mult() -> float:
 	return float(CAMERA_ZOOMS[camera_zoom]["mult"])
+
+
+func set_text_size(i: int) -> void:
+	text_size = clampi(i, 0, TEXT_SIZES.size() - 1)
+	_apply_text_size()
+	# Every screen re-lays itself out for the new (smaller or bigger) logical screen.
+	Layout.changed.emit.call_deferred(Layout.portrait)
+	save()
+
+
+func text_scale() -> float:
+	return float(TEXT_SIZES[text_size]["mult"])
+
+
+func _apply_text_size() -> void:
+	get_tree().root.content_scale_factor = text_scale()
 
 
 ## SMOOTH MOTION: the game simulates at 60 ticks a second by default, and on a 120-165 Hz monitor the
@@ -1031,10 +1071,31 @@ func owns_chassis(id: StringName) -> bool:
 	return chassis_owned.has(id)
 
 
+## What a chassis costs now: RIVAL_DISCOUNT off once its rival has been beaten (rounded to 10).
+func chassis_cost(id: StringName) -> int:
+	var c := int(chassis_info(id)["cost"])
+	if rivals_beaten.has(id):
+		c = roundi(c * (1.0 - RIVAL_DISCOUNT) / 10.0) * 10
+	return c
+
+
+## A rival pilot was shot down: files its bounty (more the first time) and remembers it. Returns the scrap
+## paid (for the chips).
+func rival_beaten(id: StringName) -> float:
+	var first := not rivals_beaten.has(id)
+	if first:
+		rivals_beaten.append(id)
+	var got := earn_scrap(RIVAL_BOUNTY + (RIVAL_FIRST_BONUS if first else 0.0), &"rival")
+	rival_defeated.emit(id, first, got)
+	if first:
+		save()
+	return got
+
+
 ## Buys (if needed and affordable) and selects a chassis.
 func pick_chassis(id: StringName) -> bool:
 	if not owns_chassis(id):
-		var c: int = chassis_info(id)["cost"]
+		var c: int = chassis_cost(id)
 		if scrap < c:
 			return false
 		scrap -= c
@@ -1479,6 +1540,7 @@ func save() -> void:
 	cfg.set_value("settings", "music_volume", music_volume)
 	cfg.set_value("settings", "sfx_volume", sfx_volume)
 	cfg.set_value("settings", "camera_zoom", camera_zoom)
+	cfg.set_value("settings", "text_size", text_size)
 	cfg.set_value("settings", "fullscreen", fullscreen)
 	cfg.set_value("settings", "auto_fire", auto_fire)
 	cfg.set_value("settings", "touch_simple", touch_simple)
@@ -1525,6 +1587,10 @@ func save() -> void:
 	for id in chassis_owned:
 		owned.append(String(id))
 	cfg.set_value("hangar", "chassis_owned", owned)
+	var beaten: Array[String] = []
+	for id in rivals_beaten:
+		beaten.append(String(id))
+	cfg.set_value("hangar", "rivals_beaten", beaten)
 	cfg.set_value("mech", "look", look)
 	cfg.set_value("mech", "weapon", String(range_restore if range_restore != &"" else weapon))
 	Parts.save_to(cfg)  # [parts]: owned + equipped mech parts (autoload/parts.gd)
@@ -1626,6 +1692,7 @@ func _load() -> void:
 	music_volume = cfg.get_value("settings", "music_volume", 0.7)
 	sfx_volume = cfg.get_value("settings", "sfx_volume", 0.9)
 	camera_zoom = clampi(int(cfg.get_value("settings", "camera_zoom", 1)), 0, CAMERA_ZOOMS.size() - 1)
+	text_size = clampi(int(cfg.get_value("settings", "text_size", 1)), 0, TEXT_SIZES.size() - 1)
 	fullscreen = bool(cfg.get_value("settings", "fullscreen", true))
 	auto_fire = bool(cfg.get_value("settings", "auto_fire", true))
 	touch_simple = bool(cfg.get_value("settings", "touch_simple", true))
@@ -1675,6 +1742,9 @@ func _load() -> void:
 	for n in cfg.get_value("hangar", "chassis_owned", []):
 		if not chassis_owned.has(StringName(n)):
 			chassis_owned.append(StringName(n))
+	for n in cfg.get_value("hangar", "rivals_beaten", []):
+		if not rivals_beaten.has(StringName(n)):
+			rivals_beaten.append(StringName(n))
 	var ch := StringName(cfg.get_value("hangar", "chassis", "standard"))
 	chassis = ch if chassis_owned.has(ch) else &"standard"
 	# Saves from before the wave counter: credit 5 waves per cleared arena + the Endless record.

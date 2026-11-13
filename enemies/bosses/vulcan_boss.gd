@@ -388,6 +388,7 @@ func _draw() -> void:
 	draw_texture(VULCAN_TEX, -half, Color(0, 0, 0, 0.45 - 0.2 * lift))
 	draw_set_transform(shake + Vector2(0, -60.0 * lift), rot, s)
 	draw_texture(VULCAN_TEX, -half, tint(Color.WHITE))
+	note_body(VULCAN_TEX, shake + Vector2(0, -60.0 * lift), rot, s, tint(Color.WHITE))
 	draw_set_transform(shake + Vector2(0, -60.0 * lift))
 	# Furnace core: pulses faster each phase; blazes open during the beams.
 	var pulse := 0.5 + 0.5 * sin(_t * (3.0 + phase * 2.0))

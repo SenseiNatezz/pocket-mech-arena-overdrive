@@ -14,6 +14,9 @@ static func draw(ci: CanvasItem, from: Vector2, to: Vector2, half_w: float, k: f
 	var d := (to - from) / len
 	var n := d.orthogonal() * half_w
 	var blink := 0.75 + 0.25 * sin(t * 18.0)
+	var ink := Color(0.03, 0.0, 0.0)
+	# A faint wash over the lane that thickens as the wind-up runs out, so the lane reads on any floor.
+	ci.draw_colored_polygon(PackedVector2Array([from - n, to - n, to + n, from + n]), Color(col, 0.06 + 0.1 * k))
 	# Edge lines, fading out toward the far end; brighter on the part the timing sweep has passed.
 	var seg := 12
 	for i in seg:
@@ -23,6 +26,7 @@ static func draw(ci: CanvasItem, from: Vector2, to: Vector2, half_w: float, k: f
 		var alpha := (0.75 - 0.45 * a) * blink * (1.0 if passed else 0.55)
 		var w := 2.2 if passed else 1.4
 		for s in [-1.0, 1.0]:
+			ci.draw_line(from + d * len * a + n * s, from + d * len * b + n * s, Color(ink, alpha * 0.5), w + 2.5, true)
 			ci.draw_line(from + d * len * a + n * s, from + d * len * b + n * s, Color(col, alpha), w, true)
 	# Chevrons marching toward the target.
 	var gap := clampf(half_w * 1.6, 34.0, 120.0)
@@ -33,11 +37,17 @@ static func draw(ci: CanvasItem, from: Vector2, to: Vector2, half_w: float, k: f
 	while x < len - ch:
 		var p := from + d * x
 		var fade := clampf(x / (gap * 0.8), 0.0, 1.0) * clampf((len - x) / (gap * 1.2), 0.0, 1.0)
-		var a := (0.5 + 0.35 * (1.0 if x / len < k else 0.0)) * fade
+		var a := (0.72 + 0.28 * (1.0 if x / len < k else 0.0)) * fade
 		var tip := p + d * ch
-		var thick := d * clampf(ch * 0.45, 3.0, 9.0)
-		ci.draw_colored_polygon(PackedVector2Array([p - d.orthogonal() * cw, tip, p + d.orthogonal() * cw,
-			p + d.orthogonal() * cw - thick, tip - thick, p - d.orthogonal() * cw - thick]), Color(col.lightened(0.15), a))
+		var thick := d * clampf(ch * 0.5, 4.0, 10.0)
+		var chev := PackedVector2Array([p - d.orthogonal() * cw, tip, p + d.orthogonal() * cw,
+			p + d.orthogonal() * cw - thick, tip - thick, p - d.orthogonal() * cw - thick])
+		# A dark drop shadow under each chevron, then the chevron itself.
+		var drop := PackedVector2Array()
+		for q in chev:
+			drop.append(q + Vector2(2.5, 3.0))
+		ci.draw_colored_polygon(drop, Color(ink, a * 0.45))
+		ci.draw_colored_polygon(chev, Color(col.lightened(0.2), a))
 		x += gap
 	# Timing sweep: a bright bar across the lane moving from the attacker to the end.
 	var sp := from + d * len * clampf(k, 0.0, 1.0)

@@ -3,13 +3,14 @@ extends RefCounted
 ## The title lobby's look (ui/main_menu.gd builds the screen, ui/lobby_widgets.gd has the pieces): fonts,
 ## colours, the cut-corner glass panel, real art clipped into a panel, gradients, progress bars, badges and the
 ## vector icons. All drawn in code (the only textures are the game's own art), so it stays sharp at any size.
-## Fonts: Chakra Petch (titles, buttons) + Barlow Condensed (labels, numbers), SIL OFL (assets/fonts/OFL.txt).
+## Fonts = the game's lettering (ui/ui_font.gd): HEAD is the Dela Gothic One display face (draw big titles with
+## UiFont.draw_display for the outline + red print shadow), the rest are Saira Condensed weights.
 
-const HEAD := preload("res://assets/fonts/ChakraPetch-Bold.ttf")
-const SEMI := preload("res://assets/fonts/ChakraPetch-SemiBold.ttf")
-const COND := preload("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
-const COND_B := preload("res://assets/fonts/BarlowCondensed-Bold.ttf")
-const COND_XB := preload("res://assets/fonts/BarlowCondensed-ExtraBold.ttf")
+const HEAD := UiFont.DISPLAY
+const SEMI := UiFont.BOLD
+const COND := UiFont.BODY
+const COND_B := UiFont.BOLD
+const COND_XB := UiFont.XBOLD
 const GLOW := preload("res://assets/fx/glow.tres")
 
 const CYAN := Color(0.35, 0.78, 1.0)

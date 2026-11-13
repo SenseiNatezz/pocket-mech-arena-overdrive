@@ -143,10 +143,7 @@ func _ready() -> void:
 
 	# Title.
 	var title := _label("CUSTOMIZE", 58, Color(0.93, 0.96, 1.0), Vector2(60, 14))
-	title.add_theme_color_override("font_outline_color", Color(0.93, 0.96, 1.0))
-	title.add_theme_constant_override("outline_size", 3)
-	title.add_theme_color_override("font_shadow_color", Color(0.3, 0.6, 1.0, 0.45))
-	title.add_theme_constant_override("shadow_offset_y", 3)
+	UiFont.page_title(title, 46, Color(0.93, 0.96, 1.0))
 	_label("P E R S O N A L I Z E   Y O U R   M E C H", 15, Color(0.4, 0.8, 0.95), Vector2(64, 88))
 
 	# Left panel.

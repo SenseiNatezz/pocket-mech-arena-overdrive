@@ -89,7 +89,7 @@ class UpgradeCard:
 		draw_circle(c, 31, Color(col, 0.12 + 0.08 * sin(_t * 3.0)))
 		draw_circle(c, 25, Color(0.02, 0.03, 0.07, 0.9))
 		draw_arc(c, 25, 0, TAU, 40, Color(col, 0.9), 2.0, true)
-		var font := ThemeDB.fallback_font
+		var font: Font = UiFont.BOLD
 		if banish:
 			# Big red X over the icon: picking this card banishes it.
 			var cx := Vector2(46, size.y / 2)
@@ -137,6 +137,7 @@ class UpgradeCard:
 var _root: Control
 var _box: VBoxContainer
 var _title: Label
+var _title_kata: Label
 var _sub: Label
 ## Horizontal on landscape screens, vertical (stacked cards) on portrait / narrow ones.
 var _row: BoxContainer
@@ -172,7 +173,14 @@ func _ready() -> void:
 	head.add_theme_constant_override("separation", 14)
 	_box.add_child(head)
 	_title = _label("LEVEL UP!", 24, Color(0.45, 1.0, 0.8))
+	UiFont.display_label(_title, 26, Color(0.45, 1.0, 0.8), Color(0.05, 0.45, 0.35))
 	head.add_child(_title)
+	# レベルアップ just above the title (a child, so the header row keeps its layout).
+	_title_kata = UiFont.kata_label("", 12, Color(0.55, 1.0, 0.85))
+	_title_kata.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_title_kata.offset_top = -16.0
+	_title_kata.offset_bottom = 0.0
+	_title.add_child(_title_kata)
 	_sub = _label("", 15, Color(0.8, 0.9, 1.0))
 	head.add_child(_sub)
 	_row = BoxContainer.new()
@@ -295,10 +303,12 @@ func _deal() -> void:
 		# Free pick (Hangar Head Start, Endless boss kill): not a level.
 		_title.text = Upgrades.bonus_title
 		_title.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))
+		_title_kata.text = UiFont.kata(_title.text)
 		_sub.text = "free upgrade   -   choose one%s" % more
 	else:
 		_title.text = "LEVEL UP!"
 		_title.add_theme_color_override("font_color", Color(0.45, 1.0, 0.8))
+		_title_kata.text = UiFont.kata(_title.text)
 		_sub.text = "LEVEL %d   -   choose an upgrade%s" % [Upgrades.level - Upgrades.pending + 1, more]
 	_arm_t = ARM_TIME
 	for i in _cards.size():

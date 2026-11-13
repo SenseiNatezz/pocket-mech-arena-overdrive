@@ -187,6 +187,29 @@ func spawn_boss(path: String) -> void:
 			hud.show_banner("BOSS DESTROYED", Color(0.4, 1.0, 0.6)))
 
 
+## A RIVAL PILOT to spar with (enemies/rival_mech.gd, `practice`: no bounty, no Hangar discount). One at a
+## time; each press brings the next Hangar mech's pilot. Returns its chassis id.
+func spawn_rival() -> StringName:
+	for r in get_tree().get_nodes_in_group("rivals"):
+		r.queue_free()
+	var id: StringName = Game.CHASSIS[_rival_i % Game.CHASSIS.size()]["id"]
+	_rival_i += 1
+	var r := RivalMech.new()
+	r.chassis_id = id
+	r.practice = true
+	r.position = _spawn_point(SPAWN_DISTANCE)
+	add_child(r)
+	_spawned.append(r)
+	r.died.connect(func(x: Enemy) -> void: _spawned.erase(x))
+	var hud := get_node_or_null("HUD")
+	if hud:
+		hud.show_banner("RIVAL  %s" % String(Game.chassis_info(id)["name"]), Color(1.0, 0.4, 0.35))
+	return id
+
+
+var _rival_i := 0
+
+
 ## Removes every enemy (spawned ones, a boss and anything it summoned), any Widow mines left lying
 ## around and any lava pools.
 func clear_enemies() -> void:

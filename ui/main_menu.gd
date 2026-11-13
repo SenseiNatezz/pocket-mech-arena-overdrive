@@ -77,6 +77,7 @@ var _loadout: ArmoryPage
 var _hangar: HangarPage
 var _radio_btn: TitleButton
 var _zoom_btn: TitleButton
+var _text_btn: TitleButton
 var _dyncam_btn: TitleButton
 var _rumble_btn: TitleButton
 var _numbers_btn: TitleButton
@@ -181,6 +182,7 @@ func _ready() -> void:
 		Game.radio_voice = not Game.radio_voice
 		Game.save(), cell)
 	_zoom_btn = _grid_btn(sgrid, func() -> void: Game.set_camera_zoom((Game.camera_zoom + 1) % Game.CAMERA_ZOOMS.size()), cell)
+	_text_btn = _grid_btn(sgrid, func() -> void: Game.set_text_size((Game.text_size + 1) % Game.TEXT_SIZES.size()), cell)
 	_dyncam_btn = _grid_btn(sgrid, func() -> void:
 		Game.dynamic_camera = not Game.dynamic_camera
 		Game.save(), cell)
@@ -477,6 +479,7 @@ func _refresh() -> void:
 	_sfx_btn.label_text = "Sound FX: %d%%" % roundi(Game.sfx_volume * 100.0)
 	_diff_btn.label_text = "Difficulty: %s" % Game.difficulty_name()
 	_zoom_btn.label_text = "Camera: %s" % Game.CAMERA_ZOOMS[Game.camera_zoom]["name"]
+	_text_btn.label_text = "Text Size: %s" % Game.TEXT_SIZES[Game.text_size]["name"]
 	_dyncam_btn.label_text = "Dynamic Camera: %s" % ("On" if Game.dynamic_camera else "Off")
 	_numbers_btn.label_text = "Damage Numbers: %s" % ("On" if Game.damage_numbers else "Off")
 	if _rumble_btn:
@@ -612,7 +615,7 @@ func _next_upgrade() -> Dictionary:
 	for ch in Game.CHASSIS:
 		if Game.owns_chassis(ch["id"]):
 			continue
-		var c := int(ch["cost"])
+		var c := Game.chassis_cost(ch["id"])
 		if c <= Game.scrap:
 			n_ready += 1
 		if best.is_empty() or c < int(best["cost"]):

@@ -58,6 +58,7 @@ func _ready() -> void:
 	add_child(shade)
 
 	_title = _label("LOADOUT" if start_mode else "ARMORY", 40, Color.WHITE)
+	UiFont.page_title(_title, 36)
 	add_child(_title)
 	_sub = _label("Pick the weapon you start this mission with, then press START MISSION." if start_mode
 		else "Beat waves to unlock weapons; kills with a weapon raise its MASTERY. Press a weapon to equip it.", 15,
@@ -310,7 +311,8 @@ func _draw_detail() -> void:
 	if not unlocked:
 		_draw_lock(d, rack.get_center(), 1.4)
 	# Name + type.
-	d.draw_string(font, Vector2(20, 236), String(w["name"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
+	var nm := String(w["name"]).to_upper()
+	UiFont.draw_display(d, Vector2(20, 237), nm, LobbyKit.fit(UiFont.DISPLAY, nm, 23, d.size.x - 44.0, 14), Color.WHITE)
 	var kind := "MELEE" if w.get("melee", false) else "RANGED"
 	d.draw_string(font, Vector2(20, 262), kind + ("   //   EQUIPPED" if _selected == Game.weapon else ""),
 		HORIZONTAL_ALIGNMENT_LEFT, -1, 15, GOLD if _selected == Game.weapon else CYAN)

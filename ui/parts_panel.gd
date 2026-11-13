@@ -205,7 +205,10 @@ class PartCard:
 			_nut(Vector2(sx - 11.0, 18.0), 6.0, state_col)
 			sw += 20.0
 		var name_col := Color.WHITE if own or afford else Color(0.78, 0.82, 0.9)
-		draw_string(font, Vector2(16, 23), String(p["name"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, size.x - sw - 36.0, 16,
+		# Long names shrink to fit beside the state tag instead of running under it.
+		var nm := String(p["name"]).to_upper()
+		var nf: Font = UiFont.BOLD
+		draw_string(nf, Vector2(16, 23), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, LobbyKit.fit(nf, nm, 16, size.x - sw - 36.0, 10),
 			name_col)
 		# Flavour (wraps to 2 lines on narrow cards); each block below starts under the one before it.
 		var tw := size.x - 28.0
@@ -241,9 +244,13 @@ class PartCard:
 			_block(font, size.y - 10.0 - (lh - font.get_height(11)), lock, tw, Color(0.7, 0.8, 0.95, 0.85))
 		# BOUGHT / EQUIPPED floating up.
 		if _pop > 0.0:
+			# On a dark plate so it doesn't print over the perk text underneath.
 			var py := size.y * 0.55 - (1.0 - _pop) * 30.0
-			draw_string_outline(font, Vector2(0, py), _pop_text, HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, 6, Color(0, 0, 0, _pop))
-			draw_string(font, Vector2(0, py), _pop_text, HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(0.7, 1.0, 0.8, _pop))
+			var pw := UiFont.DISPLAY.get_string_size(_pop_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x + 36.0
+			draw_rect(Rect2((size.x - pw) / 2.0, py - 27.0, pw, 36.0), Color(0.01, 0.03, 0.06, 0.9 * _pop))
+			draw_rect(Rect2((size.x - pw) / 2.0, py - 27.0, pw, 36.0), Color(PartsPanel.GREEN, 0.8 * _pop), false, 1.5)
+			UiFont.draw_display(self, Vector2(0, py), _pop_text, 22, Color(0.7, 1.0, 0.8, _pop), HORIZONTAL_ALIGNMENT_CENTER,
+				size.x, Color(0.05, 0.4, 0.2, _pop))
 		draw_set_transform(Vector2.ZERO)
 
 	## Up to 2 wrapped lines of 11 px text whose first baseline is `y`; returns the last line's baseline.
