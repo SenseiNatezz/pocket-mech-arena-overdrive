@@ -233,6 +233,10 @@ func xp_value(e: Enemy) -> int:
 func _on_enemy_killed(e: Node) -> void:
 	if not (e is Enemy) or not e.is_inside_tree():
 		return
+	# Swarm robots (enemies/scrap_mite.gd) only drop a shard now and then, so a horde doesn't flood the level bar.
+	var chance = e.get("xp_chance")
+	if chance != null and randf() > float(chance):
+		return
 	var value := xp_value(e)
 	# Split into a few shards so big kills burst into a satisfying spray.
 	var shards := clampi(ceili(value / 3.0), 1, 8)

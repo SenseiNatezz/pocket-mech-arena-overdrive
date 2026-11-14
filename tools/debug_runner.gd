@@ -1,6 +1,7 @@
 extends Node
 ## Debug (autoload): command-line helpers for testing and preview captures. Args go after `--`:
-##   --arena=N                   start directly in arena N (1-based)
+##   --arena=N                   start directly in arena N (1-based), on its own map (the boss sector)
+##   --sector=K                  (with --arena) start that level's run at sector K (1 = first lead-in map)
 ##   --smoke-test                controls test (run with the test range scene)
 ##   --arena-test                full arena flow test (waves, hazards, pits, boss, victory)
 ##   --autoplay                  an AI pilots the mech (for preview captures)
@@ -32,7 +33,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for a in _args:
 		if a.begins_with("--arena="):
-			Game.start_arena.call_deferred(int(a.trim_prefix("--arena=")) - 1)
+			Game.start_arena.call_deferred(int(a.trim_prefix("--arena=")) - 1, false, int(_arg_float("--sector=", Game.CAMPAIGN_SECTORS)))
 		elif a == "--endless":
 			Game.start_endless.call_deferred()
 		elif a == "--tutorial":

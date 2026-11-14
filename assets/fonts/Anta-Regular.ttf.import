@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://b85t8l1yx3lb7"
-path="res://.godot/imported/DelaGothicOne-Regular.ttf-a860b9615b3fa02b24636368aeaaec52.fontdata"
+uid="uid://cae0aee1d16c6"
+path="res://.godot/imported/Anta-Regular.ttf-8750f69a550dffc02039da363a122374.fontdata"
 
 [deps]
 
-source_file="res://assets/fonts/DelaGothicOne-Regular.ttf"
-dest_files=["res://.godot/imported/DelaGothicOne-Regular.ttf-a860b9615b3fa02b24636368aeaaec52.fontdata"]
+source_file="res://assets/fonts/Anta-Regular.ttf"
+dest_files=["res://.godot/imported/Anta-Regular.ttf-8750f69a550dffc02039da363a122374.fontdata"]
 
 [params]
 

@@ -71,6 +71,19 @@ const RIVAL_DELAY := 2.4
 const SALVAGER_FIRST := Vector2(70.0, 110.0)
 const SALVAGER_EVERY := Vector2(120.0, 180.0)
 var _salvager_t := 0.0
+## CAMPAIGN SECTORS (Game.campaign_sector, see Game.start_arena): in the Campaign this map is either a lead-in
+## sector of another level or that level's own map (its boss sector). Either way its waves come from the
+## LEVEL's wave table (sector_waves: SECTOR_WAVES waves, the first sector easiest), with packs of Scrap Mites
+## between the tough robots; a lead-in sector ends by moving on to the next map (Game.next_sector).
+const SECTOR_WAVES := 8
+const SECTOR_HP := [0.8, 0.9, 1.0]
+const SECTOR_DAMAGE := [0.8, 0.88, 1.0]
+## How much fuller the non-swarm waves are than the level's own, per sector.
+const SECTOR_FULL := [1.0, 1.1, 1.25]
+## The middle sector's middle wave brings the level's RIVAL PILOT.
+const RIVAL_SECTOR := 2
+var _sectors := false
+var _lead_in := false
 ## THREAT BOSS ESCORT: the kinds of the elite guards that drop in with a boss (cycled).
 const ESCORT_KINDS: Array[String] = ["striker", "shooter", "tank"]
 
@@ -87,6 +100,18 @@ func _ready() -> void:
 	if Game.is_endless():
 		arena_name = "Endless - " + arena_name
 		intro_subtitle = "Endless mode  //  survive as long as you can  -  a boss every %d waves" % Game.ENDLESS_BOSS_EVERY
+	elif Game.sector_scenes.size() == Game.CAMPAIGN_SECTORS and Game.campaign_sector >= 1 \
+			and Game.sector_scenes[Game.campaign_sector - 1] == scene_file_path:
+		_sectors = true
+		_lead_in = not Game.is_final_sector()
+		var level := String(Game.ARENAS[Game.arena_index]["name"])
+		var head := "Sector %d / %d" % [Game.campaign_sector, Game.CAMPAIGN_SECTORS]
+		intro_subtitle = ("%s  //  on the way to %s" % [head, level]) if _lead_in else ("%s  //  %s" % [head, intro_subtitle])
+		var tw: StringName = Game.sector_twists[Game.campaign_sector - 1] if Game.sector_twists.size() == Game.CAMPAIGN_SECTORS else &""
+		if Game.TWISTS.has(tw):
+			intro_subtitle += "  //  twist: %s" % String(Game.TWISTS[tw]["name"]).capitalize()
+	# OVERHEAT twist: robots blow up when destroyed.
+	Combat.enemy_killed.connect(_on_kill_overheat)
 	_layout = map_layout.new()
 	_k = map_scale
 	_build_art()
@@ -550,6 +575,8 @@ func _setup_flow() -> void:
 	zone.hp_mult = enemy_hp_mult
 	zone.damage_mult = enemy_damage_mult
 	zone.bombard_from_wave = bombard_from_wave
+	if _sectors:
+		_apply_sector(zone)
 	zone.enemy_parent = world
 	zone.monitoring = false  # the fight starts after the intro card, not on spawn
 	if Game.is_endless():
@@ -576,14 +603,16 @@ func _setup_flow() -> void:
 	add_child(zone)
 	zone.started.connect(func() -> void:
 		banner.emit("HOSTILES INBOUND", Color(1.0, 0.35, 0.4))
-		objective_changed.emit("Destroy all hostiles"))
+		objective_changed.emit("Destroy all hostiles")
+		if _sectors:
+			_announce_sector_rules())
 	if zone.endless:
 		zone.wave_started.connect(_on_endless_wave_started)
 		zone.wave_cleared.connect(_on_endless_wave_cleared)
 	else:
 		zone.wave_started.connect(func(i: int, n: int) -> void:
 			banner.emit("WAVE %d / %d" % [i, n], Color(1.0, 0.8, 0.3))
-			objective_changed.emit("Wave %d / %d - destroy all hostiles" % [i, n])
+			objective_changed.emit("%sWave %d / %d - destroy all hostiles" % [_sector_tag(), i, n])
 			_maybe_rival(i, n))
 		zone.wave_cleared.connect(func(i: int, n: int) -> void:
 			if i < n:
@@ -600,7 +629,124 @@ func _setup_flow() -> void:
 			zone.start())
 
 
+## A Campaign sector's twist and route deal: a banner each and a radio call, after HOSTILES INBOUND.
+func _announce_sector_rules() -> void:
+	var t := Game.active_twist()
+	var d := Game.active_deal()
+	_storm_t = 3.0
+	if Game.TWISTS.has(t):
+		var info: Dictionary = Game.TWISTS[t]
+		get_tree().create_timer(1.6, false).timeout.connect(func() -> void:
+			banner.emit("TWIST: %s" % info["name"], info["color"])
+			objective_changed.emit(String(info["desc"]))
+			Radio.say(StringName("twist_" + String(t)), true))
+	if Game.SECTOR_DEALS.has(d):
+		var deal: Dictionary = Game.SECTOR_DEALS[d]
+		get_tree().create_timer(3.4 if Game.TWISTS.has(t) else 1.6, false).timeout.connect(func() -> void:
+			banner.emit(String(deal["name"]), deal["color"]))
+
+
+## OVERHEAT twist: a destroyed robot (not a swarm mite, not a boss) blows up a moment later - the blast hurts
+## the pilot and other robots, so packs can go off in chains.
+const OVERHEAT_DAMAGE := 12.0
+func _on_kill_overheat(e: Node) -> void:
+	if Game.active_twist() != &"overheat" or not (e is Enemy) or e is ScrapMite or e.is_in_group("boss"):
+		return
+	var pos: Vector2 = (e as Node2D).global_position
+	var r := 70.0 + (e as Enemy).hit_radius * 1.6
+	Combat.shockwave(pos, r, Color(1.0, 0.5, 0.2), 0.3)
+	get_tree().create_timer(0.35, false).timeout.connect(func() -> void:
+		Combat.explode(pos, r, OVERHEAT_DAMAGE * enemy_damage_mult * Game.diff("damage"), self, "all", Color(1.0, 0.5, 0.2), 300.0))
+
+
+## "Sector 2/3  -  " in front of the wave line during a Campaign run ("" otherwise).
+func _sector_tag() -> String:
+	return "Sector %d/%d  -  " % [Game.campaign_sector, Game.CAMPAIGN_SECTORS] if _sectors else ""
+
+
+## This sector's waves and toughness, from the level's own encounter settings (its scene's exported values;
+## a lead-in map reads them out of the level's scene without building it).
+func _apply_sector(z: EncounterZone) -> void:
+	var table := waves
+	var hp := enemy_hp_mult
+	var dmg := enemy_damage_mult
+	var bombard := bombard_from_wave
+	if _lead_in:
+		var home := load(String(Game.ARENAS[Game.arena_index]["scene"])) as PackedScene
+		var st := home.get_state() if home else null
+		if st:
+			for i in st.get_node_property_count(0):
+				var v: Variant = st.get_node_property_value(0, i)
+				match st.get_node_property_name(0, i):
+					&"waves": table = v
+					&"enemy_hp_mult": hp = v
+					&"enemy_damage_mult": dmg = v
+					&"bombard_from_wave": bombard = v
+	var s := clampi(Game.campaign_sector, 1, Game.CAMPAIGN_SECTORS)
+	z.waves = sector_waves(table, s)
+	z.hp_mult = hp * SECTOR_HP[s - 1]
+	z.damage_mult = dmg * SECTOR_DAMAGE[s - 1]
+	z.bombard_from_wave = bombard + (2 if s == 1 else 0)
+
+
+## Sector `s`'s waves from a level's wave table: SECTOR_WAVES waves walking up the table (sector 1 starts on
+## its first wave, the boss sector ends on its last), every other one a SWARM wave - a thinned-out mix and a
+## big pack of Scrap Mites - and the rest (the last wave too) a fuller mix (SECTOR_FULL) with a small pack. Tuned with the autopilot for
+## a ~15 minute level (three sectors of ~3.5-4 min, then the boss).
+static func sector_waves(table: PackedStringArray, s: int) -> PackedStringArray:
+	var out := PackedStringArray()
+	if table.is_empty():
+		return out
+	var last := table.size() - 1
+	for w in SECTOR_WAVES:
+		var base: String = table[clampi(s - 1 + (w * 3) / SECTOR_WAVES, 0, last)]
+		var mites := 6 + (s - 1) + w / 2
+		if w % 2 == 1 and w < SECTOR_WAVES - 1:  # (the last wave is always a full one)
+			base = _thin_wave(base, 0.5)
+			mites = 16 + 5 * (s - 1) + 2 * w
+		else:
+			base = _thin_wave(base, SECTOR_FULL[s - 1])
+		out.append("%s, mite:%d" % [base, mites])
+	return out
+
+
+## `wave` ("chaser:4, tank:2") with every count scaled by `f` (at least 1 each).
+static func _thin_wave(wave: String, f: float) -> String:
+	var parts := PackedStringArray()
+	for part in wave.split(",", false):
+		var kv := part.strip_edges().split(":")
+		var n := int(kv[1]) if kv.size() > 1 else 1
+		parts.append("%s:%d" % [kv[0].strip_edges(), maxi(1, roundi(n * f))])
+	return ", ".join(parts)
+
+
+## A lead-in sector is clear: pull in the XP, then the ROUTE CHOICE (ui/route_choice.gd: two doors - the next
+## map, its twist and deal) and on to that map with the pilot's HP and repair kits.
+func _sector_cleared() -> void:
+	banner.emit("SECTOR CLEARED", Color(0.4, 1.0, 0.6))
+	objective_changed.emit("Sector clear - moving out to sector %d" % (Game.campaign_sector + 1))
+	# (anything still about - a Gold Salvager, a robot that wandered off - goes down with the sector)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if e is Enemy and not e.dead:
+			e.die()
+	Combat.clear_enemy_bullets()
+	Upgrades.vacuum()
+	Sfx.play(&"alarm", -14.0, 0.0)
+	get_tree().create_timer(3.2, false).timeout.connect(func() -> void:
+		var mech := get_tree().get_first_node_in_group("player") as Mech
+		if mech == null or mech.dead:
+			return
+		var choice := RouteChoice.new()
+		add_child(choice)
+		choice.open(Game.route_options())
+		choice.picked.connect(func(route: Dictionary) -> void:
+			Game.next_sector(mech.hp / maxf(mech.max_hp, 1.0), mech.repair_charges, route)))
+
+
 func _on_zone_cleared() -> void:
+	if _lead_in:
+		_sector_cleared()
+		return
 	banner.emit("WARNING: %s INBOUND" % boss_name, boss_accent)
 	objective_changed.emit("Survive - the %s is dropping in" % boss_name)
 	# Drop zone telegraph, then the boss lands with a shockwave.
@@ -620,9 +766,13 @@ func campaign_boss_hp() -> float:
 	return boss_hp * Game.diff("boss_hp") * (1.0 + CAMPAIGN_BOSS_HP_PER_LEVEL * (Upgrades.level - 1))
 
 
+## (tests / --boss) On a lead-in map this clears the sector instead: the boss only waits on the last map.
 func debug_skip_to_boss() -> void:
 	zone.is_cleared = true
 	zone.is_running = false
+	if _lead_in:
+		_sector_cleared()
+		return
 	_start_boss()
 
 
@@ -676,6 +826,9 @@ func _salvager_tick(delta: float) -> void:
 ## Weapon Range / tutorial (they aren't ScenicArenas) and not with `--no-rival` (tests / captures).
 func _maybe_rival(i: int, n: int) -> void:
 	if OS.get_cmdline_user_args().has("--no-rival") or n < 3 or i != int((n + 1) / 2.0):
+		return
+	# (in a Campaign run: the middle sector - or wherever a test run started)
+	if _sectors and Game.campaign_sector != (RIVAL_SECTOR if Game.start_sector < RIVAL_SECTOR else Game.start_sector):
 		return
 	_send_rival(Game.ARENA_RIVALS[clampi(Game.arena_index, 0, Game.ARENA_RIVALS.size() - 1)])
 
@@ -811,7 +964,7 @@ func _roll_twist() -> void:
 ## CRYSTAL STORM twist: every few seconds, violet lightning strikes a spot near the pilot and one of the
 ## robots (the strikes hurt everything, so lure robots into them).
 func _storm_tick(delta: float) -> void:
-	if not zone or not zone.endless or Game.endless_twist != &"storm" or not zone.is_running:
+	if not zone or Game.active_twist() != &"storm" or not zone.is_running:
 		return
 	_storm_t -= delta
 	if _storm_t > 0.0:

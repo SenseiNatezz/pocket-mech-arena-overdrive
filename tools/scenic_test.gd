@@ -140,8 +140,9 @@ func _run() -> void:
 	await _wait_until(func() -> bool: return arena.zone.is_running, 5.0)
 	_check("fight starts after the intro", arena.zone.is_running)
 	var moved_checked := false
-	for w in arena.waves.size():
-		await _wait_until(func() -> bool: return arena.zone.wave == w + 1 and arena.zone._pending == 0 and arena.zone.alive_count() > 0, 12.0)
+	# (the zone's waves: the level's boss sector - see ScenicArena.sector_waves - with Scrap Mite packs)
+	for w in arena.zone.waves.size():
+		await _wait_until(func() -> bool: return arena.zone.wave == w + 1 and arena.zone._pending == 0 and arena.zone.alive_count() > 0, 25.0)
 		_check("wave %d spawned %d enemies" % [w + 1, arena.zone.alive_count()], arena.zone.wave == w + 1 and arena.zone.alive_count() > 0)
 		var off: Array[String] = []
 		var poly: PackedVector2Array = arena._layout.walkable
@@ -170,7 +171,7 @@ func _run() -> void:
 			if is_instance_valid(e):
 				e.die()
 	await _wait_until(func() -> bool: return arena.zone.is_cleared, 5.0)
-	_check("all 5 waves cleared", arena.zone.is_cleared)
+	_check("all %d waves cleared" % arena.zone.waves.size(), arena.zone.is_cleared)
 	await _wait_until(func() -> bool: return arena.boss != null, 5.0)
 	var boss = arena.boss
 	_check("boss drops in after the waves", boss != null)

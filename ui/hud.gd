@@ -28,8 +28,6 @@ var level_menu: CanvasLayer
 var _bars: Control
 var _objective: Label
 var _banner: Label
-## The small Japanese label over the banner word (UiFont.kata), hidden when the banner has none.
-var _banner_kata: Label
 var _banner_box: PanelContainer
 var _banner_style: StyleBoxFlat
 var _banner_tw: Tween
@@ -134,8 +132,6 @@ func _ready() -> void:
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stack.add_theme_constant_override("separation", -6)
 	_banner_box.add_child(stack)
-	_banner_kata = UiFont.kata_label("", 15)
-	stack.add_child(_banner_kata)
 	_banner = _label(46, Color.WHITE)
 	UiFont.display_label(_banner, 44, Color.WHITE)
 	stack.add_child(_banner)
@@ -349,12 +345,6 @@ func _panel(title: String, buttons: Array, with_help := false) -> Control:
 	UiFont.display_label(head, 30, Color(0.6, 0.9, 1.0))
 	head.text = title
 	v.add_child(head)
-	# The Japanese label sits just above the title (a child, so the panel's rows keep their order).
-	var kata := UiFont.kata_label(UiFont.kata(title), 14)
-	kata.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	kata.offset_top = -22.0
-	kata.offset_bottom = -2.0
-	head.add_child(kata)
 	for i in buttons.size():
 		var b := MenuButtonFactory.make(buttons[i][0])
 		b.name = "Btn%d" % i
@@ -391,9 +381,6 @@ func show_banner(text: String, color := Color.WHITE) -> void:
 	# The red print shadow, or a dark one under text that is red already.
 	_banner.add_theme_color_override("font_shadow_color", Color(0.3, 0.02, 0.03) if color.r > 0.8 and color.g < 0.5
 		else UiFont.SHADOW)
-	_banner_kata.text = UiFont.kata(text)
-	_banner_kata.visible = _banner_kata.text != ""
-	_banner_style.content_margin_top = 4 if _banner_kata.visible else 0
 	_banner_style.border_color = Color(color, 0.85)
 	if _banner_tw:
 		_banner_tw.kill()
@@ -518,12 +505,6 @@ func _show_boss_card(b: Node) -> void:
 	sub.size = Vector2(vp.x, 30)
 	sub.position = Vector2(0, name_y - 82)
 	card.add_child(sub)
-	# The boss's name in Japanese under the rule, fading in with the subtitle.
-	var kata := UiFont.kata_label(UiFont.kata(title[0]), 18, accent.lightened(0.35))
-	kata.size = Vector2(vp.x, 28)
-	kata.position = Vector2(0, name_y + 52)
-	kata.modulate.a = 0.0
-	card.add_child(kata)
 	var rule_w := minf(vp.x - 80.0, 620.0)
 	var rule := ColorRect.new()
 	rule.color = accent
@@ -544,7 +525,6 @@ func _show_boss_card(b: Node) -> void:
 	tw.tween_property(rule, "size:x", rule_w, 0.4).set_delay(0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(rule, "position:x", (vp.x - rule_w) / 2.0, 0.4).set_delay(0.2).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	tw.tween_property(sub, "modulate:a", 1.0, 0.35).set_delay(0.32)
-	tw.tween_property(kata, "modulate:a", 1.0, 0.35).set_delay(0.4)
 	tw.tween_property(sub, "position:y", name_y - 76, 0.35).set_delay(0.32).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	var out := BOSS_CARD_TIME - 0.45
 	tw.tween_property(card, "modulate:a", 0.0, 0.45).set_delay(out)
@@ -1329,7 +1309,7 @@ func _on_scrap_bonus(_amount: float, label: String) -> void:
 
 ## BLACKOUT twist: fade the darkness in / out and keep the light pool on the mech.
 func _update_blackout(delta: float) -> void:
-	var want := 1.0 if Game.is_endless() and Game.endless_twist == &"blackout" and mech and not mech.dead else 0.0
+	var want := 1.0 if Game.active_twist() == &"blackout" and mech and not mech.dead else 0.0
 	_blackout_k = move_toward(_blackout_k, want, delta * 0.8)
 	_blackout.visible = _blackout_k > 0.0
 	if not _blackout.visible:
@@ -1393,9 +1373,9 @@ func _draw_bars() -> void:
 			c.draw_string(font, Vector2(vp.x - 420, iy + 18), th, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, Game.THREAT_COLOR)
 		c.draw_string_outline(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400 - tw0, 13, 5, Color(0, 0, 0, 0.8))
 		c.draw_string(font, Vector2(vp.x - 420, iy + 18), tag, HORIZONTAL_ALIGNMENT_RIGHT, 400 - tw0, 13, d["color"])
-		# Endless twist badge.
-		if Game.is_endless() and Game.TWISTS.has(Game.endless_twist):
-			var tw: Dictionary = Game.TWISTS[Game.endless_twist]
+		# Twist badge (Endless, Campaign sectors).
+		if Game.TWISTS.has(Game.active_twist()):
+			var tw: Dictionary = Game.TWISTS[Game.active_twist()]
 			var txt := "TWIST: %s" % tw["name"]
 			c.draw_string_outline(font, Vector2(vp.x - 420, iy + 36), txt, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13, 5, Color(0, 0, 0, 0.8))
 			c.draw_string(font, Vector2(vp.x - 420, iy + 36), txt, HORIZONTAL_ALIGNMENT_RIGHT, 400, 13,
@@ -1414,7 +1394,7 @@ func _run_info_y() -> float:
 
 ## Baseline of the scrap ticker: under the run info, the difficulty tag and (Endless) the twist badge.
 func _scrap_baseline() -> float:
-	var lines := 1 if Game.is_endless() and Game.TWISTS.has(Game.endless_twist) else 0
+	var lines := 1 if Game.TWISTS.has(Game.active_twist()) else 0
 	return _run_info_y() + 18.0 + 18.0 * lines + 32.0
 
 

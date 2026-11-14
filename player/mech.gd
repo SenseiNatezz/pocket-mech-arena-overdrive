@@ -311,6 +311,13 @@ func _ready() -> void:
 	for t in thrusters:
 		t.modulate = Game.booster_color().lightened(0.25)
 	_apply_parts()
+	# CAMPAIGN SECTORS (Game.next_sector): the HP and repair kits brought over from the last sector.
+	if Game.carry_hp >= 0.0:
+		hp = maxf(1.0, max_hp * Game.carry_hp)
+		Game.carry_hp = -1.0
+	if Game.carry_repairs >= 0:
+		repair_charges = mini(Game.carry_repairs, repair_charges_max)
+		Game.carry_repairs = -1
 	beam = BeamCannon.new()
 	beam.mech = self
 	add_child(beam)

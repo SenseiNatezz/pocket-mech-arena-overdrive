@@ -45,6 +45,9 @@ const ELITE_GOLD := Color(1.0, 0.8, 0.25)
 var elite := false
 ## Tank-type armor size as a fraction of max HP (encounter zones give early waves less; see set_armor).
 var armor_fraction := 1.0
+## SWARM robots (enemies/scrap_mite.gd) come by the dozen, so they skip the heavy parts: no pathfinding
+## agent, no warp-in ring each, no ground-shadow node (they draw their own).
+var swarm := false
 ## CRYO ROUNDS upgrade: seconds left chilled (slowed, icy tint). Bosses shrug most of it off.
 var chill_t := 0.0
 const CHILL_SLOW := 0.6
@@ -84,13 +87,15 @@ func _ready() -> void:
 		var sh := ContactShadow.new()
 		sh.radius = hit_radius
 		add_child(sh)
-	_agent = NavigationAgent2D.new()
-	_agent.path_desired_distance = 28.0
-	_agent.target_desired_distance = 28.0
-	_agent.radius = hit_radius
-	add_child(_agent)
+	if not swarm:
+		_agent = NavigationAgent2D.new()
+		_agent.path_desired_distance = 28.0
+		_agent.target_desired_distance = 28.0
+		_agent.radius = hit_radius
+		add_child(_agent)
 	_t = randf() * 10.0
-	Combat.shockwave(global_position, hit_radius * 3.0, Color(1.0, 0.3, 0.4), 0.4)
+	if not swarm:
+		Combat.shockwave(global_position, hit_radius * 3.0, Color(1.0, 0.3, 0.4), 0.4)
 	if elite:
 		var aura := EliteAura.new()
 		aura.radius = hit_radius

@@ -59,7 +59,9 @@ and thrusters light the floor; blasts leave scorch marks, robots leave scrap and
 snow and sand; the floor has drawn details (snow drifts, cracks, sand ripples, cables...); the lamps, lava,
 crystals and beacons painted on each map pulse, flicker and blink; and each map has its own colour mood.
 
-**Rival pilots:** each Campaign arena sends a rival pilot in one of the Hangar mechs during its middle wave
+**Three sectors per level:** a Campaign level is a run over three maps - two lead-in sectors on other maps (picked at random each time), then the level's own map, where its boss waits. Each sector has 8 waves built from the level's own robots, with packs of **Scrap Mites** (small, fast swarm robots) between the tough ones. Your level, upgrades, HP and repair kits carry over, with a patch-up between sectors.
+
+**Rival pilots:** each Campaign arena sends a rival pilot in one of the Hangar mechs in the middle sector
 (Frozen Outpost FROSTBLADE, Jungle Megafactory TUSKER, Alien Outpost AURORA, Skyway Junction GRIFFIN, Ruined
 Plaza TEMPEST, Volcanic Forge SOLSTICE, Titan Graveyard RAVEN CLAW, Orbital Dry Dock NIMBUS-07), and Endless
 sends a random one every 6 waves. A rival keeps its range and circles you, fires 3-shot bursts, boost-dodges
@@ -171,11 +173,12 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --gun-range --attach=res://tools/chassis_test.gd --temp-save` flies all 8 Hangar chassis and checks each one's stats, art and trick (SALVO, IAIDO, BARRIER, PETAL SWARM, PHASE BLINK)
 - `godot --path . --resolution 1280x720 -- --gun-range --temp-save --attach=res://tools/walk_shots.gd --walk-out=DIR` walks a mech through a fixed routine, checks its walking legs and saves a crop per frame (`--walk-demo` = free walking + circling a target; `--hover` = the old hover art)
 - `godot --headless --path . -- --arena=4 --no-intro --temp-save --attach=res://tools/rival_test.gd` checks every rival pilot (art, moving, shooting, signature move, bounty, Hangar discount), the middle-wave arrival and the arena's own music
+- `godot --headless --path . -- --arena=1 --sector=1 --no-intro --temp-save --attach=res://tools/sector_test.gd` checks the three-sector run (random lead-in maps, 8 waves with Scrap Mite packs, level / upgrades / HP carried over, boss only on the last map)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena
 - `godot --headless --path . -- --temp-save --scrap=4200 --attach=res://tools/lobby_test.gd --lobby-nav-test` checks keyboard / gamepad navigation on the title lobby (add `--portrait` for the phone layout)
 
 ## Credits
-- Fonts: Dela Gothic One (titles, banners, names and the Japanese labels) and Saira Condensed (everything else),
+- Fonts: Anta (titles, banners, names, big numbers) and Saira Condensed (everything else),
   SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). The lettering lives in `ui/ui_font.gd`.

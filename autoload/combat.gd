@@ -91,6 +91,7 @@ func fire(pos: Vector2, vel: Vector2, damage: float, player_owned: bool, source:
 
 
 func clear_enemy_bullets() -> void:
+	_world()  # (a new scene: the old pool's bullets are gone)
 	for b in _pool:
 		if b.active and not b.player_owned:
 			spark(b.global_position, Color(1, 0.5, 0.6), 0.6)
@@ -100,6 +101,7 @@ func clear_enemy_bullets() -> void:
 ## Destroys enemy bullets inside a circle / cone (Beam Sword parries). Returns how many.
 func deflect_bullets(center: Vector2, radius: float, cone_dir := Vector2.ZERO, cone_half_angle := PI) -> int:
 	var n := 0
+	_world()  # (a new scene: the old pool's bullets are gone)
 	for b in _pool:
 		if not b.active or b.player_owned:
 			continue

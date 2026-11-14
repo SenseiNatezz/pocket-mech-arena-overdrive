@@ -3,7 +3,8 @@ extends CanvasLayer
 ##   weapon bar  every weapon's Higgsfield art with its hotkey; click/tap a slot to switch
 ##   spawn panel SPAWN ENEMY buttons for every enemy type, SPAWN BOSS (Warden / Ronin / Seraph) + CLEAR
 ## Layouts, re-applied live when the input device, window size or orientation (Layout.changed) changes:
-##   desktop   weapon bar bottom centre (+ key hints), spawn panel (2-column grids) down the right side
+##   desktop   weapon bar bottom centre (+ key hints); a SPAWN toggle top-right opens the spawn panel
+##             (3-column grids) under it, closed at first so it never covers the weapon bar
 ##   touch     weapon bar sized to fit between the two thumb sticks, above the pause button; the spawn
 ##             panel folds into a SPAWN toggle under the status card (compact 3-column grids), so
 ##             nothing covers the touch buttons
@@ -34,6 +35,9 @@ var _name: Label
 var _hint: Label
 var _bar: GridContainer
 var _panel: PanelContainer
+## The panel's contents scroll when even the widest grid can't end above the weapon bar (Large text).
+var _scroll: ScrollContainer
+var _list: VBoxContainer
 ## Enemy buttons, and boss buttons + CLEAR ALL (2 columns on desktop, 3 in the compact touch/portrait menu).
 var _grid: GridContainer
 var _boss_grid: GridContainer
@@ -73,9 +77,9 @@ func _ready() -> void:
 	_name.size = Vector2(600, 30)
 	_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_name)
-	_hint = _label("WEAPON RANGE  -  every weapon unlocked, you can't be destroyed   //   1-9, 0, - / WHEEL / TAB: switch weapon",
-		13, Color(0.75, 0.88, 1.0, 0.85))
-	_hint.size = Vector2(800, 24)
+	_hint = _label("WEAPON RANGE  -  you can't be destroyed   //   1-9, 0, - / WHEEL / TAB: switch weapon   //   %s: walk / fly"
+		% Controls.key_name(&"hover_toggle"), 13, Color(0.75, 0.88, 1.0, 0.85))
+	_hint.size = Vector2(900, 24)
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_hint)
 
@@ -87,9 +91,14 @@ func _ready() -> void:
 	_panel.add_theme_stylebox_override("panel", _box(Color(0.02, 0.05, 0.12, 0.8), CYAN))
 	root.add_child(_panel)
 	# Headings + two button grids (enemies; bosses + CLEAR) stacked in one column.
+	_scroll = ScrollContainer.new()
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_panel.add_child(_scroll)
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 6)
-	_panel.add_child(list)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.add_child(list)
+	_list = list
 	_heads.append(_head(list, "SPAWN ENEMY"))
 	_grid = _button_grid(list)
 	for k in gun_range.ENEMY_KINDS:
@@ -217,14 +226,13 @@ func _relayout() -> void:
 	_hint.visible = not compact
 	_hint.position = Vector2(vp.x / 2 - _hint.size.x / 2, _bar.position.y - 30.0)
 
-	_toggle.visible = compact
 	_toggle.text = "SPAWN  -" if _spawn_open else "SPAWN  +"
-	_toggle.position = Vector2(16, 116)
-	_panel.visible = not compact or _spawn_open
-	# Compact: 3 columns so the open menu stays above the landscape move stick (y 158..~414).
-	# Desktop: 2 columns down the right side, well above the weapon bar.
+	_toggle.position = Vector2(16, 116) if compact else Vector2(vp.x - 16 - _toggle.custom_minimum_size.x, 64)
+	_panel.visible = _spawn_open
+	# 3 columns: the open menu stays above the landscape move stick (compact, y 158..~414) and, on desktop,
+	# well above the weapon bar.
 	for g: GridContainer in [_grid, _boss_grid]:
-		g.columns = 3 if compact else 2
+		g.columns = 3
 		for c in g.get_children():
 			c.custom_minimum_size = Vector2(150, 34) if compact else Vector2(150, 31)
 		g.reset_size()
@@ -232,8 +240,34 @@ func _relayout() -> void:
 		h.visible = not compact
 	for b in _boss_btns:
 		b.text = ("Boss: %s" if compact else "%s") % b.get_meta("name")
+	_scroll.custom_minimum_size = Vector2(0, _list.get_combined_minimum_size().y)
 	_panel.reset_size()
-	_panel.position = Vector2(16, 158) if compact else Vector2(vp.x - 16 - _panel.get_combined_minimum_size().x, 64)
+	var top := 158.0 if compact else 108.0
+	var bottom := _name.position.y - 8.0
+	if _touch and not _portrait:
+		bottom = minf(bottom, vp.y - 290.0)  # (landscape touch: above the MOVE stick's resting ring)
+	if not compact:
+		# Desktop: widen the grids (more columns, fewer rows) until the open menu ends above the weapon name,
+		# but never so wide that it reaches the MECH toggle on the left.
+		for gc in range(4, 8):
+			if top + _panel.get_combined_minimum_size().y <= bottom:
+				break
+			for g: GridContainer in [_grid, _boss_grid]:
+				g.columns = gc
+				g.reset_size()
+			_scroll.custom_minimum_size = Vector2(0, _list.get_combined_minimum_size().y)
+			_panel.reset_size()
+			if _panel.get_combined_minimum_size().x > vp.x - 16 - 262:
+				for g: GridContainer in [_grid, _boss_grid]:
+					g.columns = gc - 1
+					g.reset_size()
+				break
+	# Still too tall (Large text on a small window, a phone held upright): cap the height and let it scroll,
+	# so the open menu never covers the weapon bar.
+	var pad := _panel.get_combined_minimum_size().y - _scroll.custom_minimum_size.y
+	_scroll.custom_minimum_size = Vector2(0, minf(_list.get_combined_minimum_size().y, maxf(140.0, bottom - top - pad)))
+	_panel.reset_size()
+	_panel.position = Vector2(16, top) if compact else Vector2(vp.x - 16 - _panel.get_combined_minimum_size().x, top)
 
 	# MECH toggle: right of SPAWN on touch / portrait, where SPAWN would be on desktop. Its grid opens below.
 	var cur := Game.chassis_info()

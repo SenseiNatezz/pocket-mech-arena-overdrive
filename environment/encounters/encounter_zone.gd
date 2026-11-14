@@ -41,7 +41,17 @@ const ENEMIES := {
 	"skimmer": preload("res://enemies/void_skimmer.tscn"),
 	"magmine": preload("res://enemies/mag_mine_drone.tscn"),
 	"tug": preload("res://enemies/grav_tug.tscn"),
+	# The HORDE robot: Campaign sectors fill the gaps between the tough robots with packs of these.
+	"mite": preload("res://enemies/scrap_mite.tscn"),
 }
+## SWARMS: "mite" entries warp in MITE_PACK at a time from one big ring (enemies/scrap_mite.gd), a pack every
+## MITE_PACK_GAP seconds, and no more than MAX_MITES are out at once (fewer on the web / phones) - the rest
+## wait their turn.
+const MITE_PACK := 10
+const MITE_PACK_GAP := 2.4
+const MAX_MITES := 50
+const MAX_MITES_MOBILE := 32
+const MITE_RUST := Color(1.0, 0.55, 0.25)
 
 @export var waves: PackedStringArray = [
 	"chaser:4",
@@ -139,7 +149,8 @@ func is_boss_wave(n: int) -> bool:
 
 ## Enemy damage multiplier for the current wave.
 func wave_damage_mult() -> float:
-	return damage_mult * Game.diff("damage") * minf(1.0 + damage_ramp * (wave - 1), MAX_DAMAGE_RAMP)
+	return damage_mult * Game.diff("damage") * minf(1.0 + damage_ramp * (wave - 1), MAX_DAMAGE_RAMP) \
+		* Game.twist_value("enemy_damage")
 
 
 ## Endless wave `n`: grows by ~1.4 enemies a wave (capped); shooters join at wave 2, heavy tanks at 3,
@@ -235,16 +246,53 @@ func _next_wave() -> void:
 			for i in (int(kv[1]) if kv.size() > 1 else 1):
 				list.append(kv[0].strip_edges())
 	list = _scale_for_difficulty(list)
+	var mites := list.count("mite")
+	list.assign(list.filter(func(k: String) -> bool: return k != "mite"))
 	list.shuffle()
-	_pending += list.size()
+	_pending += list.size() + mites
 	for i in list.size():
 		get_tree().create_timer(0.2 + i * 0.25, false).timeout.connect(_telegraph_spawn.bind(list[i]))
+	var packs := ceili(mites / float(MITE_PACK))
+	for p in packs:
+		var n := mini(MITE_PACK, mites - p * MITE_PACK)
+		get_tree().create_timer(0.8 + p * MITE_PACK_GAP, false).timeout.connect(_telegraph_pack.bind(n))
+
+
+func mites_out() -> int:
+	var n := 0
+	for e in _alive:
+		if is_instance_valid(e) and e is ScrapMite:
+			n += 1
+	return n
+
+
+func _mite_cap() -> int:
+	return MAX_MITES_MOBILE if OS.has_feature("web") or OS.has_feature("mobile") else MAX_MITES
+
+
+## A pack of `n` Scrap Mites: one big rust-orange warp ring, then they spill out of it.
+func _telegraph_pack(n: int) -> void:
+	if not is_running:
+		_pending = maxi(_pending - n, 0)
+		return
+	if mites_out() + n > _mite_cap():
+		get_tree().create_timer(1.0, false).timeout.connect(_telegraph_pack.bind(n))
+		return
+	var pos := _pick_spawn_point()
+	for k in 3:
+		get_tree().create_timer(k * 0.2, false).timeout.connect(func() -> void:
+			Combat.shockwave(pos, 110.0 - k * 25.0, MITE_RUST, 0.32))
+	for i in n:
+		var at := pos + Vector2.from_angle(TAU * i / n + randf() * 0.5) * randf_range(10.0, 46.0)
+		get_tree().create_timer(0.6 + i * 0.05, false).timeout.connect(_spawn.bind("mite", at))
 
 
 ## Difficulty: more or fewer enemies per wave (Game.diff("count")). Removes random ones (keeping at least
 ## 2) or adds copies of random ones. Endless waves stay under a (modestly) raised cap.
 func _scale_for_difficulty(list: Array[String]) -> Array[String]:
 	var want := maxi(roundi(list.size() * Game.diff("count")), mini(2, list.size()))
+	if not endless:  # (a Campaign sector's SWARM twist; Endless builds it into endless_wave)
+		want = roundi(want * Game.twist_value("count"))
 	if endless:
 		want = mini(want, roundi(MAX_ENDLESS_ENEMIES * minf(Game.diff("count"), 1.4) * Game.twist_value("count")))
 		# (hard ceiling, so a SWARM on Hard / Extreme stays smooth: 40 robots cost ~6 ms of CPU a frame on
@@ -327,7 +375,7 @@ func _spawn(kind: String, pos: Vector2, force_elite := false) -> void:
 		e.armor_fraction = armor_fraction()
 	# ELITES (gold aura, x2 HP, faster, harder-hitting): Extreme from the start, every difficulty late in
 	# Endless (see elite_chance).
-	if force_elite or randf() < elite_chance():
+	if force_elite or (kind != "mite" and randf() < elite_chance()):
 		e.make_elite()
 	e.died.connect(_on_enemy_died)
 	_alive.append(e)
@@ -368,8 +416,10 @@ func _check_stall(delta: float) -> void:
 			continue
 		if e.is_in_group("boss"):
 			boss = true
-		else:
+		elif not (e is ScrapMite):  # (a few leftover swarm robots don't stop the rescue)
 			regular += 1
+	if regular == 0 and mites_out() > 0:
+		regular = 1
 	if not is_running or _pending > 0 or regular == 0 or regular > STALL_MAX_LEFT:
 		_stall_t = 0.0
 		return

@@ -1,8 +1,8 @@
 Fonts in this folder (the game's lettering, ui/ui_font.gd; Saira Condensed SemiBold is also the project's
 default font, project.godot gui/theme/custom_font):
 
-  Dela Gothic One (DelaGothicOne-Regular.ttf) - titles, banners, names, big numbers, katakana labels
-  Copyright 2020 The Dela Gothic Project Authors (https://github.com/syakuzen/DelaGothic)
+  Anta (Anta-Regular.ttf) - titles, banners, names, big numbers
+  Copyright 2019 The Anta Project Authors (https://github.com/Typedesigners/Anta-Regular)
 
   Saira Condensed (SairaCondensed-Medium.ttf, -SemiBold.ttf, -Bold.ttf, -ExtraBold.ttf) - everything else
   Copyright 2016 The Saira Project Authors (omnibus.type@gmail.com), with reserved font name "Saira".

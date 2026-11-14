@@ -3,7 +3,7 @@ extends RefCounted
 ## The title lobby's look (ui/main_menu.gd builds the screen, ui/lobby_widgets.gd has the pieces): fonts,
 ## colours, the cut-corner glass panel, real art clipped into a panel, gradients, progress bars, badges and the
 ## vector icons. All drawn in code (the only textures are the game's own art), so it stays sharp at any size.
-## Fonts = the game's lettering (ui/ui_font.gd): HEAD is the Dela Gothic One display face (draw big titles with
+## Fonts = the game's lettering (ui/ui_font.gd): HEAD is the Anta display face (draw big titles with
 ## UiFont.draw_display for the outline + red print shadow), the rest are Saira Condensed weights.
 
 const HEAD := UiFont.DISPLAY

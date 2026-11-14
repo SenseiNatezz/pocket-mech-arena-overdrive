@@ -196,9 +196,10 @@ const ENDLESS_BOSS_SCENES: Array[String] = [
 ]
 var endless_boss_order: Array[String] = []
 var _last_first_boss := ""
-## ENDLESS TWISTS: from wave 6, every 5-wave block (6-10, 11-15, ...) rolls a random modifier
-## (ScenicArena._roll_twist, never the same twice in a row). Numeric effects are read through
-## twist_value(); CRYSTAL STORM (lightning strikes) and BLACKOUT (darkness) are run by the arena / HUD.
+## TWISTS: random modifiers. ENDLESS: from wave 6, every 5-wave block (6-10, 11-15, ...) rolls one
+## (ScenicArena._roll_twist, never the same twice in a row). CAMPAIGN: every sector has one (sector_twists; the
+## route doors show it). Numeric effects are read through twist_value(); CRYSTAL STORM (lightning strikes),
+## BLACKOUT (darkness) and OVERHEAT (robots blow up) are run by the arena / HUD.
 const TWISTS := {
 	&"storm": {"name": "CRYSTAL STORM", "color": Color(0.75, 0.45, 1.0),
 		"desc": "Crystal lightning strikes the field - robots get hit too."},
@@ -212,18 +213,79 @@ const TWISTS := {
 		"desc": "Nearly twice as many robots, but much weaker."},
 	&"hyper": {"name": "REACTOR SURGE", "color": Color(0.35, 0.95, 1.0), "enemy_speed": 1.25, "player_speed": 1.25,
 		"boost_cd": 0.5, "desc": "Everything moves 25% faster, and your boost recharges twice as fast."},
+	&"overheat": {"name": "OVERHEAT", "color": Color(1.0, 0.5, 0.2),
+		"desc": "Robots blow up when destroyed - the blasts hit other robots, and you."},
 }
 var endless_twist := &""
 
+## ROUTE DEALS: when a Campaign sector is cleared the pilot picks one of two doors (ui/route_choice.gd) - the
+## next map, its twist and one of these deals. Numeric keys work like a twist's (twist_value); SUPPLY CACHE /
+## BOUNTY HUNT hand out a free upgrade pick and SAFE PASSAGE a bigger patch-up (Game.next_sector).
+const SECTOR_DEALS := {
+	&"haul": {"name": "SCRAP HAUL", "color": Color(1.0, 0.82, 0.3), "scrap": 2.0, "enemy_hp": 1.2,
+		"desc": "Double scrap, but robots are 20% tougher."},
+	&"supply": {"name": "SUPPLY CACHE", "color": Color(0.45, 1.0, 0.8),
+		"desc": "A free upgrade card when you arrive."},
+	&"safe": {"name": "SAFE PASSAGE", "color": Color(0.55, 0.85, 1.0), "enemy_damage": 0.8,
+		"desc": "Robots hit 20% softer, and a bigger patch-up after."},
+	&"bounty": {"name": "BOUNTY HUNT", "color": Color(1.0, 0.55, 0.35), "elite_add": 0.2,
+		"desc": "More gold elite robots - a free upgrade card once the sector is clear."},
+}
+const DEAL_SAFE_REPAIR := 0.2
+## Each sector's twist and route deal (&"" = none), alongside sector_scenes.
+var sector_twists: Array[StringName] = []
+var sector_deals: Array[StringName] = []
 
-## A multiplier (or bonus) from the current Endless twist; `default` when there's none.
+
+## True while the current scene is this Campaign run's sector map.
+func in_sector() -> bool:
+	if is_endless() or sector_scenes.size() != CAMPAIGN_SECTORS or sector_twists.size() != CAMPAIGN_SECTORS:
+		return false
+	var s := get_tree().current_scene if is_inside_tree() else null
+	return s != null and campaign_sector >= 1 and s.scene_file_path == sector_scenes[campaign_sector - 1]
+
+
+## The twist in play: Endless's current one, or this Campaign sector's.
+func active_twist() -> StringName:
+	if is_endless():
+		return endless_twist
+	return sector_twists[campaign_sector - 1] if in_sector() else &""
+
+
+## The route deal in play (Campaign sectors from 2 on).
+func active_deal() -> StringName:
+	return sector_deals[campaign_sector - 1] if in_sector() else &""
+
+
+## A multiplier (or bonus, when `default` is 0) from the twist and route deal in play; `default` when none.
 func twist_value(key: String, default := 1.0) -> float:
-	if not is_endless() or endless_twist == &"" or not TWISTS.has(endless_twist):
-		return default
-	return float(TWISTS[endless_twist].get(key, default))
+	var v := default
+	var t := active_twist()
+	if t != &"" and TWISTS.has(t):
+		v = float(TWISTS[t].get(key, default))
+	var d := active_deal()
+	if d != &"" and SECTOR_DEALS.has(d) and SECTOR_DEALS[d].has(key):
+		var dv := float(SECTOR_DEALS[d][key])
+		v = v + dv if default == 0.0 else v * dv
+	return v
 
 var save_path := SAVE_PATH
 var arena_index := 0
+## CAMPAIGN SECTORS: a Campaign level is a run through CAMPAIGN_SECTORS maps - lead-in sectors on two other
+## maps (picked at random when the level starts; RETRY keeps them), then the level's own map, where its boss
+## waits (environment/scenic_arena.gd builds each sector's waves from the level's own wave table). Level,
+## upgrades, HP and repair kits carry from sector to sector. `campaign_sector` is 1-based.
+const CAMPAIGN_SECTORS := 3
+var campaign_sector := CAMPAIGN_SECTORS
+## The sector this run started on (1 from the menu; tests start on the level's own map).
+var start_sector := CAMPAIGN_SECTORS
+var sector_scenes: Array[String] = []
+## Health (fraction of max HP) and repair kits handed to the mech in the next sector (-1 = a fresh mech).
+var carry_hp := -1.0
+var carry_repairs := -1
+## Patched up between sectors: this fraction of max HP back, plus a scrap bonus for the sector.
+const SECTOR_REPAIR := 0.4
+const SCRAP_SECTOR := 120.0
 var screen_shake := true
 ## Index into DIFFICULTIES (saved with the settings).
 var difficulty := 1
@@ -615,8 +677,10 @@ func _on_enemy_killed(e: Node) -> void:
 		return
 	# Scrap: a third of the robot's XP value (x10), bosses SCRAP_BOSS on top - flown to the mech as chips.
 	var boss := e.is_in_group("boss")
-	var got := earn_scrap(maxf(SCRAP_KILL, Upgrades.xp_value(e) * SCRAP_PER_XP) + (SCRAP_BOSS if boss else 0.0),
-		&"boss" if boss else &"kills")
+	# (swarm robots, enemies/scrap_mite.gd, are worth a fraction of a kill: their xp_chance)
+	var share = e.get("xp_chance")
+	var got := earn_scrap((maxf(SCRAP_KILL, Upgrades.xp_value(e) * SCRAP_PER_XP) + (SCRAP_BOSS if boss else 0.0))
+		* (float(share) if share != null else 1.0), &"boss" if boss else &"kills")
 	_drop_scrap((e as Node2D).global_position, got, 12 if boss else clampi(ceili(got / 12.0), 1, 5))
 	# Weapon mastery for whatever the mech is wielding.
 	add_mastery(weapon, mini(Upgrades.xp_value(e), MASTERY_BOSS_XP))
@@ -1106,7 +1170,8 @@ func pick_chassis(id: StringName) -> bool:
 
 
 ## `carry_upgrades`: keep the current level + upgrades (NEXT ARENA continues the run).
-func start_arena(index: int, carry_upgrades := false) -> void:
+## `sector`: where to start (1 = the first lead-in map; tests and `--arena=N` start on the level's own map).
+func start_arena(index: int, carry_upgrades := false, sector := 1) -> void:
 	arena_index = clampi(index, 0, ARENAS.size() - 1)
 	boss_checkpoint = {}
 	mode = &"campaign"
@@ -1118,7 +1183,108 @@ func start_arena(index: int, carry_upgrades := false) -> void:
 	Upgrades.save_checkpoint()
 	_reset_run()
 	scrap_enabled = true
-	_change(ARENAS[arena_index]["scene"])
+	var home: String = ARENAS[arena_index]["scene"]
+	if not carry_upgrades or sector_scenes.size() != CAMPAIGN_SECTORS or sector_scenes[-1] != home:
+		_roll_sectors()
+	campaign_sector = clampi(sector, 1, CAMPAIGN_SECTORS)
+	start_sector = campaign_sector
+	carry_hp = -1.0
+	carry_repairs = -1
+	_change(sector_scenes[campaign_sector - 1])
+
+
+## Picks the lead-in maps for this level: other Campaign maps at random, never the same one twice.
+func _roll_sectors() -> void:
+	var others: Array[String] = []
+	for i in ARENAS.size():
+		if i != arena_index:
+			others.append(ARENAS[i]["scene"])
+	others.shuffle()
+	sector_scenes = others.slice(0, CAMPAIGN_SECTORS - 1)
+	sector_scenes.append(ARENAS[arena_index]["scene"])
+	# Sector 1 gets a random twist (not on a new pilot's very first level); later sectors get the twist and deal
+	# of the route door picked (route_options / next_sector) - none until then (a run started straight on a
+	# later sector, like the tests' --arena=N, plays it plain).
+	sector_twists.assign([TWISTS.keys().pick_random(), &"", &""])
+	if arena_index == 0 and not cleared.has(0):
+		sector_twists[0] = &""
+	sector_deals.assign([&"", &"", &""])
+
+
+## The two route doors offered when the current sector is clear: the next map (two different unused maps; the
+## level's own map for the boss sector), each with a different twist and deal.
+func route_options() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var n := campaign_sector + 1
+	if n > CAMPAIGN_SECTORS or sector_scenes.size() != CAMPAIGN_SECTORS or sector_twists.size() != CAMPAIGN_SECTORS:
+		return out
+	var home: String = ARENAS[arena_index]["scene"]
+	var maps: Array[String] = [home, home]
+	if n < CAMPAIGN_SECTORS:
+		var pool: Array[String] = []
+		for a in ARENAS:
+			var p: String = a["scene"]
+			if p != home and not sector_scenes.slice(0, campaign_sector).has(p):
+				pool.append(p)
+		pool.shuffle()
+		maps = [pool[0], pool[1 % pool.size()]]
+	var twists := TWISTS.keys()
+	twists.erase(sector_twists[campaign_sector - 1])
+	twists.shuffle()
+	var deals := SECTOR_DEALS.keys()
+	deals.shuffle()
+	for i in 2:
+		var t: StringName = twists[i]
+		var d: StringName = deals[i]
+		if t == &"gold" and d == &"haul":  # (no double-double scrap)
+			d = deals[2]
+		out.append({"scene": maps[i], "name": arena_name_of(maps[i]), "twist": t, "deal": d})
+	return out
+
+
+## The Campaign name of an arena scene ("" if it isn't one).
+func arena_name_of(scene: String) -> String:
+	for a in ARENAS:
+		if a["scene"] == scene:
+			return a["name"]
+	return ""
+
+
+## A free upgrade pick, dealt as soon as the level-up menu is ready (head start, route deals).
+func grant_bonus_pick(title: String) -> void:
+	Upgrades.pending += 1
+	Upgrades.bonus_picks += 1
+	Upgrades.bonus_title = title
+
+
+## True on the level's own map (the boss sector) - and always outside the Campaign.
+func is_final_sector() -> bool:
+	return is_endless() or campaign_sector >= CAMPAIGN_SECTORS
+
+
+## A lead-in sector is clear: on to the next map with the level, upgrades, HP (+SECTOR_REPAIR) and repair
+## kits the pilot has now. Kills, time and the run's scrap keep counting. `route` = the door picked (one of
+## route_options(): its map, twist and deal); none keeps the planned map.
+func next_sector(hp_frac: float, repairs: int, route := {}) -> void:
+	if is_final_sector() or sector_scenes.size() != CAMPAIGN_SECTORS:
+		return
+	_scrap_bonus(SCRAP_SECTOR * campaign_sector, &"arena", "SECTOR CLEAR")
+	var repair := SECTOR_REPAIR
+	var done: StringName = sector_deals[campaign_sector - 1] if sector_deals.size() == CAMPAIGN_SECTORS else &""
+	if done == &"safe":
+		repair += DEAL_SAFE_REPAIR
+	elif done == &"bounty":
+		grant_bonus_pick("BOUNTY PAID")
+	campaign_sector += 1
+	if not route.is_empty() and sector_twists.size() == CAMPAIGN_SECTORS:
+		sector_scenes[campaign_sector - 1] = route.get("scene", sector_scenes[campaign_sector - 1])
+		sector_twists[campaign_sector - 1] = route.get("twist", &"")
+		sector_deals[campaign_sector - 1] = route.get("deal", &"")
+	if sector_deals.size() == CAMPAIGN_SECTORS and sector_deals[campaign_sector - 1] == &"supply":
+		grant_bonus_pick("SUPPLY CACHE")
+	carry_hp = minf(hp_frac + repair, 1.0)
+	carry_repairs = repairs
+	_change(sector_scenes[campaign_sector - 1])
 
 
 ## The boss just appeared (ScenicArena._start_boss): remember where the run stood for RETRY BOSS.
@@ -1148,6 +1314,9 @@ func retry_boss() -> void:
 	kills = c["kills"]
 	run_time = c["time"]
 	mode = &"campaign"
+	campaign_sector = CAMPAIGN_SECTORS
+	carry_hp = -1.0
+	carry_repairs = -1
 	_pending_boss_start = true
 	_change(ARENAS[arena_index]["scene"])
 

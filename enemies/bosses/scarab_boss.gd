@@ -29,6 +29,15 @@ const FLARE_REACH := 1300.0
 const FLARE_HIT := 16.0
 ## Sun disk (reactor crest) in the sprite's own frame (art faces up).
 const DISK := Vector2(0, -10)
+## BURROW look: a lumpy sand mound in the Titan Graveyard's own orange sand, lit from the top-left, with the
+## drill mandibles chomping out of its front, the reactor glowing through cracks, pebbles thrown aside, and
+## a ploughed trench left behind that fades out (TRAIL_LIFE s).
+const MOUND_BODY := Color(0.84, 0.54, 0.3)
+const MOUND_LIGHT := Color(0.98, 0.76, 0.5)
+const MOUND_DARK := Color(0.4, 0.22, 0.1)
+const MANDIBLE := Color(0.24, 0.18, 0.13)
+const TRAIL_LIFE := 2.4
+const TRAIL_STEP := 16.0
 
 var _charge_v := Vector2.ZERO
 var _charge_hit := false
@@ -38,6 +47,8 @@ var _mark := Vector2.ZERO
 var _flare_dirs: Array[Vector2] = []
 var _flare_ends: Array[Vector2] = []
 var _puff_t := 0.0
+## The trench: [global position, time it was dug (_t)].
+var _trail: Array = []
 
 
 func take_damage(amount: float, from_pos: Vector2, source: Node = null) -> void:
@@ -63,6 +74,11 @@ func _think(delta: float) -> void:
 	facing = _turret
 	if not _buried:
 		_sink = move_toward(_sink, 0.0, delta * 3.0)
+	else:
+		if _trail.is_empty() or global_position.distance_to(_trail[-1][0]) > TRAIL_STEP:
+			_trail.append([global_position, _t])
+	while not _trail.is_empty() and _t - float(_trail[0][1]) > TRAIL_LIFE:
+		_trail.pop_front()
 	if _roar > 0.0:
 		_roar -= delta
 		return
@@ -136,7 +152,7 @@ func _think(delta: float) -> void:
 			_puff_t -= delta
 			if _puff_t <= 0.0:
 				_puff_t = 0.07
-				Combat.spark(global_position + Vector2(randf_range(-50, 50), randf_range(-50, 50)), SAND, 1.4)
+				Combat.spark(global_position + _turret * 60.0 + Vector2(randf_range(-40, 40), randf_range(-40, 40)), MOUND_LIGHT, 1.2)
 			if _state_t <= 0.0 or dist_to_target() < 80.0:
 				_state = &"erupt_warn"
 				_state_t = ERUPT_WARN
@@ -301,14 +317,14 @@ func _draw() -> void:
 		for e in _flare_ends:
 			draw_line(from, e - global_position, Color(GOLD, 0.45 * k), 40.0 * k + 6.0, true)
 			draw_line(from, e - global_position, Color(1, 1, 0.92, k), 12.0 * k + 3.0, true)
+	_draw_trench()
 	if _buried:
-		# The sand hump racing under the dunes.
-		var wob := 1.0 + 0.06 * sin(_t * 14.0)
-		draw_set_transform(Vector2.ZERO, _turret.angle(), Vector2(1.3 * wob, 0.9))
-		draw_circle(Vector2.ZERO, 90.0, Color(SAND_DARK, 0.5))
-		draw_circle(Vector2(-10, -8), 66.0, Color(SAND, 0.7))
-		draw_set_transform(Vector2.ZERO)
+		if _limbs:
+			_limbs.clear()
+		_draw_mound(1.0, true)
 		return
+	if _sink > 0.0:
+		_draw_mound(_sink, false)  # (diving: the mound heaves up round it as it sinks)
 	var rot := _turret.angle() + PI / 2
 	var crawl := absf(sin(_t * 7.0)) * 0.015 if velocity.length() > 20.0 else 0.0
 	var s := Vector2(SCARAB_SCALE + crawl, SCARAB_SCALE - crawl) * (1.0 - 0.3 * _sink)
@@ -326,3 +342,98 @@ func _draw() -> void:
 	draw_circle(disk, 34.0 + 10.0 * pulse + 30.0 * charge, Color(TURQ, 0.14 + 0.1 * pulse + 0.25 * charge))
 	draw_circle(disk, 12.0 + 4.0 * pulse + 10.0 * charge, Color(GOLD.lerp(Color.WHITE, charge), 0.5 + 0.4 * charge))
 	draw_set_transform(Vector2.ZERO)
+
+
+## The ploughed trench behind the mound: a dark furrow between two lit ridges, fading with age (drawn as
+## polylines so the segments don't stack into stripes).
+func _draw_trench() -> void:
+	if _trail.size() < 2:
+		return
+	var mid := PackedVector2Array()
+	var left := PackedVector2Array()
+	var right := PackedVector2Array()
+	var cols_dark := PackedColorArray()
+	var cols_light := PackedColorArray()
+	var cols_side := PackedColorArray()
+	for i in _trail.size():
+		var p: Vector2 = _trail[i][0] - global_position
+		var q: Vector2 = _trail[mini(i + 1, _trail.size() - 1)][0] - global_position
+		var o: Vector2 = _trail[maxi(i - 1, 0)][0] - global_position
+		var side := (q - o).orthogonal().normalized()
+		var k := clampf(1.0 - (_t - float(_trail[i][1])) / TRAIL_LIFE, 0.0, 1.0)
+		mid.append(p)
+		left.append(p - side * 24.0)
+		right.append(p + side * 24.0)
+		cols_dark.append(Color(MOUND_DARK, 0.42 * k))
+		cols_light.append(Color(MOUND_LIGHT, 0.6 * k))
+		cols_side.append(Color(MOUND_BODY.darkened(0.2), 0.55 * k))
+	draw_polyline_colors(mid, cols_dark, 30.0, true)
+	draw_polyline_colors(left, cols_light, 9.0, true)
+	draw_polyline_colors(right, cols_side, 9.0, true)
+
+
+## A point on the mound's lumpy outline (angle `a` from the travel direction), in the boss's frame.
+func _mound_point(a: float, rx: float, ry: float, dir: Vector2, seed := 0.0) -> Vector2:
+	var r := 1.0 + 0.08 * sin(3.0 * a + _t * 7.0 + seed) + 0.05 * sin(5.0 * a - _t * 11.0 + seed * 2.0)
+	var x := cos(a) * rx * r * (1.2 if cos(a) > 0.0 else 1.0)
+	var y := sin(a) * ry * r
+	return dir * x + dir.orthogonal() * y
+
+
+func _mound_poly(rx: float, ry: float, dir: Vector2, off: Vector2, seed := 0.0) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in 32:
+		pts.append(_mound_point(TAU * i / 32.0, rx, ry, dir, seed) + off)
+	return pts
+
+
+## The sand mound. `k` 0..1 grows it (dive); `full` adds the mandibles, cracks and thrown pebbles.
+func _draw_mound(k: float, full: bool) -> void:
+	var dir := _turret.normalized() if _turret.length() > 0.1 else Vector2.RIGHT
+	var rx := 76.0 * k
+	var ry := 58.0 * k
+	if rx < 2.0:
+		return
+	var side := dir.orthogonal()
+	# Churned sand round it and its shadow (bottom-right).
+	draw_colored_polygon(_mound_poly(rx * 1.35, ry * 1.35, dir, Vector2.ZERO, 1.3), Color(MOUND_DARK, 0.16 * k))
+	draw_colored_polygon(_mound_poly(rx * 1.04, ry * 1.04, dir, Vector2(12, 16)), Color(MOUND_DARK, 0.45 * k))
+	# Drill mandibles chomping out of the front (under the sand's lip).
+	if full:
+		var bite := 0.5 + 0.5 * sin(_t * 16.0)
+		for m: float in [-1.0, 1.0]:
+			# A curved pincer: out from the lip, sweeping forward and hooking in to the tip.
+			var inner := dir * (rx * 0.85) + side * m * 12.0
+			var outer := dir * (rx * 0.78) + side * m * 40.0
+			var bend := dir * (rx * 1.45) + side * m * (44.0 + 10.0 * bite)
+			var tip := dir * (rx * 2.0) + side * m * (2.0 + 22.0 * bite)
+			var hook := dir * (rx * 1.4) + side * m * (16.0 + 12.0 * bite)
+			draw_colored_polygon(PackedVector2Array([inner, outer, bend, tip, hook]), MANDIBLE)
+			draw_polyline(PackedVector2Array([outer, bend, tip]), Color(GOLD, 0.9), 3.0, true)
+			draw_polyline(PackedVector2Array([inner, hook, tip]), Color(MANDIBLE.lightened(0.3), 0.9), 2.0, true)
+			for tooth in 3:
+				var at := hook.lerp(tip, 0.2 + tooth * 0.25)
+				draw_line(at, at - side * m * 7.0, Color(GOLD, 0.7), 2.0, true)
+	# The heaving sand: stacked lumps, darker at the base, lit towards the top-left.
+	for layer in 7:
+		var f := layer / 6.0
+		var col := MOUND_BODY.darkened(0.14).lerp(MOUND_BODY, minf(f * 2.0, 1.0)).lerp(MOUND_LIGHT, maxf(f * 1.4 - 0.4, 0.0))
+		draw_colored_polygon(_mound_poly(rx * (1.0 - 0.72 * f), ry * (1.0 - 0.76 * f), dir, Vector2(-20, -20) * f, layer * 0.9), Color(col, k))
+	if not full:
+		return
+	# A split along the crest with the reactor's turquoise glowing through it.
+	var pulse := 0.5 + 0.5 * sin(_t * 9.0)
+	var crack := PackedVector2Array()
+	for s in 7:
+		var f := lerpf(-0.75, 0.75, s / 6.0)
+		crack.append(dir * (rx * f) + side * (6.0 * sin(s * 2.3 + _t * 3.0)) + Vector2(-6, -6))
+	draw_polyline(crack, Color(TURQ, 0.18 + 0.12 * pulse), 14.0, true)
+	draw_polyline(crack, Color(MOUND_DARK, 0.85), 4.0, true)
+	draw_polyline(crack, Color(TURQ.lightened(0.3), 0.55 + 0.35 * pulse), 1.6, true)
+	# Pebbles and sand thrown off to both sides of the bow.
+	for i in 14:
+		var ph := fposmod(_t * 1.7 + i * 0.137, 1.0)
+		var m := -1.0 if i % 2 == 0 else 1.0
+		var at := dir * (rx * (0.9 - 1.3 * ph)) + side * m * (ry * 0.9 + 70.0 * ph) + Vector2(0, -26.0 * sin(PI * ph))
+		draw_circle(at + Vector2(3, 4), 2.0 + (i % 3), Color(MOUND_DARK, 0.35 * (1.0 - ph)))
+		draw_circle(at, 2.0 + (i % 3), Color(MOUND_BODY.lerp(MOUND_DARK, 0.35), 1.0 - ph))
