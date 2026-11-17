@@ -151,6 +151,7 @@ func damage_destructibles(center: Vector2, radius: float, damage: float, cone_di
 ## Explosive Rounds / missile impact: a small blast that only hurts enemies (lighter FX and sound
 ## than a full explosion, since these can happen many times a second).
 func small_blast(pos: Vector2, radius: float, damage: float, source: Node) -> void:
+	radius *= blast_scale(source)
 	for n in enemies_in_area(pos, radius):
 		n.take_damage(damage, pos, source)
 	shockwave(pos, radius, Color(1.0, 0.6, 0.25), 0.25)
@@ -158,6 +159,13 @@ func small_blast(pos: Vector2, radius: float, damage: float, source: Node) -> vo
 	burst(pos, Color(1.0, 0.55, 0.2), radius * 3.0, 0.9)
 	Sfx.play(&"explode", -16.0, 0.15)
 	_cluster(pos, damage, source)
+
+
+## Size of the explosions `source` sets off: TEMPEST's DEMOLITION trait makes the pilot's 50% bigger.
+func blast_scale(source: Node) -> float:
+	if source is Mech and is_instance_valid(source) and (source as Mech)._chassis_id == &"artillery":
+		return 1.5
+	return 1.0
 
 
 ## CLUSTER MISSILES combo (Target Lock + Explosive Rounds): the player's explosions spit 3 homing

@@ -81,6 +81,10 @@ var _pool_toast: PanelContainer
 var _pool_tw: Tween
 var _over_goals: VBoxContainer
 var _win_goals: VBoxContainer
+## PART FOUND toast (Game.part_found: a part crate was opened mid-run).
+var _part_toast: PanelContainer
+var _part_tw: Tween
+const PART_PURPLE := Color(0.82, 0.55, 1.0)
 ## THREAT TIERS: what this run won (Game.threat_won), for the results text.
 var _threat_note := ""
 
@@ -175,6 +179,10 @@ func _ready() -> void:
 	Game.salvager_escaped.connect(_on_salvager_escaped)
 	Game.rival_defeated.connect(_on_rival_defeated)
 	Game.threat_won.connect(_on_threat_won)
+	_part_toast = _make_part_toast()
+	root.add_child(_part_toast)
+	Game.part_found.connect(_on_part_found)
+	Upgrades.weapon_evolved.connect(_on_weapon_evolved)
 	_scrap_seen = Game.run_scrap_landed()
 	_scrap_shown = _scrap_seen
 	_radio_box = _make_radio_box()
@@ -602,10 +610,16 @@ const TOAST_PORTRAIT_SCALE := 0.72
 
 
 func _toast_y() -> float:
+	# (both layouts: below the band the wave / zone banners use - see _place_banner - so a banner never runs
+	# under a toast)
 	if Layout.portrait:
-		return 170.0
+		return 236.0
 	# (clear of the ticker's "+N" pop, which rises from just under it)
-	return _scrap_baseline() + 34.0 if Game.scrap_enabled else _run_info_y() + 52.0
+	return maxf(_scrap_baseline() + 34.0 if Game.scrap_enabled else _run_info_y() + 52.0, BANNER_BAND_END)
+
+
+## Bottom of the landscape banner band (the banner sits at y 128, ~55 px tall).
+const BANNER_BAND_END := 194.0
 
 
 ## MASTERY UP toast (Game.mastery_up): the weapon's art, its new mastery level as ten pips, and what the
@@ -691,7 +705,7 @@ func _on_mastery_up(id: StringName, level: int) -> void:
 ## from the frame it's shown - see _toast_start - so two shown at once stack too.)
 func _toast_stack_y(skip: Control) -> float:
 	var y := _toast_y()
-	for t: Control in [_unlock_toast, _mastery_toast, _contract_toast, _pool_toast]:
+	for t: Control in [_unlock_toast, _mastery_toast, _contract_toast, _pool_toast, _part_toast]:
 		if t != skip and t.modulate.a > 0.05:
 			y = maxf(y, t.position.y + t.size.y * t.scale.y + 10.0)
 	return y
@@ -859,6 +873,77 @@ func _hide_contract_toast() -> void:
 	_pool_toast.modulate.a = 0.0
 
 
+## PART FOUND toast: a violet-edged card with the crate badge, the part's name and slot, and that it comes
+## home with the run's scrap (found-only parts say they're rare).
+func _make_part_toast() -> PanelContainer:
+	var p := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.07, 0.04, 0.11, 0.92)
+	sb.border_color = PART_PURPLE
+	sb.set_border_width_all(2)
+	sb.border_width_left = 5
+	sb.set_corner_radius_all(8)
+	sb.set_content_margin_all(10)
+	p.add_theme_stylebox_override("panel", sb)
+	p.custom_minimum_size = Vector2(430, 0)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.modulate.a = 0.0
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	p.add_child(h)
+	var badge := Control.new()
+	badge.custom_minimum_size = Vector2(40, 52)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.draw.connect(func() -> void:
+		var c := badge.size / 2.0
+		badge.draw_circle(c, 20.0, Color(PART_PURPLE, 0.18))
+		badge.draw_rect(Rect2(c - Vector2(13, 9), Vector2(26, 20)), Color(0.18, 0.14, 0.26))
+		badge.draw_rect(Rect2(c - Vector2(13, 9), Vector2(26, 20)), PART_PURPLE, false, 2.0)
+		badge.draw_rect(Rect2(c - Vector2(13, 13), Vector2(26, 5)), PART_PURPLE.lightened(0.3))
+		badge.draw_string(ThemeDB.fallback_font, c + Vector2(-8, 9), "?", HORIZONTAL_ALIGNMENT_CENTER, 16, 13, Color.WHITE))
+	h.add_child(badge)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 2)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	for n: Array in [["Head", 14, PART_PURPLE], ["Name", 21, Color.WHITE], ["Sub", 13, Color(0.9, 0.82, 1.0)]]:
+		var l := _label(n[1], n[2])
+		l.name = n[0]
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		v.add_child(l)
+	return p
+
+
+func _on_part_found(id: StringName) -> void:
+	if _ended:
+		return
+	var info := Parts.info(id)
+	var t := _part_toast
+	(t.find_child("Head", true, false) as Label).text = "RARE PART FOUND!" if info.get("found", false) else "PART FOUND"
+	(t.find_child("Name", true, false) as Label).text = "%s   -   %s" % [String(info.get("name", "")).to_upper(),
+		String(Parts.SLOT_NAMES.get(info.get("slot", &""), ""))]
+	(t.find_child("Sub", true, false) as Label).text = "Comes home with your scrap  -  equip it in the Hangar"
+	show_banner("PART FOUND!", PART_PURPLE)
+	if _part_tw:
+		_part_tw.kill()
+	var x := _toast_start(t)
+	_part_tw = create_tween()
+	_part_tw.set_parallel()
+	_part_tw.tween_property(t, "modulate:a", 1.0, 0.2)
+	_part_tw.tween_property(t, "position:x", x, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_part_tw.chain().tween_property(t, "modulate:a", 0.0, 0.6).set_delay(4.2)
+
+
+## The weapon evolved (picked in the level-up menu): a banner once the menu has closed.
+func _on_weapon_evolved(w: StringName) -> void:
+	if Upgrades.choosing:
+		await level_menu.closed
+	if _ended:
+		return
+	show_banner("EVOLVED: %s" % Upgrades.weapon_name(w).to_upper(), Upgrades.EVOLVE_COLOR)
+
+
 ## GOLD SALVAGER banners: it showed up, what it paid, or it got away.
 func _on_salvager_spotted() -> void:
 	show_banner("GOLD SALVAGER!", SCRAP_GOLD)
@@ -967,7 +1052,9 @@ func _show_goals(box: VBoxContainer) -> void:
 
 ## Polled (not event-based) so the on-screen PAUSE button, which uses Input.action_press, works too.
 func _check_pause() -> void:
-	if Input.is_action_just_pressed("pause") and not _ended and not Controls.ignore_real_input and not Upgrades.choosing:
+	# (not while a full-screen choice that pauses the game itself is up: the PIT STOP, the route doors)
+	if Input.is_action_just_pressed("pause") and not _ended and not Controls.ignore_real_input and not Upgrades.choosing \
+			and get_tree().get_nodes_in_group("modal_overlay").is_empty():
 		if get_tree().paused:
 			_resume()
 		else:
@@ -991,8 +1078,12 @@ func _upgrade_summary() -> String:
 	for id: StringName in Upgrades.COMBOS:
 		if Upgrades.level_of(id) > 0:
 			parts.append("COMBO %s" % Upgrades.display_name(id).to_upper())
-	var weapon_name: String = Game.weapon_info(mech.weapon if mech else Game.weapon)["name"]
-	return "Level %d  -  %s\n%s" % [Upgrades.level, weapon_name,
+	var wid: StringName = mech.weapon if mech else Game.weapon
+	var weapon_name := Upgrades.weapon_name(wid)
+	if Upgrades.is_evolved():
+		weapon_name = "EVOLVED " + weapon_name.to_upper()
+	var tr := Game.chassis_trait()
+	return "Level %d  -  %s%s\n%s" % [Upgrades.level, weapon_name, ("  -  Trait: %s" % tr) if tr != "" else "",
 		"Upgrades: " + ", ".join(parts) if not parts.is_empty() else "No upgrades yet - defeat enemies to level up"]
 
 
@@ -1048,7 +1139,17 @@ func _show_scrap_results(box: VBoxContainer) -> void:
 		var n := int(Game.last_parts.get(p[0], 0))
 		if n > 0:
 			parts.append("%s %s" % [p[1], Game.fmt_int(n)])
-	(box.find_child("Parts", true, false) as Label).text = "   -   ".join(parts) if not parts.is_empty() else "No scrap this time"
+	# What the PIT STOP took, and the PARTS found in crates (they're in the Hangar now).
+	var spent := -int(Game.last_parts.get(&"shop", 0))
+	if spent > 0:
+		parts.append("Pit stop -%s" % Game.fmt_int(spent))
+	var txt := "   -   ".join(parts) if not parts.is_empty() else "No scrap this time"
+	if not Game.last_found_parts.is_empty():
+		var names: Array[String] = []
+		for id in Game.last_found_parts:
+			names.append(String(Parts.info(id).get("name", id)).to_upper())
+		txt += "\nPARTS FOUND: %s  (in the Hangar)" % ", ".join(names)
+	(box.find_child("Parts", true, false) as Label).text = txt
 	var wid: StringName = mech.weapon if mech else Game.weapon
 	var wname := String(Game.weapon_info(wid)["name"]).to_upper()
 	var ml := Game.mastery_level(wid)
@@ -1328,6 +1429,7 @@ func _draw_bars() -> void:
 	var font := ThemeDB.fallback_font
 	var vp := c.size
 	_draw_enemy_arrows(c, font, vp)
+	_draw_objective(c, font, vp)
 	_draw_hit_marks(c, vp)
 	if mech:
 		var hp_frac := mech.hp / mech.max_hp
@@ -1337,6 +1439,7 @@ func _draw_bars() -> void:
 			for i in 6:
 				c.draw_rect(Rect2(Vector2.ZERO, vp).grow(-i * 8), Color(1, 0.05, 0.05, a * (1.0 - i / 6.0) * 0.5), false, 8.0)
 		_draw_status(c, font)
+		_draw_build_strip(c, font)
 	# Boss bar.
 	var boss_alive: bool = is_instance_valid(boss) and not boss.dead
 	# The objective line would just repeat "Destroy the <boss>" under the boss bar.
@@ -1569,12 +1672,15 @@ func _draw_status(c: Control, font: Font) -> void:
 	# is gold with a star badge.
 	var row_y := o.y + size.y - 13
 	var wid := mech.weapon
-	var wname := String(Game.weapon_info(wid)["name"]).to_upper()
+	# (an EVOLVED weapon shows its evolved name, in the evolution colour with a star)
+	var evolved := Upgrades.is_evolved() and Upgrades.EVOLUTIONS.has(wid)
+	var wname := Upgrades.weapon_name(wid).to_upper()
 	var nx := x0
-	if Game.is_mastered(wid):
-		MASTERY_PIPS.draw_star(c, Vector2(x0 + 5.0, row_y - 4.0), 5.5, SCRAP_GOLD)
+	if Game.is_mastered(wid) or evolved:
+		MASTERY_PIPS.draw_star(c, Vector2(x0 + 5.0, row_y - 4.0), 5.5, Upgrades.EVOLVE_COLOR if evolved else SCRAP_GOLD)
 		nx += 14.0
-	_text(font, Vector2(nx, row_y), wname, 11, SCRAP_GOLD if Game.is_mastered(wid) else Color(0.75, 0.85, 1.0))
+	_text(font, Vector2(nx, row_y), wname, 11, Upgrades.EVOLVE_COLOR.lightened(0.2) if evolved
+		else (SCRAP_GOLD if Game.is_mastered(wid) else Color(0.75, 0.85, 1.0)))
 	var ml := Game.mastery_level(wid)
 	if ml > 0 and not Game.is_mastered(wid):
 		var tag := ("MASTERY %d" if touch else "M%d") % ml
@@ -1601,6 +1707,93 @@ func _draw_status(c: Control, font: Font) -> void:
 		if have:
 			c.draw_rect(Rect2(r.position + Vector2(5, 2), Vector2(2, 8)), Color(0.05, 0.3, 0.1))
 			c.draw_rect(Rect2(r.position + Vector2(2, 5), Vector2(8, 2)), Color(0.05, 0.3, 0.1))
+
+
+## Under the status card: the WEAPON EVOLUTION's progress ("EVOLVE  POWER CORE 1/3  -  PILOT LV 6/8", then
+## EVOLUTION READY, then EVOLVED) and, for GRIFFIN, its MOMENTUM damage bonus right now.
+func _draw_build_strip(c: Control, font: Font) -> void:
+	if mech.dead:
+		return
+	var touch := Controls.device == Controls.Device.TOUCH
+	var y := 10.0 + (78.0 if touch else 86.0) + 15.0
+	var x := 16.0
+	var info := Upgrades.evolution_info(mech.weapon)
+	if not info.is_empty():
+		var col := Upgrades.EVOLVE_COLOR
+		var txt := ""
+		if Upgrades.is_evolved():
+			txt = "EVOLVED"
+		elif Upgrades.evolution_ready():
+			txt = "EVOLUTION READY - NEXT LEVEL-UP"
+			col = col.lerp(Color.WHITE, 0.3 + 0.3 * sin(_t * 6.0))
+		else:
+			var cat := Upgrades.evolve_catalyst(mech.weapon)
+			txt = "EVOLVE  %s %d/%d  -  PILOT LV %d/%d" % [Upgrades.display_name(cat).to_upper(),
+				mini(Upgrades.level_of(cat), Upgrades.evolve_need()), Upgrades.evolve_need(), mini(Upgrades.level, Upgrades.evolve_level()),
+				Upgrades.evolve_level()]
+			col = Color(col, 0.85)
+		MASTERY_PIPS.draw_star(c, Vector2(x + 5.0, y - 4.0), 5.0, col)
+		_text(font, Vector2(x + 14.0, y), txt, 11, col)
+		x += 14.0 + font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x + 16.0
+	if Game.chassis == &"striker":
+		var m := mech.momentum_mult()
+		var mt := "MOMENTUM %s%d%%" % ["+" if m >= 1.0 else "-", roundi(absf(m - 1.0) * 100.0)]
+		_text(font, Vector2(x, y), mt, 11, Color(1.0, 0.55, 0.4).lerp(Color(1.0, 0.85, 0.5), mech.momentum))
+
+
+## BONUS OBJECTIVE (environment/sector_objective.gd): a tracker under the objective line ("BONUS  WARP TOWERS
+## 1 / 3  0:42" over a progress bar) and arrows at the screen edge to its targets that are off screen (the
+## beacon, the data caches; the warp towers get theirs with the robots').
+func _draw_objective(c: Control, font: Font, vp: Vector2) -> void:
+	if arena == null or not mech or mech.dead:
+		return
+	var obj = arena.get("objective")
+	if obj == null or not is_instance_valid(obj) or not obj.active:
+		return
+	var col: Color = obj.color()
+	var w := 380.0
+	var top := 162.0 if Layout.portrait else 50.0
+	var r := Rect2(vp.x / 2.0 - w / 2.0, top, w, 40.0)
+	c.draw_rect(r, Color(0.01, 0.03, 0.07, 0.72))
+	c.draw_rect(Rect2(r.position, Vector2(4, r.size.y)), col)
+	var tl: float = obj.time_left()
+	var head := "BONUS  %s" % obj.title()
+	_text(font, r.position + Vector2(12, 17), head, 14, col.lightened(0.2))
+	var right := "%s    %d:%02d" % [obj.progress_text(), int(tl) / 60, int(tl) % 60]
+	c.draw_string_outline(font, r.position + Vector2(0, 17), right, HORIZONTAL_ALIGNMENT_RIGHT, w - 10, 14, 4, Color(0, 0, 0, 0.85))
+	c.draw_string(font, r.position + Vector2(0, 17), right, HORIZONTAL_ALIGNMENT_RIGHT, w - 10, 14,
+		Color(1.0, 0.45, 0.4).lerp(Color.WHITE, 0.5 + 0.5 * sin(_t * 8.0)) if tl < 15.0 else Color.WHITE)
+	var bar := Rect2(r.position + Vector2(12, 26), Vector2(w - 24, 6))
+	c.draw_rect(bar, Color(0, 0, 0, 0.6))
+	c.draw_rect(Rect2(bar.position, Vector2(bar.size.x * clampf(obj.progress(), 0.0, 1.0), bar.size.y)), col)
+	# Arrows to the targets that aren't robots (those get theirs in _draw_enemy_arrows).
+	var xf := c.get_viewport().get_canvas_transform()
+	var center := vp / 2.0
+	var half := center - Vector2.ONE * ARROW_MARGIN
+	var pulse := 0.5 + 0.5 * sin(_t * 6.0)
+	for n in get_tree().get_nodes_in_group("objective_markers"):
+		if n is Enemy or not (n is Node2D):
+			continue
+		var p: Vector2 = xf * (n as Node2D).global_position
+		if Rect2(Vector2.ZERO, vp).grow(-20.0).has_point(p):
+			continue
+		var dir := (p - center).normalized()
+		var t := minf(half.x / maxf(absf(dir.x), 0.001), half.y / maxf(absf(dir.y), 0.001))
+		var at := center + dir * t
+		if STATUS_CARD.has_point(at):
+			at.y = STATUS_CARD.end.y + 12.0 if at.x <= ARROW_MARGIN + 1.0 else at.y
+			at.x = STATUS_CARD.end.x + 12.0 if at.x > ARROW_MARGIN + 1.0 else at.x
+		var size := 22.0 + 3.0 * pulse
+		var side := dir.orthogonal()
+		var tri := PackedVector2Array([at + dir * size, at - dir * size * 0.5 + side * size * 0.75, at - dir * size * 0.2,
+			at - dir * size * 0.5 - side * size * 0.75])
+		c.draw_circle(at + dir * size * 0.2, size * 1.05, Color(0.02, 0.03, 0.08, 0.5))
+		c.draw_colored_polygon(tri, Color(col, 0.75 + 0.25 * pulse))
+		c.draw_arc(at, size * 1.35, 0.0, TAU, 24, Color(col, 0.4 + 0.3 * pulse), 2.0, true)
+		var m := "%dm" % roundi(mech.global_position.distance_to((n as Node2D).global_position) / 10.0)
+		var tp := at - dir * (size + 20.0) + Vector2(-24, 6)
+		c.draw_string_outline(font, tp, m, HORIZONTAL_ALIGNMENT_CENTER, 48, 15, 5, Color(0, 0, 0, 0.85))
+		c.draw_string(font, tp, m, HORIZONTAL_ALIGNMENT_CENTER, 48, 15, col.lightened(0.4))
 
 
 ## Small label drawn inside the left end of a thin bar.
@@ -1673,9 +1866,11 @@ func _draw_enemy_arrows(c: Control, font: Font, vp: Vector2) -> void:
 				at.y = STATUS_CARD.end.y + 12.0
 			else:
 				at.x = STATUS_CARD.end.x + 12.0
-		var is_boss := e is WardenBoss or gold
-		var col: Color = SCRAP_GOLD if gold else (e.get("accent") if is_boss
-			else ARROW_COLORS.get(e.get_script().get_global_name(), Color(1.0, 0.4, 0.35)))
+		# (a WARP TOWER of the sector's bonus objective is marked like a boss, in the objective's colour)
+		var mark: bool = e.is_in_group("objective_markers")
+		var is_boss := e is WardenBoss or gold or mark
+		var col: Color = SCRAP_GOLD if gold else (WarpTower.CYAN if mark else (e.get("accent") if is_boss
+			else ARROW_COLORS.get(e.get_script().get_global_name(), Color(1.0, 0.4, 0.35))))
 		var size := 24.0 if is_boss else (19.0 if few else 14.0)
 		var alpha := 0.65 + 0.35 * pulse if few or is_boss else 0.75
 		if few or gold:

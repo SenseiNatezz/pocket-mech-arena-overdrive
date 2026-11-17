@@ -61,6 +61,34 @@ crystals and beacons painted on each map pulse, flicker and blink; and each map 
 
 **Three sectors per level:** a Campaign level is a run over three maps - two lead-in sectors on other maps (picked at random each time), then the level's own map, where its boss waits. Each sector has 8 waves built from the level's own robots, with packs of **Scrap Mites** (small, fast swarm robots) between the tough ones. Your level, upgrades, HP and repair kits carry over, with a patch-up between sectors.
 
+**Weapon evolutions:** every weapon has a catalyst upgrade (its level-up card says EVOLVES WEAPON, and it
+shows up more often). Get it to LV 3 (or its max) and reach pilot level 8, and the next level-up deals the
+EVOLUTION card: the Beam Rifle becomes the HYPER BEAM RIFLE (piercing beams + a MEGA BEAM every 5th shot), the
+Rocket Launcher the SWARM LAUNCHER (rockets burst into homing mini-missiles), the Katana CRIMSON MOON (the
+IAIDO cut bursts again a moment later)... 13 in all. The status card tracks the progress; the Armory shows
+each weapon's evolution.
+
+**Mech traits:** on top of its ability, every Hangar mech has a rule-breaking trait: NIMBUS-07 QUICK STUDY
+(evolves sooner), GRIFFIN MOMENTUM (up to +40% damage at full speed, -25% standing still), TUSKER HEAVYWEIGHT
+(double HP from Armor Plating, robots that ram it take damage back, no Thrusters), TEMPEST DEMOLITION (50%
+bigger explosions, starts with Explosive Rounds, no Piercing Rounds), FROSTBLADE FROST EDGE (melee chills, +25%
+damage to chilled robots), SOLSTICE OVERSHIELD (healing past full HP becomes shield charges), AURORA HIVE MIND
+(up to 5 stronger drones, its own weapon 25% weaker) and RAVEN CLAW BLOODLUST (no repair kits; every kill
+repairs it).
+
+**Pit stop:** between sectors, spend the run's scrap (what you don't spend still comes home) on upgrade levels,
+a repair, a repair kit, an Overdrive Cell (start the next sector with a full meter) or a level-up reroll.
+REROLL the shelf (costs more each time), LOCK an item to keep it for the next pit stop.
+
+**Bonus objectives:** every sector has an optional goal from its 2nd wave, with a time limit: WARP TOWERS
+(destroy 3 towers that keep sending swarms), HOLD THE BEACON (stand in the ring until it's charged) or DATA
+CACHES (grab 4 caches around the map). Done in time: a free upgrade card, scrap and maybe a part crate. The
+route doors show the next sector's objective.
+
+**Parts found in runs:** rival pilots always drop a PART CRATE, bosses sometimes, gold elites now and then.
+Open it to find a part you don't own yet - including four FOUND-ONLY parts that are never for sale (Ace Visor,
+Phantom Arms, Ghost Legs, Prototype Booster). It comes home with the run's scrap.
+
 **Rival pilots:** each Campaign arena sends a rival pilot in one of the Hangar mechs in the middle sector
 (Frozen Outpost FROSTBLADE, Jungle Megafactory TUSKER, Alien Outpost AURORA, Skyway Junction GRIFFIN, Ruined
 Plaza TEMPEST, Volcanic Forge SOLSTICE, Titan Graveyard RAVEN CLAW, Orbital Dry Dock NIMBUS-07), and Endless
@@ -174,6 +202,7 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --path . --resolution 1280x720 -- --gun-range --temp-save --attach=res://tools/walk_shots.gd --walk-out=DIR` walks a mech through a fixed routine, checks its walking legs and saves a crop per frame (`--walk-demo` = free walking + circling a target; `--hover` = the old hover art)
 - `godot --headless --path . -- --arena=4 --no-intro --temp-save --attach=res://tools/rival_test.gd` checks every rival pilot (art, moving, shooting, signature move, bounty, Hangar discount), the middle-wave arrival and the arena's own music
 - `godot --headless --path . -- --arena=1 --sector=1 --no-intro --temp-save --attach=res://tools/sector_test.gd` checks the three-sector run (random lead-in maps, 8 waves with Scrap Mite packs, level / upgrades / HP carried over, boss only on the last map)
+- `godot --headless --path . -- --arena=1 --sector=1 --no-intro --no-rival --objective=towers --temp-save --attach=res://tools/variety_test.gd` checks weapon evolutions (all 13 fire), the 8 mech traits, part crates (rival drops, found-only parts, banking), the 3 bonus objectives and the pit stop (buy, reroll, lock, then the route doors)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena

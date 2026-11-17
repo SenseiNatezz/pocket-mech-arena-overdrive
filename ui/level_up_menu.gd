@@ -16,6 +16,7 @@ extends CanvasLayer
 signal closed
 
 const UpgradeIcons := preload("res://ui/upgrade_icons.gd")
+const MASTERY_STAR := preload("res://ui/mastery_pips.gd")
 const ARM_TIME := 0.35
 const CARD_SIZE := Vector2(270, 104)
 ## Covering the mech counts this many times more than covering other UI.
@@ -63,6 +64,11 @@ class UpgradeCard:
 		_desc.text = Upgrades.describe(id)
 		queue_redraw()
 
+	## A weapon's Armory art (assets/hq/weapons/<icon>.png) for the EVOLUTION card.
+	func _weapon_tex(icon: String) -> Texture2D:
+		var path := "res://assets/hq/weapons/%s.png" % icon
+		return load(path) if icon != "" and ResourceLoader.exists(path) else null
+
 	func _process(delta: float) -> void:
 		_t += delta
 		var target := 1.0 if has_focus() or (armed and is_hovered()) else 0.0
@@ -99,6 +105,29 @@ class UpgradeCard:
 				Color(1, 0.85, 0.85))
 			draw_string(font, Vector2(86, 46), "BANISH FOR THIS RUN", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 0.45, 0.45))
 			return
+		if Upgrades.is_evolution(id):
+			# EVOLUTION: the weapon's art in a double spinning ring, "EVOLUTION" + "Beam Rifle -> Hyper Beam Rifle".
+			var winfo := Game.weapon_info(Game.weapon)
+			var tex := _weapon_tex(String(winfo.get("icon", "")))
+			draw_arc(c, 30, -_t * 2.5, -_t * 2.5 + PI * 1.3, 24, Color(col, 0.95), 3.0, true)
+			draw_arc(c, 34, _t * 1.7, _t * 1.7 + PI * 0.8, 24, Color(col.lightened(0.4), 0.6), 2.0, true)
+			if tex:
+				var ts := tex.get_size()
+				var k := 40.0 / maxf(ts.x, ts.y)
+				draw_set_transform(c, -0.6, Vector2.ONE * k)
+				draw_texture(tex, -ts / 2.0, Color(1.2, 1.1, 1.25))
+				draw_set_transform(Vector2.ZERO)
+			for i in 6:
+				var a := _t * 1.2 + i * TAU / 6.0
+				draw_circle(c + Vector2.from_angle(a) * 30.0, 2.0, Color(col.lightened(0.5), 0.6 + 0.4 * sin(_t * 6.0 + i)))
+			draw_string(font, Vector2(86, 28), "EVOLUTION!", HORIZONTAL_ALIGNMENT_LEFT, size.x - 94, 17,
+				col.lightened(0.3).lerp(Color.WHITE, 0.3 + 0.3 * sin(_t * 5.0)))
+			var line := "%s  >  %s" % [String(winfo.get("name", "")), Upgrades.display_name(id)]
+			var fs := 12
+			while fs > 7 and font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > size.x - 94:
+				fs -= 1
+			draw_string(font, Vector2(86, 46), line, HORIZONTAL_ALIGNMENT_LEFT, size.x - 94, fs, Color(1.0, 0.85, 1.0))
+			return
 		if Upgrades.is_combo(id):
 			# COMBO: the two parent icons fused, a rotating gold ring, and "A + B" under the name.
 			var needs: Array = Upgrades.COMBOS[id]["needs"]
@@ -132,6 +161,15 @@ class UpgradeCard:
 					draw_circle(p, 4.0, Color(col.lightened(0.5), 0.5 + 0.5 * sin(_t * 8.0)))
 				else:
 					draw_arc(p, 3.5, 0, TAU, 16, Color(1, 1, 1, 0.3), 1.5, true)
+		# The weapon's EVOLUTION catalyst says so (right end of the pip row).
+		if id == Upgrades.evolve_catalyst() and not Upgrades.is_evolved():
+			var tag := "EVOLVES WEAPON"
+			var ev := Upgrades.EVOLVE_COLOR
+			var tw := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x
+			var tx := size.x - 10.0 - tw
+			if tx > 92.0 + mx * 13.0:
+				MASTERY_STAR.draw_star(self, Vector2(tx - 8.0, 42.0), 4.0, ev)
+				draw_string(font, Vector2(tx, 46), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(ev, 0.75 + 0.25 * sin(_t * 5.0)))
 
 
 var _root: Control

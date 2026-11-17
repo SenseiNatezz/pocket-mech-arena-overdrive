@@ -310,6 +310,7 @@ func _draw_detail() -> void:
 	d.draw_set_transform(Vector2.ZERO)
 	if not unlocked:
 		_draw_lock(d, rack.get_center(), 1.4)
+	_draw_evolution(d, rack, font, unlocked)
 	# Name + type.
 	var nm := String(w["name"]).to_upper()
 	UiFont.draw_display(d, Vector2(20, 237), nm, LobbyKit.fit(UiFont.DISPLAY, nm, 23, d.size.x - 44.0, 14), Color.WHITE)
@@ -354,6 +355,7 @@ func _draw_detail_wide(d: Control, w: Dictionary, unlocked: bool, font: Font) ->
 	d.draw_set_transform(Vector2.ZERO)
 	if not unlocked:
 		_draw_lock(d, rack.get_center(), 1.2)
+	_draw_evolution(d, rack, font, unlocked)
 	d.draw_string(font, Vector2(18, 192 + oy), String(w["name"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, 300, 21,
 		Color.WHITE)
 	var kind := "MELEE" if w.get("melee", false) else "RANGED"
@@ -373,6 +375,27 @@ func _draw_detail_wide(d: Control, w: Dictionary, unlocked: bool, font: Font) ->
 		for s in 5:
 			var on: bool = s < int(w["stats"][i])
 			d.draw_rect(Rect2(420 + s * 44, y, 38, 13), Color(CYAN, 0.9) if on else Color(0.15, 0.2, 0.3, 0.7))
+
+
+## The weapon's EVOLUTION (Upgrades.EVOLUTIONS) along the bottom of its display rack: "EVOLVES > HYPER BEAM
+## RIFLE" and what it takes ("Power Core LV 3 + pilot LV 8") on a dark plate.
+func _draw_evolution(d: Control, rack: Rect2, font: Font, unlocked: bool) -> void:
+	var evo: Dictionary = Upgrades.EVOLUTIONS.get(_selected, {})
+	if evo.is_empty():
+		return
+	var plate := Rect2(rack.position.x, rack.end.y - 38.0, rack.size.x, 38.0)
+	d.draw_rect(plate, Color(0.03, 0.01, 0.06, 0.82))
+	var col := Upgrades.EVOLVE_COLOR if unlocked else Color(0.6, 0.55, 0.7)
+	d.draw_rect(Rect2(plate.position, Vector2(3, plate.size.y)), col)
+	MASTERY_PIPS.draw_star(d, plate.position + Vector2(14, 14), 5.5, col)
+	var head := "EVOLVES  >  %s" % String(evo["name"]).to_upper()
+	d.draw_string(font, plate.position + Vector2(26, 18), head, HORIZONTAL_ALIGNMENT_LEFT, plate.size.x - 32,
+		LobbyKit.fit(font, head, 14, plate.size.x - 32, 9), col.lightened(0.2))
+	var cat: StringName = evo["catalyst"]
+	var need := mini(Upgrades.EVOLVE_NEED, int(Upgrades.CATALOG[cat]["max"]))
+	var how := "%s LV %d + pilot LV %d in a run" % [Upgrades.display_name(cat), need, Upgrades.EVOLVE_LEVEL]
+	d.draw_string(font, plate.position + Vector2(26, 33), how, HORIZONTAL_ALIGNMENT_LEFT, plate.size.x - 32, 11,
+		Color(0.92, 0.85, 1.0, 0.85))
 
 
 ## Detail panel mastery block for the selected weapon: "MASTERY 3 / 10" (or MASTERED) with its damage bonus

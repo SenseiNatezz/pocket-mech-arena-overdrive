@@ -13,8 +13,10 @@ extends Node2D
 const RANGE := 540.0
 const DAMAGE := 11.0
 const SHOT_SPEED := 980.0
-## Hover spots behind the mech (local to its aim), one per drone.
-const SLOTS := [Vector2(-40, -58), Vector2(-40, 58), Vector2(-76, 0)]
+## Hover spots behind the mech (local to its aim), one per drone. The last two are AURORA's: its HIVE MIND trait
+## flies up to 5 (Upgrades.drone_count), whose shots hit HIVE_DAMAGE harder.
+const SLOTS := [Vector2(-40, -58), Vector2(-40, 58), Vector2(-76, 0), Vector2(-4, -96), Vector2(-4, 96)]
+const HIVE_DAMAGE := 1.3
 ## On-screen size of a drone (its local drawing is ~48 px across at 1.0).
 const SCALE := 1.15
 const ROTOR_R := 15.5
@@ -33,8 +35,8 @@ var _head: Array[float] = []
 var _t := 0.0
 var _next := 0
 var _cd := 0.0
-var _flash := [0.0, 0.0, 0.0]
-var _kick := [0.0, 0.0, 0.0]
+var _flash := [0.0, 0.0, 0.0, 0.0, 0.0]
+var _kick := [0.0, 0.0, 0.0, 0.0, 0.0]
 
 
 func _ready() -> void:
@@ -81,7 +83,8 @@ func _physics_process(delta: float) -> void:
 			var dir := (target.global_position - from).normalized()
 			# Alternate barrels.
 			var side := Vector2.from_angle(_head[_next]).orthogonal() * (3.5 if int(_t * 10.0) % 2 == 0 else -3.5)
-			var b := Combat.fire(from + dir * 17.0 + side, dir * SHOT_SPEED, DAMAGE * Upgrades.damage_mult(), true, mech,
+			var hive := HIVE_DAMAGE if Game.chassis == &"carrier" else 1.0
+			var b := Combat.fire(from + dir * 17.0 + side, dir * SHOT_SPEED, DAMAGE * Upgrades.damage_mult() * hive, true, mech,
 				Game.energy_color().lightened(0.25), 0.5, 0.9)
 			b.set_rifle_style()
 			b.tag = &"bit"

@@ -41,13 +41,17 @@ func _physics_process(delta: float) -> void:
 			best = e.global_position.distance_to(pos)
 			target = e
 	var move := Vector2.ZERO
+	# (melee weapons fight up close: keep 90-170 px instead of 220-380)
+	var melee := MeleeKit.has_weapon(mech.weapon)
+	var far := 170.0 if melee else 380.0
+	var near := 90.0 if melee else 220.0
 	if target and best < 900.0:
 		var to := target.global_position - pos
 		Controls.touch_aim = to.normalized()
 		Input.action_press(&"fire_primary")
-		if best > 380.0:
+		if best > far:
 			move = _follow(pos, target.global_position, delta)
-		elif best < 220.0:
+		elif best < near:
 			move = -to.normalized()
 		else:
 			move = to.normalized().orthogonal() * _strafe
@@ -60,6 +64,16 @@ func _physics_process(delta: float) -> void:
 		move = _follow(pos, _objective(pos), delta)
 		if move != Vector2.ZERO:
 			Controls.touch_aim = move
+	# A sector's BONUS OBJECTIVE that needs walking to (the beacon ring, the data caches) wins over fighting
+	# position; it keeps shooting on the way. Inside the beacon it just drifts about.
+	var goal := _bonus_goal(pos)
+	if goal != Vector2.INF:
+		# (a warp tower is shot from a little way off; a beacon / cache is walked onto)
+		var stand := 260.0 if _goal_is_tower else 80.0
+		if goal.distance_to(pos) > stand:
+			move = _follow(pos, goal, delta)
+		else:
+			move = (goal - pos).orthogonal().normalized() * 0.35 * _strafe
 	# Dodge artillery circles.
 	for s in Combat.world().get_children():
 		var r = s.get("radius")
@@ -91,6 +105,27 @@ func _objective(pos: Vector2) -> Vector2:
 	if zone and zone.is_cleared and arena.door and arena.door.is_open:
 		return arena.rect_center(arena.boss_rect)
 	return pos
+
+
+## Where the running bonus objective wants the pilot (the nearest warp tower / beacon / data cache), or INF for
+## nowhere.
+var _goal_is_tower := false
+
+
+func _bonus_goal(pos: Vector2) -> Vector2:
+	for o in get_tree().get_nodes_in_group("sector_objective"):
+		if not o.get("active"):
+			continue
+		var best := Vector2.INF
+		for n in get_tree().get_nodes_in_group("objective_markers"):
+			if not (n is Node2D) or n.get("dead") == true:
+				continue
+			var p: Vector2 = (n as Node2D).global_position
+			if best == Vector2.INF or p.distance_to(pos) < best.distance_to(pos):
+				best = p
+				_goal_is_tower = n is Enemy
+		return best
+	return Vector2.INF
 
 
 func _follow(pos: Vector2, goal: Vector2, delta: float) -> Vector2:

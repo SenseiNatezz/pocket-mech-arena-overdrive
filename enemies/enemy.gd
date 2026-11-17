@@ -127,6 +127,9 @@ func _physics_process(delta: float) -> void:
 			and global_position.distance_to(target.global_position) < hit_radius + 24.0:
 		_contact_cd = 0.8
 		target.take_damage(contact_damage * damage_mult, global_position, self)
+		# TUSKER's HEAVYWEIGHT trait rams back (Mech.rammed).
+		if is_instance_valid(target):
+			target.rammed(self)
 	queue_redraw()
 
 
@@ -181,6 +184,9 @@ func take_damage(amount: float, _from_pos: Vector2, source: Node = null) -> void
 	if ward_t > 0.0:
 		amount *= WARD_MULT
 		Combat.spark(global_position, Color(0.3, 1.0, 0.6), 0.6)
+	# Chassis traits that hit some robots harder (FROSTBLADE's FROST EDGE: chilled ones).
+	if is_instance_valid(source) and source is Mech:
+		amount *= (source as Mech).damage_vs(self)
 	# CRITICAL TARGETING: the player's hits sometimes land double (EXECUTIONER: and finish off the weak).
 	var crit := false
 	if source != null and is_instance_valid(source) and source.is_in_group("player") and randf() < Upgrades.crit_chance():

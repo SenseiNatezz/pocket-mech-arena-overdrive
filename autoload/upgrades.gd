@@ -20,6 +20,8 @@ signal xp_changed
 ## A level-up pick is waiting (the level-up menu opens).
 signal level_up_ready
 signal upgrade_applied(id: StringName)
+## The run's weapon just evolved (the HUD and the mech make a moment of it).
+signal weapon_evolved(weapon_id: StringName)
 
 const XP_ORB := preload("res://environment/props/xp_orb.gd")
 ## Offered when every upgrade is maxed out (or too few are left to fill 3 cards).
@@ -91,6 +93,48 @@ const COMBOS := {
 		"desc": "Critical hits destroy robots below 25% HP outright (not bosses)."},
 }
 
+## WEAPON EVOLUTIONS (Vampire Survivors-style): every primary weapon has a CATALYST upgrade. Once the catalyst
+## is at LV EVOLVE_NEED (or its max, if lower) and the pilot reaches LV EVOLVE_LEVEL, the next level-up deals
+## the EVOLUTION card first; taking it turns the weapon into its evolved form for the rest of the run (stacks
+## key EVOLVE_ID, so checkpoints / RETRY keep it). Until then the catalyst shows up in level-ups more often
+## (CATALYST_ODDS) and its card says what it evolves. NIMBUS-07's QUICK STUDY trait: one catalyst level less,
+## from pilot LV EVOLVE_LEVEL_QUICK. The effects live where each weapon fires (player/mech.gd guns,
+## player/weapons/melee_kit.gd blades, rocket.gd).
+const EVOLVE_ID := &"evolution"
+const EVOLVE_LEVEL := 8
+const EVOLVE_LEVEL_QUICK := 5
+const EVOLVE_NEED := 3
+const CATALYST_ODDS := 0.6
+const EVOLVE_COLOR := Color(1.0, 0.4, 0.95)
+const EVOLUTIONS := {
+	&"blaster": {"name": "Hyper Beam Rifle", "catalyst": &"power",
+		"desc": "Heavy beams that pierce every robot, and every 5th shot is a MEGA BEAM down the whole line."},
+	&"dual_pistols": {"name": "Twin Busters", "catalyst": &"rapid",
+		"desc": "Both pistols fire at once as homing darts, and every 12th shot is an exploding BUSTER bolt."},
+	&"gatling": {"name": "Hellfire Gatling", "catalyst": &"explosive",
+		"desc": "No slowdown while firing, +20% damage, and every 4th round is an exploding shell."},
+	&"sniper": {"name": "Orbital Lance", "catalyst": &"target_lock",
+		"desc": "Every shot calls an orbital strike down on the first robot it hits."},
+	&"rockets": {"name": "Swarm Launcher", "catalyst": &"multishot",
+		"desc": "Every rocket bursts into 4 homing mini-missiles when it explodes."},
+	&"sword": {"name": "Hyper Beam Saber", "catalyst": &"thrusters",
+		"desc": "A 35% longer blade, and every swing throws a piercing crescent beam."},
+	&"dual_sabers": {"name": "Thunder Twins", "catalyst": &"chain",
+		"desc": "Every hit arcs lightning to 2 more robots, and the WHIRL comes every 3rd hit."},
+	&"katana": {"name": "Crimson Moon", "catalyst": &"crit",
+		"desc": "IAIDO leaves its cut hanging in the air - it bursts a moment later for a second, bigger hit."},
+	&"spear": {"name": "Star Lance", "catalyst": &"pierce",
+		"desc": "Every thrust also hurls a spear of light that pierces everything in its path."},
+	&"axe": {"name": "Berserker Axe", "catalyst": &"redline",
+		"desc": "Every blow erupts in a fire blast, and the LEAP SLAM comes every 2nd hit."},
+	&"scythe": {"name": "Soul Harvester", "catalyst": &"salvage",
+		"desc": "Every robot a swing hits repairs 1 HP, and REAP pulls robots in from much farther."},
+	&"greatsword": {"name": "Titan Cleaver", "catalyst": &"armor",
+		"desc": "A 30% bigger blade, and every blow sends a ground-splitting crack forward."},
+	&"energy_sword": {"name": "Supernova Edge", "catalyst": &"od_core",
+		"desc": "CRESCENT NOVA every 2nd hit, with five crescent waves instead of three."},
+}
+
 var level := 1
 var xp := 0.0
 ## Level-up picks waiting to be made (bonus picks included).
@@ -129,6 +173,9 @@ func reset() -> void:
 	# PARTS (autoload/parts.gd): parts like the Missile Rack start every run with their upgrade at LV 1.
 	for id in Parts.starting_upgrades():
 		stacks[id] = 1
+	# Mech TRAITS: TEMPEST's DEMOLITION starts with Explosive Rounds.
+	if Game.chassis == &"artillery":
+		stacks[&"explosive"] = maxi(int(stacks.get(&"explosive", 0)), 1)
 	rerolls = BASE_REROLLS + Game.hangar_level(&"rerolls") + Contracts.bonus_rerolls() + (1 if Game.pool_reached(1) else 0)
 	banishes = BASE_BANISHES + Game.hangar_level(&"banishes")
 	banished.clear()
@@ -273,7 +320,19 @@ func is_available(id: StringName) -> bool:
 		return false
 	if u.has("contract") and not Contracts.is_done(u["contract"]):
 		return false
+	if trait_blocks(id):
+		return false
 	return true
+
+
+## Mech TRAITS that take an upgrade out of the deck (Game.CHASSIS `trait`): TUSKER never gets Thrusters,
+## TEMPEST never Piercing Rounds, FROSTBLADE never Cryo Rounds (its blade chills already), RAVEN CLAW never
+## Salvage Repair. The equipped weapon's evolution catalyst is never taken out.
+const TRAIT_BLOCKS := {&"bulwark": &"thrusters", &"artillery": &"pierce", &"duelist": &"cryo", &"phantom": &"salvage"}
+
+
+func trait_blocks(id: StringName) -> bool:
+	return TRAIT_BLOCKS.get(Game.chassis, &"") == id and id != evolve_catalyst()
 
 
 ## Cards per level-up: 3, or 4 with the VX-7 Standard's ADAPTIVE CORE.
@@ -281,24 +340,81 @@ func card_count() -> int:
 	return 4 if Game.chassis == &"standard" else 3
 
 
-## Up to `n` distinct random upgrades that can still be taken (topped up with Field Repair). An unlocked
-## COMBO always takes the last slot.
+## Up to `n` distinct random upgrades that can still be taken (topped up with Field Repair). A ready
+## EVOLUTION is always the first card, an unlocked COMBO always takes the last slot, and the evolution's
+## catalyst is often in the deal while it's short of what the evolution needs.
 func roll_choices(n := 3) -> Array[StringName]:
 	var pool: Array[StringName] = []
 	for id: StringName in CATALOG:
 		if is_available(id):
 			pool.append(id)
 	pool.shuffle()
-	var combos := available_combos()
-	var take := n - (1 if not combos.is_empty() else 0)
 	var out: Array[StringName] = []
+	if evolution_ready():
+		out.append(EVOLVE_ID)
+	var combos := available_combos()
+	var take := maxi(n - out.size() - (1 if not combos.is_empty() else 0), 0)
+	var cat := evolve_catalyst()
+	if cat != &"" and not is_evolved() and pool.has(cat) and level_of(cat) < evolve_need() and take > 0 \
+			and pool.find(cat) >= take and randf() < CATALYST_ODDS:
+		pool.erase(cat)
+		pool.insert(randi() % take, cat)
 	for id in pool.slice(0, take):
 		out.append(id)
-	if not combos.is_empty():
+	if not combos.is_empty() and out.size() < n:
 		out.append(combos.pick_random())
 	if out.size() < n:
 		out.append(FIELD_REPAIR)
 	return out
+
+
+# --- evolutions ---------------------------------------------------------------------------------------
+
+## The equipped weapon's evolution ({} for a weapon without one).
+func evolution_info(weapon_id: StringName = &"") -> Dictionary:
+	return EVOLUTIONS.get(weapon_id if weapon_id != &"" else Game.weapon, {})
+
+
+func is_evolution(id: StringName) -> bool:
+	return id == EVOLVE_ID
+
+
+## This run's weapon has evolved.
+func is_evolved() -> bool:
+	return level_of(EVOLVE_ID) > 0
+
+
+## The upgrade that evolves `weapon_id` (&"" for none).
+func evolve_catalyst(weapon_id: StringName = &"") -> StringName:
+	return evolution_info(weapon_id).get("catalyst", &"")
+
+
+## Catalyst levels the evolution needs: EVOLVE_NEED (or the upgrade's max if lower); one less with QUICK STUDY.
+func evolve_need(weapon_id: StringName = &"") -> int:
+	var cat := evolve_catalyst(weapon_id)
+	if cat == &"":
+		return 0
+	var n := mini(EVOLVE_NEED, int(CATALOG[cat]["max"]))
+	return maxi(n - (1 if Game.chassis == &"standard" else 0), 1)
+
+
+## The pilot level the evolution waits for (QUICK STUDY: earlier).
+func evolve_level() -> int:
+	return EVOLVE_LEVEL_QUICK if Game.chassis == &"standard" else EVOLVE_LEVEL
+
+
+## Ready to evolve: not evolved yet, catalyst far enough, pilot level reached.
+func evolution_ready() -> bool:
+	var cat := evolve_catalyst()
+	return cat != &"" and not is_evolved() and level_of(cat) >= evolve_need() and level >= evolve_level()
+
+
+## The weapon's name as it is now: its evolved name once evolved.
+func weapon_name(weapon_id: StringName = &"") -> String:
+	var w := weapon_id if weapon_id != &"" else Game.weapon
+	if is_evolved() and EVOLUTIONS.has(w):
+		return String(EVOLUTIONS[w]["name"])
+	return String(Game.weapon_info(w).get("name", ""))
 
 
 func is_combo(id: StringName) -> bool:
@@ -333,6 +449,15 @@ func apply(id: StringName) -> void:
 	upgrade_applied.emit(id)
 	if is_combo(id):
 		Radio.say(&"combo", true)
+	if is_evolution(id):
+		weapon_evolved.emit(Game.weapon)
+
+
+## An upgrade bought at the PIT STOP (ui/pit_stop.gd): one level, no level-up pick used.
+func buy(id: StringName) -> void:
+	if id != FIELD_REPAIR:
+		stacks[id] = level_of(id) + 1
+	upgrade_applied.emit(id)
 
 
 ## Level-up menu REROLL: spends a charge (the menu deals fresh cards). False when none are left.
@@ -364,11 +489,12 @@ func skip() -> void:
 		mech.heal(SKIP_REPAIR)
 
 
-## A free upgrade pick that isn't a level (Endless boss kill). Opens the pick menu right away.
-func grant_bonus_pick() -> void:
+## A free upgrade pick that isn't a level (Endless boss kill, a sector's bonus objective). Opens the pick menu
+## right away.
+func grant_bonus_pick(title := "BOSS REWARD!") -> void:
 	pending += 1
 	bonus_picks += 1
-	bonus_title = "BOSS REWARD!"
+	bonus_title = title
 	Sfx.play(&"levelup", -4.0, 0.0)
 	if not choosing:
 		level_up_ready.emit()
@@ -393,23 +519,29 @@ func supply_xp(pos: Vector2, fraction: float) -> void:
 func display_name(id: StringName) -> String:
 	if is_combo(id):
 		return COMBOS[id]["name"]
+	if is_evolution(id):
+		return String(evolution_info().get("name", "Evolution"))
 	return "Field Repair" if id == FIELD_REPAIR else CATALOG[id]["name"]
 
 
 func color(id: StringName) -> Color:
 	if is_combo(id):
 		return COMBO_GOLD
+	if is_evolution(id):
+		return EVOLVE_COLOR
 	return Color(0.4, 1.0, 0.5) if id == FIELD_REPAIR else CATALOG[id]["color"]
 
 
 func max_level(id: StringName) -> int:
-	return 1 if id == FIELD_REPAIR or is_combo(id) else CATALOG[id]["max"]
+	return 1 if id == FIELD_REPAIR or is_combo(id) or is_evolution(id) else CATALOG[id]["max"]
 
 
 ## What taking `id` right now does (describes the NEXT level, with real numbers).
 func describe(id: StringName) -> String:
 	if is_combo(id):
 		return COMBOS[id]["desc"]
+	if is_evolution(id):
+		return String(evolution_info().get("desc", ""))
 	var n := level_of(id) + 1
 	var w := Game.weapon
 	match id:
@@ -435,7 +567,8 @@ func describe(id: StringName) -> String:
 		&"power":
 			return "+15%% damage for every weapon and ability (total +%d%%)." % (n * 15)
 		&"armor":
-			return "+25 max HP and repair 25 HP now (total +%d HP)." % (n * 25)
+			var per := roundi(armor_hp())
+			return "+%d max HP and repair %d HP now (total +%d HP)." % [per, per, n * per]
 		&"thrusters":
 			return "+10%% move speed, -15%% boost cooldown (total +%d%% / -%d%%)." % [n * 10, n * 15]
 		&"blades":
@@ -472,7 +605,7 @@ func describe(id: StringName) -> String:
 		&"salvage_protocol":
 			return "+15%% scrap from everything for the rest of this run (total +%d%%)." % (n * 15)
 		&"field_repair":
-			return "Repair 40 HP and restock one repair kit."
+			return "Repair 40 HP." if Game.chassis == &"phantom" else "Repair 40 HP and restock one repair kit."
 	return ""
 
 
@@ -533,7 +666,12 @@ func salvage_protocol_mult(lvl := -1) -> float:
 
 
 func max_hp_bonus(lvl := -1) -> float:
-	return 25.0 * _lv(&"armor", lvl)
+	return armor_hp() * _lv(&"armor", lvl)
+
+
+## HP one Armor Plating level gives: 25, doubled by TUSKER's HEAVYWEIGHT trait.
+func armor_hp() -> float:
+	return 50.0 if Game.chassis == &"bulwark" else 25.0
 
 
 ## (Thrusters, times the Hangar's Servo Motors (+ MK levels) and the chassis)
@@ -579,9 +717,10 @@ func crit_chance(lvl := -1) -> float:
 
 
 func drone_count(lvl := -1) -> int:
-	# CORVID (carrier chassis) launches with 2 drones; the upgrade adds the 3rd (bit_drones.gd has 3 slots).
+	# AURORA (carrier chassis) launches with 2 drones, and its HIVE MIND trait lets the upgrade add 3 more (5 in
+	# all; bit_drones.gd has 5 hover spots).
 	if lvl < 0 and Game.chassis == &"carrier":
-		return mini(_lv(&"drones", lvl) + 2, 3)
+		return mini(_lv(&"drones", lvl) + 2, 5)
 	return _lv(&"drones", lvl)
 
 

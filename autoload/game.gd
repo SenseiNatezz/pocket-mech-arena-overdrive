@@ -28,6 +28,8 @@ signal arena_won(index: int)
 signal wave_won
 signal run_banked(amount: int, parts: Dictionary)
 signal hangar_bought(id: StringName)
+## A PART CRATE was opened mid-run: this part comes home with the run's scrap (the HUD toasts it).
+signal part_found(id: StringName)
 
 const MAIN_MENU := "res://ui/main_menu.tscn"
 const TEST_RANGE := "res://environment/test_range.tscn"
@@ -235,6 +237,44 @@ const DEAL_SAFE_REPAIR := 0.2
 ## Each sector's twist and route deal (&"" = none), alongside sector_scenes.
 var sector_twists: Array[StringName] = []
 var sector_deals: Array[StringName] = []
+## SECTOR OBJECTIVES (Deep Rock Galactic: Survivor's stage goals): every Campaign sector has a BONUS OBJECTIVE
+## that starts with its 2nd wave (environment/sector_objective.gd). It's optional: done in time, it pays a free
+## upgrade card, scrap (OBJECTIVE_SCRAP x the sector) and a chance of a part crate; failed, nothing is lost.
+## Sector 1 rolls one, the route doors show the next one.
+const OBJECTIVES := {
+	&"towers": {"name": "WARP TOWERS", "color": Color(0.35, 0.95, 1.0),
+		"desc": "Destroy the 3 warp towers - they keep sending swarms until they fall."},
+	&"hold": {"name": "HOLD THE BEACON", "color": Color(0.5, 1.0, 0.55),
+		"desc": "Stand in the beacon ring until it's fully charged."},
+	&"caches": {"name": "DATA CACHES", "color": Color(1.0, 0.8, 0.35),
+		"desc": "Grab the 4 data caches scattered around the map."},
+}
+const OBJECTIVE_SCRAP := 150.0
+const OBJECTIVE_CRATE_CHANCE := 0.3
+var sector_objectives: Array[StringName] = []
+
+## PIT STOP (ui/pit_stop.gd): between Campaign sectors, a shop that sells with the run's scrap. Items left
+## LOCKED stay for the next pit stop (this level or the next); `pit_stops` counts this run's visits (prices
+## climb a little each time).
+var shop_locked: Array[Dictionary] = []
+var pit_stops := 0
+## PIT STOP's OVERDRIVE CELL: the next sector starts with a full Overdrive meter.
+var carry_overdrive := false
+
+## PARTS FOUND IN RUNS (Halls of Torment's gear): RIVAL PILOTS always drop a PART CRATE, bosses sometimes and
+## gold elites now and then (CRATE_*; at most CRATES_PER_SECTOR per map). Picking one up finds a part the
+## pilot doesn't own yet (environment/props/part_crate.gd) - it comes home with the run's scrap (bank_scrap
+## adds it to the Hangar). With every part owned, a crate pays CRATE_SPARE_SCRAP instead.
+const CRATE_BOSS := 0.35
+const CRATE_ELITE := 0.08
+const CRATES_PER_SECTOR := 3
+const CRATE_SPARE_SCRAP := 600.0
+const PART_CRATE := preload("res://environment/props/part_crate.gd")
+var run_found_parts: Array[StringName] = []
+## What the last bank_scrap() brought home (the results screen lists them).
+var last_found_parts: Array[StringName] = []
+var _crates_here := 0
+var _crates_scene_id := 0
 
 
 ## True while the current scene is this Campaign run's sector map.
@@ -255,6 +295,18 @@ func active_twist() -> StringName:
 ## The route deal in play (Campaign sectors from 2 on).
 func active_deal() -> StringName:
 	return sector_deals[campaign_sector - 1] if in_sector() else &""
+
+
+## This Campaign sector's bonus objective (&"" outside the sectors).
+func active_objective() -> StringName:
+	if not in_sector() or sector_objectives.size() != CAMPAIGN_SECTORS:
+		return &""
+	return sector_objectives[campaign_sector - 1]
+
+
+## The flown chassis's TRAIT name ("" for none).
+func chassis_trait(id: StringName = &"") -> String:
+	return String(chassis_info(id).get("trait", ""))
 
 
 ## A multiplier (or bonus, when `default` is 0) from the twist and route deal in play; `default` when none.
@@ -386,42 +438,62 @@ const HANGAR_MK_COST := 1.15
 ## Mech chassis (Hangar): multipliers on the standard frame (`damage`, optional: on every attack, Mech._chassis_damage_mult). `ability` is the frame's signature trick
 ## (player/mech.gd), `role` the frame class shown under the name, `sheet` the mech design whose sprite sheet
 ## it flies (assets/sprites/mechs/<sheet>/, see chassis_frames; designs in Mech Designs\New 10 - DESIGNS.md).
+## `trait` / `trait_desc`: the frame's RULE-BREAKING TRAIT (Brotato's characters): a big plus with a real rule
+## change, on top of its ability. Where they act: QUICK STUDY + the "never offered" cards + HEAVYWEIGHT's Armor
+## + HIVE MIND's drones in autoload/upgrades.gd; MOMENTUM, HEAVYWEIGHT's ram-back, FROST EDGE, OVERSHIELD,
+## HIVE MIND's weapon cut and BLOODLUST in player/mech.gd; DEMOLITION in Combat.blast_scale + Upgrades.reset.
 const CHASSIS: Array[Dictionary] = [
 	{"id": &"standard", "name": "NIMBUS-07", "role": "Standard frame", "sheet": &"nimbus", "cost": 0, "hp": 1.0,
 		"speed": 1.0, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.0, "scale": 1.0, "color": Color(1.0, 0.84, 0.4),
+		"trait": "QUICK STUDY",
+		"trait_desc": "Your weapon evolves sooner: from pilot LV 5, with one less catalyst level.",
 		"ability": "ADAPTIVE CORE: level-ups offer 4 upgrade cards instead of 3.", "desc": "The all-rounder: solid armor, solid speed."},
 	# GRIFFIN / TUSKER / AURORA (the user's concepts 06-08, built 11-12) took over the ARROWHEAD / RAMPART /
 	# CORVID slots, which had flown NIMBUS-07's art: same ids, abilities and stats, own art.
 	{"id": &"striker", "name": "GRIFFIN", "role": "Striker frame", "sheet": &"griffin", "cost": 2500, "hp": 0.75,
 		"speed": 1.18, "boost_cd": 0.6, "boost_speed": 1.15, "taken": 1.0, "scale": 0.82, "color": Color(1.0, 0.42, 0.32),
+		"trait": "MOMENTUM",
+		"trait_desc": "Up to +40% damage while moving at full speed, but -25% while standing still.",
 		"ability": "AFTERBURNER: boost slices through robots, and every kill recharges your boost faster.",
 		"desc": "Light and fast: -25% HP, +18% speed, boost recharges 40% faster."},
 	{"id": &"bulwark", "name": "TUSKER", "role": "Bulwark frame", "sheet": &"tusker", "cost": 3500, "hp": 1.5,
 		"speed": 0.86, "boost_cd": 1.2, "boost_speed": 0.9, "taken": 0.8, "scale": 1.25, "color": Color(0.92, 0.72, 0.38),
+		"trait": "HEAVYWEIGHT",
+		"trait_desc": "Armor Plating gives double HP, and robots that ram you take 40 damage back. Never offered Thrusters.",
 		"ability": "SIEGE MODE: hold still to brace (+30% damage, -30% damage taken); boost rams robots aside.",
 		"desc": "Heavy armor: +50% HP, takes 20% less damage, but slower."},
 	{"id": &"artillery", "name": "TEMPEST", "role": "Artillery frame", "sheet": &"tempest", "cost": 4500,
 		"hp": 1.15, "speed": 0.92, "boost_cd": 1.1, "boost_speed": 0.95, "taken": 0.95, "scale": 1.12,
 		"color": Color(1.0, 0.9, 0.2),
+		"trait": "DEMOLITION",
+		"trait_desc": "Every explosion you set off is 50% bigger, and Explosive Rounds starts at LV 1. Never offered Piercing Rounds.",
 		"ability": "SALVO: the shoulder pods fire 4 heavy homing rockets at nearby robots every 4 seconds.",
 		"desc": "Walking artillery: +15% HP, takes 5% less damage, a little slower."},
 	# FROSTBLADE (unit 06, the user's sheet 11-09) took over the ONIBI slot: same IAIDO kit, own art.
 	{"id": &"duelist", "name": "FROSTBLADE", "role": "Duelist frame", "sheet": &"frost", "cost": 5000, "hp": 0.9,
 		"speed": 1.08, "boost_cd": 0.85, "boost_speed": 1.05, "taken": 1.0, "scale": 0.95, "color": Color(0.35, 0.85, 1.0),
+		"trait": "FROST EDGE",
+		"trait_desc": "Melee hits chill robots, and you deal +25% damage to chilled robots. Never offered Cryo Rounds.",
 		"ability": "IAIDO: melee weapons hit 30% harder and build Overdrive 50% faster; melee kills heal 3 HP.",
 		"desc": "A blade master: guns deal 20% less damage, -10% HP, +8% speed."},
 	{"id": &"guardian", "name": "SOLSTICE", "role": "Guardian frame", "sheet": &"solstice", "cost": 5500, "hp": 1.1,
 		"speed": 0.95, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.0, "scale": 1.12, "color": Color(1.0, 0.8, 0.3),
+		"trait": "OVERSHIELD",
+		"trait_desc": "Healing past full HP turns into shield charges: one per 20 HP, up to 2 extra.",
 		"ability": "BARRIER: always carries a shield charge that recharges 25% faster; when it breaks it blasts robots back.",
 		"desc": "Defensive frame: +10% HP and +1 Defense Shield charge, a little slower."},
 	{"id": &"carrier", "name": "AURORA", "role": "Carrier frame", "sheet": &"aurora", "cost": 6000, "hp": 0.85,
 		"speed": 1.03, "boost_cd": 1.0, "boost_speed": 1.0, "taken": 1.05, "scale": 1.1, "color": Color(1.0, 0.55, 0.85),
+		"trait": "HIVE MIND",
+		"trait_desc": "Up to 5 Bit Drones, and drone shots hit 30% harder - but your own weapon deals 25% less.",
 		"ability": "PETAL SWARM: launches with 2 Bit Drones (the upgrade adds a 3rd), and kills can fire homing petal blades.",
 		"desc": "Lets its drones fight: -15% HP, takes 5% more damage."},
 	# RAVEN CLAW (unit 12, the user's sheet 11-09) took over the VESPER slot: same PHASE BLINK kit, own art.
 	{"id": &"phantom", "name": "RAVEN CLAW", "role": "Phantom frame", "sheet": &"raven", "cost": 7000, "hp": 0.8,
 		"speed": 0.88, "damage": 1.2, "boost_cd": 0.7, "boost_speed": 1.0, "taken": 1.0, "scale": 0.9,
 		"color": Color(1.0, 0.24, 0.26),
+		"trait": "BLOODLUST",
+		"trait_desc": "No repair kits and no Salvage Repair - but every kill repairs 1 HP (4 HP right after a blink).",
 		"ability": "PHASE BLINK: boost is an instant blink, and attacks within 1.5 s of a blink are critical (x2 damage).",
 		"desc": "Glass cannon that always flies, even over lava and vents: +20% damage, -20% HP, -12% speed, boost recharges 30% faster."},
 ]
@@ -453,7 +525,8 @@ const SCRAP_WAVE := 50.0
 const SCRAP_CLEAR := 400.0
 ## Order + labels of the results screen's breakdown (the `part` given to earn_scrap / credit_scrap).
 const SCRAP_PARTS := [[&"kills", "Kills"], [&"waves", "Waves"], [&"boss", "Boss"], [&"arena", "Arena clear"],
-	[&"gold", "Gold Salvager"], [&"bounty", "Bounty"], [&"rival", "Rival"]]
+	[&"gold", "Gold Salvager"], [&"bounty", "Bounty"], [&"rival", "Rival"], [&"objective", "Objectives"],
+	[&"crate", "Spare parts"]]
 ## RIVAL PILOTS: each Campaign arena (by index) sends this Hangar mech's pilot in its middle wave
 ## (ScenicArena._maybe_rival); Endless sends a random one every RIVAL_ENDLESS_EVERY waves. Beating one pays
 ## RIVAL_BOUNTY scrap (+ RIVAL_FIRST_BONUS the first time), and from then on that chassis costs
@@ -684,6 +757,59 @@ func _on_enemy_killed(e: Node) -> void:
 	_drop_scrap((e as Node2D).global_position, got, 12 if boss else clampi(ceili(got / 12.0), 1, 5))
 	# Weapon mastery for whatever the mech is wielding.
 	add_mastery(weapon, mini(Upgrades.xp_value(e), MASTERY_BOSS_XP))
+	# PART CRATES: rival pilots always, bosses and gold elites sometimes.
+	var chance := 0.0
+	if e is RivalMech:
+		chance = 0.0 if e.get("practice") else 1.0
+	elif boss:
+		chance = CRATE_BOSS
+	elif (e as Enemy).elite:
+		chance = CRATE_ELITE
+	if chance > 0.0 and randf() < chance:
+		drop_part_crate((e as Node2D).global_position)
+
+
+# --- parts found in runs ---------------------------------------------------------------------------------
+
+## Drops a PART CRATE at `pos` (real runs only; at most CRATES_PER_SECTOR per map). Returns it (or null).
+func drop_part_crate(pos: Vector2) -> Node2D:
+	if not scrap_enabled:
+		return null
+	var scene := get_tree().current_scene
+	if scene and scene.get_instance_id() != _crates_scene_id:
+		_crates_scene_id = scene.get_instance_id()
+		_crates_here = 0
+	if _crates_here >= CRATES_PER_SECTOR:
+		return null
+	_crates_here += 1
+	var c: Node2D = PART_CRATE.new()
+	c.position = pos
+	Combat.world().add_child.call_deferred(c)
+	return c
+
+
+## Opens a crate: a part the pilot doesn't own yet (found-only parts first, half the time), added to this run's
+## haul. Returns its id, or &"" when everything is owned (the crate pays CRATE_SPARE_SCRAP instead).
+## `announce` = false: no PART FOUND toast (a crate opened as its map closes).
+func find_part(announce := true) -> StringName:
+	var buyable: Array[StringName] = []
+	var found_only: Array[StringName] = []
+	for p: Dictionary in Parts.LIST:
+		var id: StringName = p["id"]
+		if Parts.owns(id) or run_found_parts.has(id) or Parts.is_locked(id):
+			continue
+		(found_only if p.get("found", false) else buyable).append(id)
+	var pool := found_only if not found_only.is_empty() and (buyable.is_empty() or randf() < 0.5) else buyable
+	if pool.is_empty():
+		var got := earn_scrap(CRATE_SPARE_SCRAP, &"crate")
+		if announce and got > 0.0:
+			scrap_bonus.emit(got, "SPARE PARTS")
+		return &""
+	var id: StringName = pool.pick_random()
+	run_found_parts.append(id)
+	if announce:
+		part_found.emit(id)
+	return id
 
 
 func _notification(what: int) -> void:
@@ -714,6 +840,16 @@ func scrap_mult() -> float:
 	return diff("scrap") * (1.0 + 0.1 * hangar_level(&"salvage_rights") + hangar_mk_bonus(&"salvage_rights")) \
 		* twist_value("scrap") * Contracts.scrap_mult() * Upgrades.salvage_protocol_mult() \
 		* (1.0 + POOL_SCRAP if pool_reached(0) else 1.0) * Parts.mult("scrap")
+
+
+## PIT STOP: pays `amount` out of this run's scrap (filed under "shop" as a minus, so the results screen can
+## show what was spent). False when the run hasn't earned that much.
+func spend_scrap(amount: float) -> bool:
+	if not scrap_enabled or amount <= 0.0 or run_scrap_landed() + 0.5 < amount:
+		return false
+	run_scrap -= amount
+	run_scrap_parts[&"shop"] = float(run_scrap_parts.get(&"shop", 0.0)) - amount
+	return true
 
 
 ## Scrap paid as it is (Gold Salvager prizes, Threat bounties): no multipliers. Returns what was added (0
@@ -788,7 +924,13 @@ func bank_scrap() -> int:
 	run_scrap_parts.clear()
 	scrap_in_flight = 0.0
 	_scrap_epoch += 1
-	if last_banked > 0 or _mastery_dirty:
+	# PARTS FOUND IN RUNS come home with the scrap.
+	last_found_parts = run_found_parts.duplicate()
+	var found := not run_found_parts.is_empty()
+	for id in run_found_parts:
+		Parts.grant(id)
+	run_found_parts.clear()
+	if last_banked > 0 or _mastery_dirty or found:
 		scrap += last_banked
 		if last_banked > 0:
 			run_banked.emit(last_banked, last_parts)
@@ -1178,8 +1320,11 @@ func start_arena(index: int, carry_upgrades := false, sector := 1) -> void:
 	if not carry_upgrades:
 		Upgrades.reset()
 		Upgrades.grant_head_start()
+		shop_locked.clear()
+		pit_stops = 0
 	else:
 		Upgrades.next_arena_bonus()
+	carry_overdrive = false
 	Upgrades.save_checkpoint()
 	_reset_run()
 	scrap_enabled = true
@@ -1188,6 +1333,11 @@ func start_arena(index: int, carry_upgrades := false, sector := 1) -> void:
 		_roll_sectors()
 	campaign_sector = clampi(sector, 1, CAMPAIGN_SECTORS)
 	start_sector = campaign_sector
+	# (debug `--objective=KIND`: the sector the run starts on gets that bonus objective - tests / captures)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--objective=") and OBJECTIVES.has(StringName(a.trim_prefix("--objective="))) \
+				and sector_objectives.size() == CAMPAIGN_SECTORS:
+			sector_objectives[campaign_sector - 1] = StringName(a.trim_prefix("--objective="))
 	carry_hp = -1.0
 	carry_repairs = -1
 	_change(sector_scenes[campaign_sector - 1])
@@ -1209,6 +1359,9 @@ func _roll_sectors() -> void:
 	if arena_index == 0 and not cleared.has(0):
 		sector_twists[0] = &""
 	sector_deals.assign([&"", &"", &""])
+	# Bonus objectives: sector 1 rolls one, the route doors pick the rest (a run started straight on a later
+	# sector gets one rolled for it too).
+	sector_objectives.assign([OBJECTIVES.keys().pick_random(), OBJECTIVES.keys().pick_random(), OBJECTIVES.keys().pick_random()])
 
 
 ## The two route doors offered when the current sector is clear: the next map (two different unused maps; the
@@ -1233,12 +1386,14 @@ func route_options() -> Array[Dictionary]:
 	twists.shuffle()
 	var deals := SECTOR_DEALS.keys()
 	deals.shuffle()
+	var goals := OBJECTIVES.keys()
+	goals.shuffle()
 	for i in 2:
 		var t: StringName = twists[i]
 		var d: StringName = deals[i]
 		if t == &"gold" and d == &"haul":  # (no double-double scrap)
 			d = deals[2]
-		out.append({"scene": maps[i], "name": arena_name_of(maps[i]), "twist": t, "deal": d})
+		out.append({"scene": maps[i], "name": arena_name_of(maps[i]), "twist": t, "deal": d, "objective": goals[i]})
 	return out
 
 
@@ -1248,6 +1403,15 @@ func arena_name_of(scene: String) -> String:
 		if a["scene"] == scene:
 			return a["name"]
 	return ""
+
+
+## A sector's BONUS OBJECTIVE is done (environment/sector_objective.gd): scrap, a free upgrade card right away,
+## and maybe a part crate next to the pilot at `pos`.
+func objective_reward(pos: Vector2) -> void:
+	_scrap_bonus(OBJECTIVE_SCRAP * maxi(campaign_sector, 1), &"objective", "OBJECTIVE")
+	Upgrades.grant_bonus_pick("OBJECTIVE BONUS")
+	if randf() < OBJECTIVE_CRATE_CHANCE or OS.get_cmdline_user_args().has("--objective-crate"):
+		drop_part_crate(pos + Vector2.from_angle(randf() * TAU) * 80.0)
 
 
 ## A free upgrade pick, dealt as soon as the level-up menu is ready (head start, route deals).
@@ -1280,6 +1444,8 @@ func next_sector(hp_frac: float, repairs: int, route := {}) -> void:
 		sector_scenes[campaign_sector - 1] = route.get("scene", sector_scenes[campaign_sector - 1])
 		sector_twists[campaign_sector - 1] = route.get("twist", &"")
 		sector_deals[campaign_sector - 1] = route.get("deal", &"")
+		if sector_objectives.size() == CAMPAIGN_SECTORS and route.has("objective"):
+			sector_objectives[campaign_sector - 1] = route["objective"]
 	if sector_deals.size() == CAMPAIGN_SECTORS and sector_deals[campaign_sector - 1] == &"supply":
 		grant_bonus_pick("SUPPLY CACHE")
 	carry_hp = minf(hp_frac + repair, 1.0)
@@ -1330,6 +1496,9 @@ func start_endless(scene := "") -> void:
 	endless_twist = &""
 	Upgrades.reset()
 	Upgrades.grant_head_start()
+	shop_locked.clear()
+	pit_stops = 0
+	carry_overdrive = false
 	_reset_run()
 	scrap_enabled = true
 	_change(_endless_scene)

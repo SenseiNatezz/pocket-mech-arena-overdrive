@@ -70,6 +70,14 @@ var _side := 1.0
 var _tex := {}
 ## The held weapon + swing / trail / impact visuals (player/weapons/melee_rig.gd).
 var rig: Node2D
+## EVOLVED blade (Upgrades.EVOLUTIONS): its id while evolved (&"" otherwise), and the swing's aim / damage /
+## colour for blows that land later (TITAN CLEAVER cracks). BERSERKER AXE fire blasts left this swing.
+var _evo_id := &""
+var _last_dir := Vector2.RIGHT
+var _last_dmg := 0.0
+var _last_col := Color.WHITE
+var _blasts_left := 0
+const AXE_BLASTS := 3
 
 
 static func has_weapon(id: StringName) -> bool:
@@ -100,6 +108,11 @@ func _texture(name: String) -> Texture2D:
 ## One attack. Returns true if it was the combo finisher.
 func swing(id: StringName, mult: float) -> bool:
 	var w: Dictionary = WEAPONS[id]
+	# EVOLVED: a tuned copy of the weapon's numbers (longer blades, quicker finishers - see _evolved).
+	_evo_id = id if Upgrades.is_evolved() and Upgrades.EVOLUTIONS.has(id) else &""
+	if _evo_id != &"":
+		w = _evolved(id, w)
+	_blasts_left = AXE_BLASTS
 	var now := _clock
 	var chain_window: float = 1.0 / (w["rate"] * Upgrades.fire_rate_mult()) + 0.4
 	combo = combo + 1 if id == _last_id and now - _last_swing <= chain_window else 0
@@ -116,12 +129,63 @@ func swing(id: StringName, mult: float) -> bool:
 	var col: Color = w["color"]
 	if mech.overdrive_left > 0.0:
 		col = col.lerp(Color(1.0, 0.8, 0.3), 0.4)
+	_last_dir = dir
+	_last_dmg = dmg
+	_last_col = col
 	if finisher:
 		_finisher(w, dir, dmg, col)
 	else:
 		_basic(w, dir, dmg, col)
 	_energy_waves(w, dir, dmg, col)
+	if _evo_id != &"":
+		_evo_extra(dir, dmg, col)
 	return finisher
+
+
+# --- evolutions ---------------------------------------------------------------------------------------
+
+## The evolved weapon's numbers: brighter blades; HYPER BEAM SABER / TITAN CLEAVER reach further; THUNDER TWINS
+## WHIRL every 3rd hit, BERSERKER AXE / SUPERNOVA EDGE finish every 2nd.
+func _evolved(id: StringName, w: Dictionary) -> Dictionary:
+	var e := w.duplicate()
+	e["color"] = (w["color"] as Color).lightened(0.15)
+	match id:
+		&"sword":
+			e["reach"] = float(w["reach"]) * 1.35
+		&"greatsword":
+			e["reach"] = float(w["reach"]) * 1.3
+		&"dual_sabers":
+			e["combo"] = 3
+		&"axe", &"energy_sword":
+			e["combo"] = 2
+	return e
+
+
+## Evolved extras on every swing: HYPER BEAM SABER throws a crescent beam, STAR LANCE hurls a spear of light.
+func _evo_extra(dir: Vector2, dmg: float, col: Color) -> void:
+	match _evo_id:
+		&"sword":
+			_after(0.06, func() -> void:
+				EnergySwordFx.crescent(mech, mech.global_position + dir * 60.0, dir, dmg * 0.6, col))
+		&"spear":
+			_after(0.08, func() -> void:
+				var b := Combat.fire(mech.global_position + dir * 50.0, dir * 1350.0, dmg * 0.7, true, mech, col.lightened(0.3),
+					2.6, 0.75)
+				b.pierce = 99
+				b.set_rifle_style())
+
+
+## TITAN CLEAVER: a crack splits the ground forward from where the blade came down, hitting all along it.
+func _ground_crack(dir: Vector2, dmg: float, col: Color) -> void:
+	var from := mech.global_position + dir * 70.0
+	var to := from + dir * 380.0
+	_hit_line(from, to, 46.0, dmg * 0.6, 300.0, col, {"energy": false})
+	for i in 5:
+		var at := from.lerp(to, (i + 0.5) / 5.0)
+		_after(i * 0.05, func() -> void:
+			RIG.crack(at, 60.0, col, 4)
+			Combat.shockwave(at, 50.0, col, 0.2))
+	Combat.shake(0.25)
 
 
 # --- attacks ----------------------------------------------------------------------------------------
@@ -190,6 +254,20 @@ func _finisher(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 				line.to = p + dir * (dash + 60.0)
 				line.color = col
 				Combat.world().add_child(line))
+			if _evo_id == &"katana":
+				# CRIMSON MOON: the cut hangs in the air, then bursts - a second, bigger hit along the same line.
+				_after(land + 0.45, func() -> void:
+					var end := p + dir * (dash + 60.0)
+					_hit_line(p, end, 84.0, dmg * 1.6, w["knock"], col, w)
+					var moon: Node2D = LineFlash.new()
+					moon.from = p - dir * 30.0
+					moon.to = end + dir * 30.0
+					moon.color = Color(1.0, 0.15, 0.2)
+					moon.set("width", 2.0)
+					Combat.world().add_child(moon)
+					Combat.shockwave(p.lerp(end, 0.5), (dash + 60.0) * 0.55, Color(1.0, 0.2, 0.25), 0.3)
+					Combat.shake(0.3)
+					Sfx.play(&"saber", -3.0, 0.1))
 		"charge":  # Spear: twirl, charge forward braced, skewer a long line, and burst at the point.
 			var dash := 200.0
 			_dash(dir, dash)
@@ -213,10 +291,11 @@ func _finisher(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 				RIG.crack(at, 150.0, col, 9)
 				Combat.shake(0.6)
 				Sfx.play(&"slam", -1.0))
-		"reap":  # Scythe: double spin that drags enemies in.
+		"reap":  # Scythe: double spin that drags enemies in (SOUL HARVESTER: from much farther).
+			var pull := 160.0 if _evo_id == &"scythe" else 55.0
 			_blade(w, "spin", dir, reach, 0.4, 2.0)
-			_hit_arc(p, dir, reach + 55.0, PI, dmg * 1.6, -w["knock"] * 1.5, col, w)
-			Combat.shockwave(p, reach + 55.0, col, 0.35)
+			_hit_arc(p, dir, reach + pull, PI, dmg * 1.6, -w["knock"] * (2.2 if _evo_id == &"scythe" else 1.5), col, w)
+			Combat.shockwave(p, reach + pull, col, 0.35)
 		"cleave":  # Greatsword: huge overhead cleave + impact shockwave where the blade comes down.
 			land = _blade(w, "chop", dir, reach * 1.1, 0.34, 1.0, false, {"big": true})
 			_at(land, func() -> void:
@@ -227,7 +306,9 @@ func _finisher(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 				Combat.shockwave(at, 180.0, Color(1.0, 0.7, 0.4), 0.4)
 				Combat.burst(at, Color(1.0, 0.6, 0.3), 460.0, 1.5)
 				Combat.shake(0.6)
-				Sfx.play(&"slam", -1.0))
+				Sfx.play(&"slam", -1.0)
+				if _evo_id == &"greatsword":
+					_ground_crack(dir, dmg * 1.5, col))
 		"nova":  # Energy Sword: CRESCENT NOVA - a spinning cut all around, then a fan of three crescent waves.
 			_blade(w, "spin", dir, reach, 0.34)
 			# Lands mid-spin (after the short wind-up), from wherever the mech is by then.
@@ -236,7 +317,8 @@ func _finisher(w: Dictionary, dir: Vector2, dmg: float, col: Color) -> void:
 				var hits := _hit_arc(at, dir, reach + 20.0, PI, dmg * 1.7, w["knock"] * 1.4, col, w)
 				Combat.shockwave(at, reach * 0.85, col, 0.3)
 				EnergySwordFx.crescent(mech, at + dir * 50.0, dir, dmg * 1.3, col)
-				for side in [-1.0, 1.0]:
+				# (SUPERNOVA EDGE: five crescents instead of three)
+				for side in ([-2.0, -1.0, 1.0, 2.0] if _evo_id == &"energy_sword" else [-1.0, 1.0]):
 					var d2 := dir.rotated(0.38 * side)
 					EnergySwordFx.crescent(mech, at + d2 * 50.0, d2, dmg * 0.8, col)
 				Combat.shake(0.3)
@@ -334,10 +416,12 @@ func _at(seconds: float, f: Callable) -> void:
 		_after(seconds, f)
 
 
-## A heavy basic blow landing (chop, heavy sweep): a thud and a jolt.
+## A heavy basic blow landing (chop, heavy sweep): a thud and a jolt (TITAN CLEAVER: and a ground crack).
 func _thud(w: Dictionary) -> void:
 	Sfx.play(&"slam", -8.0 if not w["energy"] else -11.0, 0.15)
 	Combat.shake(0.16)
+	if _evo_id == &"greatsword":
+		_ground_crack(_last_dir, _last_dmg, _last_col)
 
 
 ## Runs `f` after `seconds` of game time (Energy Sword hits that land with the blade).
@@ -404,13 +488,27 @@ func _hit_line(from: Vector2, to: Vector2, width: float, dmg: float, knock: floa
 
 
 func _hit(n: Node, from: Vector2, dmg: float, knock: float, col: Color) -> void:
+	var at: Vector2 = n.global_position
 	n.take_damage(dmg, from, mech)
 	if knock != 0.0 and n.has_method("knock") and is_instance_valid(n):
 		n.knock((n.global_position - mech.global_position).normalized() * knock)
-	Combat.spark(n.global_position, col, 1.2)
+	Combat.spark(at, col, 1.2)
 	if is_instance_valid(n):
-		rig.impact(n.global_position, col, dmg >= 90.0)
-	mech._maybe_explode(n.global_position, dmg)
+		rig.impact(at, col, dmg >= 90.0)
+	mech._maybe_explode(at, dmg)
+	# Evolved blades, per robot hit: THUNDER TWINS arc lightning, BERSERKER AXE erupts (a few blasts a swing),
+	# SOUL HARVESTER drains 1 HP.
+	match _evo_id:
+		&"dual_sabers":
+			if is_instance_valid(n):
+				mech.arc_from(n, dmg, 2)
+		&"axe":
+			if _blasts_left > 0:
+				_blasts_left -= 1
+				Combat.small_blast(at, 85.0, dmg * 0.35, mech)
+		&"scythe":
+			mech.restore_quiet(1.0)
+			Combat.spark(at, Color(0.5, 1.0, 0.55), 0.7)
 
 
 ## Short dash (reuses the mech's boost motion: afterimages + brief invulnerability).
@@ -447,6 +545,8 @@ class LineFlash extends Node2D:
 	var from := Vector2.ZERO
 	var to := Vector2.ZERO
 	var color := Color.WHITE
+	## Thickness multiplier (CRIMSON MOON's burst is twice as thick).
+	var width := 1.0
 	var _t := 0.0
 
 	func _ready() -> void:
@@ -463,6 +563,6 @@ class LineFlash extends Node2D:
 
 	func _draw() -> void:
 		var k := _t / 0.45
-		var w := (1.0 - k) * 14.0
+		var w := (1.0 - k) * 14.0 * width
 		draw_line(from, to, Color(color, 0.4 * (1.0 - k)), w * 2.5)
 		draw_line(from, to, Color(1, 1, 1, 1.0 - k), maxf(w * 0.4, 1.0))

@@ -95,6 +95,21 @@ const LIST: Array[Dictionary] = [
 		"mods": {"fuel": 0.6, "refuel": -0.2},
 		"flame": Color(0.55, 1.0, 0.75), "flame_scale": 1.1,
 		"desc": "A big extra fuel tank: fly much longer. Slower to fill back up."},
+	# FOUND-ONLY parts (`found`): never for sale - they only come out of PART CRATES in runs (Game.find_part).
+	# `cost` is what they're worth, for sorting only.
+	{"id": &"head_ace", "slot": &"head", "name": "Ace Visor", "cost": 6000, "found": true,
+		"mods": {"crit": 0.12, "damage": 0.05, "magnet": -0.25},
+		"desc": "Pulled off a rival ace's mech. Deadly aim, but a narrow pickup field."},
+	{"id": &"arms_phantom", "slot": &"arms", "name": "Phantom Arms", "cost": 6000, "found": true,
+		"mods": {"rate": 0.14, "damage": 0.06, "hp": -0.12},
+		"desc": "Ultralight servos nobody sells: faster at everything. Thin plating."},
+	{"id": &"legs_ghost", "slot": &"legs", "name": "Ghost Legs", "cost": 6000, "found": true,
+		"mods": {"speed": 0.15, "dash": 0.25, "accel": 0.2, "hp": -0.18},
+		"desc": "Featherweight racing legs from a wreck. Barely any armor."},
+	{"id": &"backpack_proto", "slot": &"backpack", "name": "Prototype Booster", "cost": 6000, "found": true,
+		"mods": {"boost_cd": -0.3, "dash": 0.1, "fuel": 0.3, "overdrive": -0.15},
+		"flame": Color(0.85, 0.5, 1.0), "flame_scale": 1.3,
+		"desc": "A lab booster that never shipped: recharges fast, drinks from the reactor."},
 ]
 
 var owned: Array[StringName] = [&"head_stock", &"arms_stock", &"legs_stock", &"backpack_stock"]
@@ -180,7 +195,20 @@ func is_locked(id: StringName) -> bool:
 
 
 func can_buy(id: StringName) -> bool:
-	return _index.has(id) and not owns(id) and not is_locked(id) and Game.scrap >= cost(id)
+	return _index.has(id) and not owns(id) and not is_locked(id) and not is_found_only(id) and Game.scrap >= cost(id)
+
+
+## Never for sale: only PART CRATES in runs give it.
+func is_found_only(id: StringName) -> bool:
+	return bool(info(id).get("found", false))
+
+
+## A part found in a run came home (Game.bank_scrap): it's owned from now on (not equipped). Saving is up to
+## the caller.
+func grant(id: StringName) -> void:
+	if _index.has(id) and not owns(id):
+		owned.append(id)
+		changed.emit()
 
 
 ## The perk line for a card: [name, what it does], or [] for none.

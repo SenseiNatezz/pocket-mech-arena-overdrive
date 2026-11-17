@@ -16,6 +16,8 @@ const GOLD := Color(1.0, 0.82, 0.3)
 const CYAN := Color(0.35, 0.75, 1.0)
 const GREEN := Color(0.45, 1.0, 0.6)
 const RED := Color(1.0, 0.48, 0.42)
+## FOUND-ONLY parts (Parts.is_found_only): they come out of part crates in runs.
+const PURPLE := Color(0.82, 0.55, 1.0)
 const CARD_H := 188.0
 
 var _head: Label
@@ -168,7 +170,8 @@ class PartCard:
 		var on := Parts.is_equipped(id)
 		var own := Parts.owns(id)
 		var locked := not own and Parts.is_locked(id)
-		var afford := not own and not locked and Game.scrap >= Parts.cost(id)
+		var found := not own and Parts.is_found_only(id)
+		var afford := not own and not locked and not found and Game.scrap >= Parts.cost(id)
 		if _shake > 0.0:
 			draw_set_transform(Vector2(sin(_shake * 40.0) * 6.0 * _shake, 0))
 		var r := Rect2(Vector2.ZERO, size)
@@ -188,6 +191,10 @@ class PartCard:
 			state = "EQUIP"
 		elif locked:
 			state = "LOCKED"
+		elif found:
+			# FOUND-ONLY parts come out of PART CRATES in runs (rival pilots, bosses, gold elites).
+			state = "FIND IN RUNS"
+			state_col = PartsPanel.PURPLE
 		else:
 			state = Game.fmt_int(Parts.cost(id))
 			state_col = PartsPanel.GOLD if afford else Color(0.8, 0.62, 0.45, 0.75)
@@ -201,6 +208,9 @@ class PartCard:
 		elif locked:
 			ArmoryPage._draw_lock(self, Vector2(sx - 12.0, 17.0), 0.45)
 			sw += 22.0
+		elif found:
+			_diamond(Vector2(sx - 11.0, 18.0), 5.5, PartsPanel.PURPLE)
+			sw += 20.0
 		elif not own:
 			_nut(Vector2(sx - 11.0, 18.0), 6.0, state_col)
 			sw += 20.0
@@ -236,7 +246,11 @@ class PartCard:
 				y += 15.0
 			draw_string(font, Vector2(x, y), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, PartsPanel.GREEN if d[2] else PartsPanel.RED)
 			x += iw + 14.0
-		# What opens a locked part (bottom of the card, up to 2 lines).
+		# Where a found-only part comes from / what opens a locked part (bottom of the card, up to 2 lines).
+		if found:
+			var how := "Never for sale: drops from PART CRATES - rival pilots, bosses and gold elites."
+			var hh := font.get_multiline_string_size(how, HORIZONTAL_ALIGNMENT_LEFT, tw, 11, 2).y
+			_block(font, size.y - 10.0 - (hh - font.get_height(11)), how, tw, Color(0.85, 0.7, 1.0, 0.9))
 		if locked:
 			var c := Contracts.info(p["contract"])
 			var lock := "Opens with the contract %s: %s." % [String(c.get("title", "")).to_upper(), String(c.get("text", "")).to_lower()]

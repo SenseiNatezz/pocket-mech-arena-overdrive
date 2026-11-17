@@ -10,6 +10,8 @@ const BODY_SHADER := preload("res://player/weapons/beam_body.gdshader")
 var from := Vector2.ZERO
 var to := Vector2.ZERO
 var color := Color(0.5, 0.9, 1.0)
+## Beam width when it hits (narrows from there). The HYPER BEAM RIFLE's MEGA BEAM is much wider.
+var width := 46.0
 var _t := 0.0
 var _body: Node2D
 var _mat := ShaderMaterial.new()
@@ -45,7 +47,7 @@ func _draw_body() -> void:
 	var fade := 1.0 - k
 	var length := maxf(from.distance_to(to), 1.0)
 	var dir := (to - from) / length
-	var h := lerpf(46.0, 8.0, ease(k, 0.6))
+	var h := lerpf(width, width * 0.17, ease(k, 0.6))
 	_mat.set_shader_parameter("length_px", length)
 	_mat.set_shader_parameter("t", _t + 0.37)
 	_mat.set_shader_parameter("intensity", fade)
@@ -57,7 +59,7 @@ func _draw_body() -> void:
 func _draw() -> void:
 	var k := _t / LIFE
 	var fade := 1.0 - k
-	var w := lerpf(6.0, 1.5, k)
+	var w := lerpf(6.0, 1.5, k) * width / 46.0
 	draw_line(from, to, Color(1, 1, 1, fade), w)
 	# Impact burst + ring, muzzle flash + ring.
 	draw_circle(to, 8.0 + 24.0 * fade, Color(color, 0.45 * fade))

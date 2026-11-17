@@ -17,6 +17,9 @@ var velocity := Vector2.RIGHT
 var damage := 50.0
 var source: Node
 var homing := 0.0
+## SWARM LAUNCHER (the evolved Rocket Launcher): the blast spits SWARM_MINIS homing mini-missiles.
+var evolved := false
+const SWARM_MINIS := 4
 var _speed := START_SPEED
 var _life := 1.7
 var _t := 0.0
@@ -87,21 +90,30 @@ func _steer(delta: float) -> void:
 func _explode(direct: Node) -> void:
 	var from := source if is_instance_valid(source) else null
 	var at := global_position
+	# (TEMPEST's DEMOLITION trait: 50% bigger)
+	var splash := SPLASH_RADIUS * Combat.blast_scale(from)
 	if direct:
 		direct.take_damage(damage, at - velocity * 20.0, from)
-	for n in Combat.enemies_in_area(at, SPLASH_RADIUS):
+	for n in Combat.enemies_in_area(at, splash):
 		if n == direct:
 			continue
 		n.take_damage(damage * SPLASH, at, from)
 		if n.has_method("knock"):
 			n.knock((n.global_position - at).normalized() * 260.0)
-	Combat.damage_destructibles(at, SPLASH_RADIUS, damage * SPLASH)
+	Combat.damage_destructibles(at, splash, damage * SPLASH)
 	# Lighter than a full explosion: these can go off several times a second.
-	Combat.shockwave(at, SPLASH_RADIUS, FIRE, 0.3)
+	Combat.shockwave(at, splash, FIRE, 0.3)
 	Combat.spark(at, Color(1.0, 0.8, 0.4), 2.2)
-	Combat.burst(at, FIRE, SPLASH_RADIUS * 3.0, 1.2)
+	Combat.burst(at, FIRE, splash * 3.0, 1.2)
 	Sfx.play(&"explode", -11.0, 0.15)
 	Combat.shake(0.1)
+	if evolved and from:
+		# SWARM LAUNCHER: mini-missiles burst out of the blast and hunt the robots nearby.
+		for i in SWARM_MINIS:
+			var dir := Vector2.from_angle(TAU * i / SWARM_MINIS + randf_range(-0.4, 0.4))
+			var b := Combat.fire(at + dir * 16.0, dir * 540.0, damage * 0.3, true, from, Color(1.0, 0.62, 0.3), 0.95, 1.3)
+			b.homing = 10.0
+			b.explosive = 1.0
 	queue_free()
 
 

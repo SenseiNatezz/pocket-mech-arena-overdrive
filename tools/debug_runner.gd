@@ -22,6 +22,11 @@ extends Node
 ##   --weapon=ID                 try a primary weapon (blaster, sniper, sword, gatling) without saving
 ##   --temp-save                 use a throwaway save file (tests use this)
 ##   --upgrades=ID:N,ID:N        start with these upgrades, e.g. --upgrades=blades:2,shield:1
+##                               (evolution:1 = the weapon starts EVOLVED; power:3 = the Beam Rifle's catalyst)
+##   --pilot-level=N             (with --upgrades) start at pilot level N (e.g. 8: an evolution can be ready)
+##   --objective=KIND            the sector's bonus objective: towers, hold or caches (--objective-crate: it
+##                               always drops a part crate)
+##   --crate=S                   drop a PART CRATE next to the pilot S seconds in (real runs)
 ##   --level-up=S                trigger a level-up S seconds into the scene (preview the menu)
 ## Does nothing when no debug args are given.
 
@@ -42,7 +47,7 @@ func _ready() -> void:
 			Game.to_gun_range.call_deferred()
 		elif a.begins_with("--shot="):
 			_shot(a.trim_prefix("--shot="), _arg_float("--shot-time=", 1.5))
-	set_process(_args.has("--smoke-test") or _args.has("--arena-test") or _args.has("--upgrade-test") or _args.has("--incremental-test") or _args.has("--goals-test") or _args.has("--goals-arena-test") or _args.has("--parts-test") or _args.has("--endless-test") or _args.has("--gun-range-test") or "--swing-capture=" in " ".join(_args) or _args.has("--tutorial-test") or _args.has("--difficulty-test") or _args.has("--boss-retry-test") or "--upgrades=" in " ".join(_args) or "--level-up=" in " ".join(_args) or _args.has("--autoplay") or "--attach=" in " ".join(_args) or _args.has("--playtest-report") or _args.has("--boss") or _args.has("--beam-demo") or "--showcase=" in " ".join(_args) or _args.has("--prop-probe") or "--goto-map" in " ".join(_args))
+	set_process(_args.has("--smoke-test") or _args.has("--arena-test") or _args.has("--upgrade-test") or _args.has("--incremental-test") or _args.has("--goals-test") or _args.has("--goals-arena-test") or _args.has("--parts-test") or _args.has("--endless-test") or _args.has("--gun-range-test") or "--swing-capture=" in " ".join(_args) or _args.has("--tutorial-test") or _args.has("--difficulty-test") or _args.has("--boss-retry-test") or "--upgrades=" in " ".join(_args) or "--level-up=" in " ".join(_args) or _args.has("--autoplay") or "--attach=" in " ".join(_args) or _args.has("--playtest-report") or _args.has("--boss") or _args.has("--beam-demo") or "--showcase=" in " ".join(_args) or _args.has("--prop-probe") or "--goto-map" in " ".join(_args) or "--pilot-level=" in " ".join(_args) or "--crate=" in " ".join(_args))
 
 
 func _process(_delta: float) -> void:
@@ -103,7 +108,16 @@ func _process(_delta: float) -> void:
 			var m := get_tree().get_first_node_in_group("player") as Mech
 			if m:
 				m.shield_charges = Upgrades.shield_max()
-		elif a.begins_with("--level-up="):
+		elif a.begins_with("--pilot-level="):
+			Upgrades.level = clampi(int(a.trim_prefix("--pilot-level=")), 1, Upgrades.MAX_LEVEL)
+			Upgrades.xp = 0.0
+		# (timers: only once the game scene is up - a windowed run shows the title screen for a moment first)
+		elif a.begins_with("--crate=") and scene.name != "MainMenu":
+			get_tree().create_timer(a.trim_prefix("--crate=").to_float(), false).timeout.connect(func() -> void:
+				var mech := get_tree().get_first_node_in_group("player") as Mech
+				if mech:
+					Game.drop_part_crate(mech.global_position + Vector2(140, -40)))
+		elif a.begins_with("--level-up=") and scene.name != "MainMenu":
 			get_tree().create_timer(a.trim_prefix("--level-up=").to_float(), false).timeout.connect(func() -> void:
 				Upgrades.add_xp(Upgrades.xp_to_next() - Upgrades.xp + 0.01))
 		if a.begins_with("--goto-map=") and (is_arena or scene.name == "GunRange") and scene._layout:

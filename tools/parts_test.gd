@@ -98,7 +98,19 @@ func _all_stock() -> bool:
 
 func _stock_checks() -> void:
 	_check("a fresh save wears the four STOCK parts and owns only them (%d of %d parts)" % [Parts.owned_count(), Parts.LIST.size()],
-		_all_stock() and Parts.owned_count() == 4 and Parts.LIST.size() == 18)
+		_all_stock() and Parts.owned_count() == 4 and Parts.LIST.size() == 22)
+	# FOUND-ONLY parts (one per slot) only come out of part crates in runs: never for sale, whatever the scrap.
+	var found: Array[StringName] = []
+	for p: Dictionary in Parts.LIST:
+		if Parts.is_found_only(p["id"]):
+			found.append(p["id"])
+	var keep_scrap := Game.scrap
+	Game.scrap = 1000000
+	var sold := found.any(func(id: StringName) -> bool: return Parts.can_buy(id))
+	Game.scrap = keep_scrap
+	_check("4 FOUND-ONLY parts, one per slot, that can't be bought (%s)" % ", ".join(found), found.size() == 4 and not sold
+		and Parts.SLOTS.all(func(s: StringName) -> bool: return found.any(func(id: StringName) -> bool:
+			return Parts.info(id)["slot"] == s)))
 	var ones := true
 	for s: Array in Parts.STATS:
 		ones = ones and Parts.mult(s[0]) == 1.0

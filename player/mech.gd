@@ -119,6 +119,30 @@ const BLINK_CRIT_TIME := 1.5
 const BLINK_CRIT := 2.0
 ## Touch SIMPLE layout: Self-repair kicks in below this HP fraction (with a kit to spare).
 const AUTO_REPAIR_HP := 0.35
+## Chassis TRAITS (Game.CHASSIS `trait`):
+##   GRIFFIN MOMENTUM: damage from MOMENTUM_STILL (standing) up to MOMENTUM_FULL (full speed / boosting).
+##   TUSKER HEAVYWEIGHT: a robot that rams the mech takes RAM_BACK (x damage upgrades) back.
+##   FROSTBLADE FROST EDGE: melee hits chill for FROST_CHILL s; chilled robots take FROST_BONUS from it.
+##   SOLSTICE OVERSHIELD: every OVERSHIELD_HP healed past full is a shield charge, up to OVERSHIELD_MAX extra.
+##   AURORA HIVE MIND: its own weapon deals HIVE_WEAPON (the drones get stronger, bit_drones.gd).
+##   RAVEN CLAW BLOODLUST: no repair kits; a kill repairs BLOODLUST_HEAL (BLOODLUST_BLINK in the blink window).
+const MOMENTUM_STILL := 0.75
+const MOMENTUM_FULL := 1.4
+const RAM_BACK := 40.0
+const FROST_CHILL := 1.6
+const FROST_BONUS := 1.25
+const OVERSHIELD_HP := 20.0
+const OVERSHIELD_MAX := 2
+const HIVE_WEAPON := 0.75
+const BLOODLUST_HEAL := 1.0
+const BLOODLUST_BLINK := 4.0
+## EVOLVED guns (Upgrades.EVOLUTIONS): HYPER BEAM RIFLE mega beam every MEGA_EVERY shots, TWIN BUSTERS buster bolt
+## every BUSTER_EVERY, HELLFIRE GATLING shell every SHELL_EVERY; ORBITAL LANCE strike size / delay.
+const MEGA_EVERY := 5
+const BUSTER_EVERY := 12
+const SHELL_EVERY := 4
+const ORBITAL_RADIUS := 150.0
+const ORBITAL_DELAY := 0.45
 
 var hp := 100.0
 ## OVERCLOCK combo: 0..1, rising while the trigger is held (full after OVERCLOCK_SPIN s), falling when not.
@@ -245,6 +269,12 @@ var _boost_spare := 0
 var _boost_spares_max := 0
 ## Base value the Reactor Overcharge upgrade scales.
 var _base_od_time := 8.0
+## EVOLVED guns: shots fired since evolving (the every-Nth specials); MOMENTUM 0..1 (GRIFFIN); OVERSHIELD heal
+## banked toward the next charge (SOLSTICE); MOMENTUM afterimage timer.
+var _evo_shots := 0
+var momentum := 0.0
+var _overheal := 0.0
+var _momentum_fx := 0.0
 
 ## HP lost when falling into a pit.
 const PIT_DAMAGE := 15.0
@@ -278,6 +308,9 @@ func _ready() -> void:
 	max_hp = _base_max_hp + Upgrades.max_hp_bonus()
 	hp = max_hp
 	repair_charges_max += Game.hangar_level(&"kits")
+	# RAVEN CLAW's BLOODLUST trait: no repair kits at all (kills repair it instead).
+	if _chassis_id == &"phantom":
+		repair_charges_max = 0
 	repair_charges = repair_charges_max
 	shield_charges = _shield_max()
 	Combat.damage_dealt.connect(_on_damage_dealt)
@@ -318,6 +351,11 @@ func _ready() -> void:
 	if Game.carry_repairs >= 0:
 		repair_charges = mini(Game.carry_repairs, repair_charges_max)
 		Game.carry_repairs = -1
+	# PIT STOP's OVERDRIVE CELL: this sector starts with the meter full.
+	if Game.carry_overdrive:
+		Game.carry_overdrive = false
+		overdrive_meter = 100.0
+	Upgrades.weapon_evolved.connect(_on_evolved)
 	beam = BeamCannon.new()
 	beam.mech = self
 	add_child(beam)
@@ -357,7 +395,8 @@ func _physics_process(delta: float) -> void:
 
 	# Movement: snappy acceleration toward the stick direction; boost overrides it.
 	var speed := move_speed * Upgrades.move_mult() * (1.2 if overdrive_left > 0.0 else 1.0) * beam.move_factor()
-	if weapon == &"gatling" and Controls.is_firing():
+	# (the HELLFIRE GATLING evolution doesn't slow you down)
+	if weapon == &"gatling" and Controls.is_firing() and not Upgrades.is_evolved():
 		speed *= 0.8
 	if fuel_on and _hover:
 		speed *= FLY_SPEED
@@ -383,6 +422,7 @@ func _physics_process(delta: float) -> void:
 		_keep_off_bosses()
 
 	_update_siege(delta, move)
+	_update_momentum(delta)
 
 	# Weapons.
 	var od := overdrive_left > 0.0
@@ -415,9 +455,9 @@ func _tick_timers(delta: float) -> void:
 	_repair_cd -= delta
 	_invuln -= delta
 	_since_hit += delta
-	# NANO REPAIR combo: 2 HP/s after 3 s without taking damage.
-	if Upgrades.level_of(&"nano_repair") > 0 and _since_hit > 3.0 and hp < max_hp:
-		hp = minf(hp + 2.0 * Game.diff("heal") * delta, max_hp)
+	# NANO REPAIR combo: 2 HP/s after 3 s without taking damage (SOLSTICE keeps it going past full: OVERSHIELD).
+	if Upgrades.level_of(&"nano_repair") > 0 and _since_hit > 3.0 and (hp < max_hp or _chassis_id == &"guardian"):
+		_restore(2.0 * Game.diff("heal") * delta)
 		_nano_fx -= delta
 		if _nano_fx <= 0.0:
 			_nano_fx = 0.6
@@ -537,22 +577,32 @@ func _fire_primary(mult: float) -> void:
 
 ## Blaster / Gatling / Dual Pistols: Triple Shot fans extra bolts out to the sides (75% damage each).
 ## Each draws its own shot (player/weapons/rifle_fx.gd): rifle beam bolts, gatling tracers, pistol darts.
+## EVOLVED (Upgrades.EVOLUTIONS): HYPER BEAM RIFLE bolts are bigger, hit harder and pierce everything (+ a MEGA
+## BEAM every MEGA_EVERY shots); TWIN BUSTERS fire from both fists at once, homing (+ a BUSTER bolt); HELLFIRE
+## GATLING rounds hit 20% harder (+ an exploding shell every SHELL_EVERY rounds) - see _evolved_special.
 func _fire_bolts(mult: float) -> void:
 	var gatling := weapon == &"gatling"
 	var pistols := weapon == &"dual_pistols"
+	var evo := Upgrades.is_evolved() and Upgrades.EVOLUTIONS.has(weapon)
 	var spread := 0.1 if gatling else (PISTOL_SPREAD if pistols else 0.04)
 	var base := _shot_dir().rotated(randf_range(-spread, spread))
 	var dmg := (GATLING_DAMAGE if gatling else (PISTOL_DAMAGE if pistols else bolt_damage)) * mult
+	if evo and gatling:
+		dmg *= 1.2
 	var speed := bolt_speed * (1.1 if gatling else (PISTOL_SPEED_MULT if pistols else 1.0))
 	var n := Upgrades.multishot_count()
 	var seekers := Upgrades.level_of(&"seeker_swarm") > 0
+	var size := GATLING_BULLET_SIZE if gatling else (0.85 if pistols else 1.0)
+	if evo and not gatling and not pistols:
+		size = 1.5
+	if evo:
+		_evo_shots += 1
 	for i in n:
 		var off := (i - (n - 1) / 2.0) * 0.16
 		var seek := seekers and off != 0.0
 		var col := Upgrades.COMBO_GOLD.lerp(_shot_color(), 0.4) if seek else _shot_color()
 		var b := Combat.fire(muzzle.global_position, base.rotated(off * (2.8 if seek else 1.0)) * speed,
-			dmg * (1.0 if off == 0.0 else 0.75), true, self, col,
-			GATLING_BULLET_SIZE if gatling else (0.85 if pistols else 1.0), PISTOL_LIFETIME if pistols else 1.2)
+			dmg * (1.0 if off == 0.0 else 0.75), true, self, col, size, PISTOL_LIFETIME if pistols else 1.2)
 		_arm(b)
 		if gatling:
 			b.set_tracer_style()
@@ -563,6 +613,22 @@ func _fire_bolts(mult: float) -> void:
 		# SEEKER SWARM combo: side shots swing out wide, then hunt.
 		if seek:
 			b.homing = 11.0
+		if evo:
+			if pistols:
+				b.homing = maxf(b.homing, 7.0)
+			elif not gatling:
+				b.pierce = 99
+				b.damage *= 1.25
+	# TWIN BUSTERS: the other fist fires at the same moment.
+	if evo and pistols:
+		var other := global_position + (muzzle.global_position - global_position).reflect(aim_dir)
+		var b2 := Combat.fire(other, base.rotated(randf_range(-PISTOL_SPREAD, PISTOL_SPREAD)) * speed, dmg, true, self,
+			_shot_color(), 0.85, PISTOL_LIFETIME)
+		_arm(b2)
+		b2.set_dart_style()
+		b2.homing = maxf(b2.homing, 7.0)
+	if evo:
+		_evolved_special(base, dmg)
 	# RAILGUN combo: every 6th shot also fires a slug that pierces everything for 4x damage.
 	if Upgrades.level_of(&"railgun") > 0:
 		_rail_count += 1
@@ -610,6 +676,8 @@ func _fire_rockets(mult: float) -> void:
 		var off := (i - (n - 1) / 2.0) * 0.14
 		var r: Node2D = ROCKET.new()
 		r.setup(muzzle.global_position, base.rotated(off), ROCKET_DAMAGE * mult * (1.0 if off == 0.0 else 0.75), self)
+		# SWARM LAUNCHER (evolved): it bursts into homing mini-missiles (rocket.gd).
+		r.set("evolved", Upgrades.is_evolved())
 		Combat.world().add_child(r)
 	held.kick(1.0)
 	_muzzle_t = 0.1
@@ -637,7 +705,9 @@ func _fire_sniper(mult: float) -> void:
 	var n := Upgrades.multishot_count()
 	for i in n:
 		var off := (i - (n - 1) / 2.0) * 0.09
-		_sniper_line(muzzle.global_position, base.rotated(off), SNIPER_DAMAGE * mult * (1.0 if off == 0.0 else 0.6))
+		# ORBITAL LANCE (evolved): the centre beam calls a strike down on the first robot it hits.
+		_sniper_line(muzzle.global_position, base.rotated(off), SNIPER_DAMAGE * mult * (1.0 if off == 0.0 else 0.6), 1.0,
+			off == 0.0 and Upgrades.is_evolved())
 	recoil(-aim_dir * 120.0)
 	held.kick(0.8)
 	_muzzle_t = 0.12
@@ -646,24 +716,31 @@ func _fire_sniper(mult: float) -> void:
 	Combat.shake(0.14)
 
 
-func _sniper_line(from: Vector2, dir: Vector2, dmg: float) -> void:
+## A hitscan lance: everything within reach of the line takes `dmg`. `width` scales the beam (the HYPER BEAM
+## RIFLE's MEGA BEAM is wide); `orbital` = ORBITAL LANCE: a strike lands on the first robot it hit.
+func _sniper_line(from: Vector2, dir: Vector2, dmg: float, width := 1.0, orbital := false) -> void:
 	var q := PhysicsRayQueryParameters2D.create(from, from + dir * SNIPER_RANGE, 1 | 32)
 	q.exclude = [get_rid()]
 	var hit := get_world_2d().direct_space_state.intersect_ray(q)
 	var to: Vector2 = hit.position if not hit.is_empty() else from + dir * SNIPER_RANGE
 	var hits := 0
+	var first := Vector2.INF
 	for n in get_tree().get_nodes_in_group("damageable"):
 		if not is_instance_valid(n) or n == self or n.is_in_group("player") or n.get("dead") == true:
 			continue
 		var r: float = n.get("hit_radius") if n.get("hit_radius") != null else 20.0
 		var p: Vector2 = n.global_position
-		if Geometry2D.get_closest_point_to_segment(p, from, to).distance_to(p) <= r + 14.0:
+		if Geometry2D.get_closest_point_to_segment(p, from, to).distance_to(p) <= r + 14.0 * width:
+			if first == Vector2.INF or p.distance_squared_to(from) < first.distance_squared_to(from):
+				first = p
 			n.take_damage(dmg, from, self)
 			if n.has_method("knock"):
 				n.knock(dir * 220.0)
 			Combat.spark(p, _shot_color(), 1.1)
 			_maybe_explode(p, dmg)
 			hits += 1
+	if orbital and first != Vector2.INF:
+		_orbital_strike(first, dmg * 1.4)
 	for n in get_tree().get_nodes_in_group("destructibles"):
 		if is_instance_valid(n):
 			var p: Vector2 = n.global_position
@@ -681,6 +758,7 @@ func _sniper_line(from: Vector2, dir: Vector2, dmg: float) -> void:
 	fx.from = from
 	fx.to = to
 	fx.color = _shot_color()
+	fx.set("width", 46.0 * width)
 	Combat.world().add_child(fx)
 	Combat.spark(to, _shot_color(), 1.4)
 	if hits >= 3:
@@ -691,6 +769,64 @@ func _sniper_line(from: Vector2, dir: Vector2, dmg: float) -> void:
 func _maybe_explode(pos: Vector2, dmg: float) -> void:
 	if randf() < Upgrades.explosive_chance():
 		Combat.small_blast(pos, 75.0, dmg * 0.6, self)
+
+
+## EVOLVED guns' every-Nth-shot specials (_evo_shots counts the shots since evolving).
+func _evolved_special(base: Vector2, dmg: float) -> void:
+	match weapon:
+		&"blaster":
+			if _evo_shots % MEGA_EVERY == 0:
+				# HYPER BEAM RIFLE: the MEGA BEAM - a wide lance that hits everything down the line.
+				_sniper_line(muzzle.global_position, base, dmg * 3.0, 2.6)
+				Combat.shake(0.18)
+				Combat.camera_kick(-base * 6.0)
+				Combat.rumble(0.4, 0.3, 0.12)
+				held.kick(1.0)
+				Sfx.play(&"beam_rifle", -6.0, 0.05)
+		&"dual_pistols":
+			if _evo_shots % BUSTER_EVERY == 0:
+				# TWIN BUSTERS: a big buster bolt that blows up on the first robots it hits.
+				var b := Combat.fire(muzzle.global_position, base * bolt_speed * 1.1, dmg * 6.0, true, self,
+					Upgrades.EVOLVE_COLOR.lerp(Color.WHITE, 0.3), 2.3, 1.0)
+				b.explosive = 1.0
+				b.pierce = 2
+				Combat.spark(muzzle.global_position, Upgrades.EVOLVE_COLOR, 1.6)
+				Sfx.play(&"beam_rifle", -10.0, 0.05)
+		&"gatling":
+			if _evo_shots % SHELL_EVERY == 0:
+				# HELLFIRE GATLING: an exploding shell in the stream.
+				var b := Combat.fire(muzzle.global_position, base.rotated(randf_range(-0.05, 0.05)) * bolt_speed * 1.05,
+					dmg * 1.5, true, self, Color(1.0, 0.45, 0.15), 2.1, 1.2)
+				b.explosive = 1.0
+				b.set_tracer_style()
+
+
+## ORBITAL LANCE: a strike from orbit lands on `pos` a moment later (a bolt from the sky in the shot's colour;
+## only robots get hurt).
+func _orbital_strike(pos: Vector2, dmg: float) -> void:
+	var s: Node2D = Combat.STRIKE.new()
+	s.setup(pos, ORBITAL_RADIUS * Combat.blast_scale(self), dmg, self, ORBITAL_DELAY, "enemies", Vector2.INF)
+	s.tint = _shot_color().lerp(Color.WHITE, 0.25)
+	s.lightning = true
+	Combat.world().add_child(s)
+
+
+## The weapon just EVOLVED (Upgrades.weapon_evolved, picked in the level-up menu): a burst of light around the
+## mech the moment the game runs again.
+func _on_evolved(_w: StringName) -> void:
+	_evo_shots = 0
+	get_tree().create_timer(0.05, false).timeout.connect(func() -> void:
+		if dead:
+			return
+		var col := Upgrades.EVOLVE_COLOR
+		Combat.shockwave(global_position, 260.0, col, 0.6)
+		Combat.shockwave(global_position, 150.0, Color.WHITE, 0.35)
+		Combat.burst(global_position, col, 700.0, 2.0)
+		Combat.spark(global_position, col.lightened(0.4), 3.0)
+		Combat.slowmo(0.35, 0.7)
+		Combat.shake(0.4)
+		Sfx.play(&"overdrive", -3.0, 0.0))
+	stats_changed.emit()
 
 
 func _fire_secondary(mult: float) -> void:
@@ -764,9 +900,72 @@ func _chassis_damage_mult() -> float:
 	var m := float(_chassis.get("damage", 1.0))  # (RAVEN CLAW: +20%)
 	if _chassis_id == &"duelist":
 		m = IAIDO_MELEE if Game.is_melee(weapon) else IAIDO_GUNS
+	elif _chassis_id == &"striker":
+		m *= momentum_mult()
+	elif _chassis_id == &"carrier":
+		m *= HIVE_WEAPON
 	if _crit_t > 0.0:
 		m *= BLINK_CRIT
 	return m
+
+
+## GRIFFIN's MOMENTUM damage multiplier right now (1.0 for every other frame).
+func momentum_mult() -> float:
+	return lerpf(MOMENTUM_STILL, MOMENTUM_FULL, momentum) if _chassis_id == &"striker" else 1.0
+
+
+## GRIFFIN's MOMENTUM: 0 standing still .. 1 at full speed (a boost counts as full). It builds and bleeds off
+## over a moment, and near the top the mech leaves faint afterimages.
+func _update_momentum(delta: float) -> void:
+	if _chassis_id != &"striker":
+		return
+	var top := move_speed * Upgrades.move_mult()
+	var want := 1.0 if _boost_left > 0.0 else clampf(velocity.length() / maxf(top * 0.9, 1.0), 0.0, 1.0)
+	momentum = move_toward(momentum, want, delta * (2.5 if want > momentum else 1.6))
+	if momentum > 0.85:
+		_momentum_fx -= delta
+		if _momentum_fx <= 0.0:
+			_momentum_fx = 0.1
+			_spawn_afterimage_at(global_position, Color(_chassis["color"], 0.3))
+
+
+## Extra damage against one robot from the chassis trait (Enemy.take_damage asks): FROSTBLADE's FROST EDGE hits
+## chilled robots harder.
+func damage_vs(e: Node) -> float:
+	if _chassis_id == &"duelist" and e is Enemy and (e as Enemy).chill_t > 0.0:
+		return FROST_BONUS
+	return 1.0
+
+
+## TUSKER's HEAVYWEIGHT: a robot that rams the mech (Enemy contact damage) takes RAM_BACK back and bounces off.
+func rammed(e: Node) -> void:
+	if _chassis_id != &"bulwark" or dead or not is_instance_valid(e) or e.get("dead") == true:
+		return
+	var at: Vector2 = (e as Node2D).global_position
+	e.take_damage(RAM_BACK * Upgrades.damage_mult(), global_position, self)
+	if is_instance_valid(e) and e.has_method("knock"):
+		e.knock((at - global_position).normalized() * 380.0)
+	Combat.spark(at, _chassis["color"], 1.3)
+	Combat.shockwave(at, 55.0, _chassis["color"], 0.2)
+
+
+## Every repair goes through here: HP up to max - and for SOLSTICE (OVERSHIELD) whatever spills past full HP
+## banks toward extra shield charges (one per OVERSHIELD_HP, up to OVERSHIELD_MAX over the usual). Returns the HP
+## actually restored.
+func _restore(amount: float) -> float:
+	var before := hp
+	hp = minf(hp + amount, max_hp)
+	if _chassis_id == &"guardian" and amount > hp - before:
+		_overheal += amount - (hp - before)
+		while _overheal >= OVERSHIELD_HP and shield_charges < _shield_max() + OVERSHIELD_MAX:
+			_overheal -= OVERSHIELD_HP
+			shield_charges += 1
+			Combat.shockwave(global_position, 75.0, Color(1.0, 0.85, 0.4), 0.3)
+			Sfx.play(&"shield", -10.0, 0.1)
+			stats_changed.emit()
+		if shield_charges >= _shield_max() + OVERSHIELD_MAX:
+			_overheal = minf(_overheal, OVERSHIELD_HP)
+	return hp - before
 
 
 ## TEMPEST SALVO: heavy homing rockets out of both shoulder pods, every one exploding on impact.
@@ -853,7 +1052,7 @@ func _self_repair() -> void:
 	repair_charges -= 1
 	_repair_cd = 1.0
 	var amount := repair_amount * Game.diff("heal") * (1.0 + Game.hangar_mk_bonus(&"kits"))
-	hp = minf(hp + amount, max_hp)
+	_restore(amount)
 	Combat.shockwave(global_position, 80.0, Color(0.4, 1.0, 0.5), 0.4)
 	Combat.damage_number(global_position, amount, Color(0.5, 1.0, 0.6), self)
 	Sfx.play(&"repair", -4.0)
@@ -952,6 +1151,9 @@ func _on_damage_dealt(amount: float, source: Node, target: Node) -> void:
 		arc_from(target, amount, Upgrades.level_of(&"chain"))
 	if randf() < Upgrades.cryo_chance() and target.has_method("chill"):
 		target.chill(2.0)
+	# FROSTBLADE's FROST EDGE: its blade always chills.
+	if _chassis_id == &"duelist" and Game.is_melee(weapon) and is_instance_valid(target) and target.has_method("chill"):
+		target.chill(FROST_CHILL)
 	stats_changed.emit()
 
 
@@ -959,8 +1161,12 @@ func _on_damage_dealt(amount: float, source: Node, target: Node) -> void:
 ## SHATTER combo: chilled robots burst into a freezing blast.
 func _on_enemy_killed(e: Node) -> void:
 	var h := Upgrades.salvage_heal() * Game.diff("heal")
-	if h > 0.0 and not dead and hp < max_hp:
-		hp = minf(hp + h, max_hp)
+	if h > 0.0 and not dead and (hp < max_hp or _chassis_id == &"guardian"):
+		_restore(h)
+		stats_changed.emit()
+	# RAVEN CLAW's BLOODLUST: every kill patches it up (more right after a blink).
+	if _chassis_id == &"phantom" and not dead:
+		_restore((BLOODLUST_BLINK if _crit_t > 0.0 else BLOODLUST_HEAL) * Game.diff("heal"))
 		stats_changed.emit()
 	if _chassis.get("id") == &"striker" and boost_cooldown_left > 0.0:
 		boost_cooldown_left = maxf(boost_cooldown_left - STRIKER_KILL_REFUND, 0.0)
@@ -1011,7 +1217,7 @@ func _on_upgrade(id: StringName) -> void:
 	match id:
 		&"armor":
 			max_hp = _base_max_hp + Upgrades.max_hp_bonus()
-			heal(25.0)
+			heal(Upgrades.armor_hp())
 		&"shield":
 			shield_charges = mini(shield_charges + 1, _shield_max())
 		&"field_repair":
@@ -1156,9 +1362,16 @@ func is_falling() -> bool:
 ## Every repair source goes through here (scaled by the difficulty's "heal", e.g. Extreme 0.6).
 func heal(amount: float) -> void:
 	amount *= Game.diff("heal")
-	hp = minf(hp + amount, max_hp)
+	_restore(amount)
 	Combat.damage_number(global_position, amount, Color(0.5, 1.0, 0.6), self)
 	stats_changed.emit()
+
+
+## A small repair with no number popping up (the SOUL HARVESTER scythe's per-robot drain).
+func restore_quiet(amount: float) -> void:
+	if not dead:
+		_restore(amount * Game.diff("heal"))
+		stats_changed.emit()
 
 
 

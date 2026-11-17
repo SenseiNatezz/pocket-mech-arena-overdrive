@@ -336,6 +336,10 @@ class ChassisCard:
 		for line in _wrap(font, String(info["ability"]), w - 24.0, 13):
 			y += 17.0
 			draw_string(font, Vector2(12, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 24, 13, Color(1.0, 0.9, 0.6))
+		# The frame's RULE-BREAKING TRAIT (Game.CHASSIS `trait`).
+		for line in _wrap(font, _trait_text(), w - 24.0, 12):
+			y += 16.0
+			draw_string(font, Vector2(12, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 24, 12, TRAIT_COLOR)
 		for line in _wrap(font, String(info["desc"]), w - 24.0, 12):
 			y += 16.0
 			draw_string(font, Vector2(12, y), line, HORIZONTAL_ALIGNMENT_CENTER, w - 24, 12, Color(0.7, 0.78, 0.9))
@@ -350,8 +354,14 @@ class ChassisCard:
 	func needed_height(w: float) -> float:
 		var font := get_theme_default_font()
 		var lines := _wrap(font, String(info["ability"]), w - 24.0, 13).size() * 17.0 \
+			+ _wrap(font, _trait_text(), w - 24.0, 12).size() * 16.0 \
 			+ _wrap(font, String(info["desc"]), w - 24.0, 12).size() * 16.0
 		return 12.0 + PREVIEW_H + 22.0 + 46.0 + lines + 56.0
+
+	const TRAIT_COLOR := Color(0.55, 0.95, 1.0)
+
+	func _trait_text() -> String:
+		return "TRAIT  %s: %s" % [String(info.get("trait", "")), String(info.get("trait_desc", ""))] if info.has("trait") else ""
 
 	static func _max_scale() -> float:
 		var m := 1.0

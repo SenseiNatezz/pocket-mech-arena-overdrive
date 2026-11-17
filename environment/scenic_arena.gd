@@ -84,6 +84,8 @@ const SECTOR_FULL := [1.0, 1.1, 1.25]
 const RIVAL_SECTOR := 2
 var _sectors := false
 var _lead_in := false
+## This sector's BONUS OBJECTIVE (environment/sector_objective.gd; null outside the Campaign sectors).
+var objective: SectorObjective
 ## THREAT BOSS ESCORT: the kinds of the elite guards that drop in with a boss (cycled).
 const ESCORT_KINDS: Array[String] = ["striker", "shooter", "tank"]
 
@@ -618,6 +620,13 @@ func _setup_flow() -> void:
 			if i < n:
 				banner.emit("WAVE BROKEN - REINFORCEMENTS INBOUND" if zone.last_overlapped else "WAVE CLEARED", Color(0.4, 1.0, 0.6)))
 	zone.cleared.connect(_on_zone_cleared)
+	# Campaign sectors: the sector's BONUS OBJECTIVE (it starts with the 2nd wave).
+	if _sectors and not Game.start_at_boss:
+		objective = SectorObjective.new()
+		objective.name = "SectorObjective"
+		objective.kind = Game.active_objective()
+		objective.arena = self
+		add_child(objective)
 	if Game.start_at_boss:
 		# RETRY BOSS: no waves - the boss drops straight in (checkpoint restored by Game.retry_boss()).
 		zone.is_cleared = true
@@ -720,8 +729,9 @@ static func _thin_wave(wave: String, f: float) -> String:
 	return ", ".join(parts)
 
 
-## A lead-in sector is clear: pull in the XP, then the ROUTE CHOICE (ui/route_choice.gd: two doors - the next
-## map, its twist and deal) and on to that map with the pilot's HP and repair kits.
+## A lead-in sector is clear: pull in the XP (and any part crate left on the floor), then the PIT STOP shop
+## (ui/pit_stop.gd, real runs) and the ROUTE CHOICE (ui/route_choice.gd: two doors - the next map, its twist,
+## deal and objective) and on to that map with the pilot's HP and repair kits.
 func _sector_cleared() -> void:
 	banner.emit("SECTOR CLEARED", Color(0.4, 1.0, 0.6))
 	objective_changed.emit("Sector clear - moving out to sector %d" % (Game.campaign_sector + 1))
@@ -732,18 +742,32 @@ func _sector_cleared() -> void:
 	Combat.clear_enemy_bullets()
 	Upgrades.vacuum()
 	Sfx.play(&"alarm", -14.0, 0.0)
+	get_tree().create_timer(1.2, false).timeout.connect(func() -> void:
+		get_tree().call_group("part_crates", "open"))
 	get_tree().create_timer(3.2, false).timeout.connect(func() -> void:
 		var mech := get_tree().get_first_node_in_group("player") as Mech
 		if mech == null or mech.dead:
 			return
-		var choice := RouteChoice.new()
-		add_child(choice)
-		choice.open(Game.route_options())
-		choice.picked.connect(func(route: Dictionary) -> void:
-			Game.next_sector(mech.hp / maxf(mech.max_hp, 1.0), mech.repair_charges, route)))
+		var go := func() -> void:
+			if not is_instance_valid(mech) or mech.dead:
+				return
+			var choice := RouteChoice.new()
+			add_child(choice)
+			choice.open(Game.route_options())
+			choice.picked.connect(func(route: Dictionary) -> void:
+				Game.next_sector(mech.hp / maxf(mech.max_hp, 1.0), mech.repair_charges, route))
+		if Game.scrap_enabled:
+			var shop := PitStop.new()
+			add_child(shop)
+			shop.done.connect(go)
+			shop.open()
+		else:
+			go.call())
 
 
 func _on_zone_cleared() -> void:
+	if objective:
+		objective.end_sector()
 	if _lead_in:
 		_sector_cleared()
 		return
@@ -770,6 +794,8 @@ func campaign_boss_hp() -> float:
 func debug_skip_to_boss() -> void:
 	zone.is_cleared = true
 	zone.is_running = false
+	if objective:
+		objective.end_sector()
 	if _lead_in:
 		_sector_cleared()
 		return
@@ -889,6 +915,9 @@ func _on_boss_defeated() -> void:
 		if e is Enemy and not e.dead:
 			e.die()
 	Upgrades.vacuum()
+	# (a part crate the boss dropped opens before the results screen counts the run's haul)
+	get_tree().create_timer(1.5, false).timeout.connect(func() -> void:
+		get_tree().call_group("part_crates", "open"))
 	get_tree().create_timer(2.0, false).timeout.connect(func() -> void: arena_cleared.emit())
 
 

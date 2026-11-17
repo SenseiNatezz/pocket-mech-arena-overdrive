@@ -66,6 +66,7 @@ func open(routes: Array[Dictionary]) -> void:
 func _show() -> void:
 	visible = true
 	get_tree().paused = true
+	add_to_group("modal_overlay")  # (the HUD's pause key leaves it alone)
 	_t = 0.0
 	var n := Game.campaign_sector + 1
 	_sub.text = "Sector %d / %d is next%s" % [n, Game.CAMPAIGN_SECTORS,
@@ -142,6 +143,10 @@ func _door(i: int, r: Dictionary) -> Button:
 		v.add_child(_tag("TWIST: %s" % twist["name"], String(twist["desc"]), twist["color"]))
 	if not deal.is_empty():
 		v.add_child(_tag(String(deal["name"]), String(deal["desc"]), deal["color"]))
+	# The sector's BONUS OBJECTIVE (Game.OBJECTIVES).
+	var goal: Dictionary = Game.OBJECTIVES.get(r.get("objective", &""), {})
+	if not goal.is_empty():
+		v.add_child(_tag("BONUS: %s" % goal["name"], String(goal["desc"]), goal["color"]))
 	b.pressed.connect(_choose.bind(i))
 
 	return b
@@ -202,18 +207,18 @@ func _layout() -> void:
 	_sub.size = Vector2(vp.x, 26)
 	var area_top := top + 92.0
 	var area_bottom := vp.y - 46.0
-	# Doors sized to what's on them (key art, name, two rule lines), smaller if the screen is short.
+	# Doors sized to what's on them (key art, name, three rule lines), smaller if the screen is short.
 	var w: float
 	var h: float
 	var art_h: float
 	if portrait:
 		w = minf(vp.x - 32.0, 520.0)
-		h = minf((area_bottom - area_top - 16.0) / 2.0, 330.0)
-		art_h = clampf(h - 200.0, 60.0, 130.0)
+		h = minf((area_bottom - area_top - 16.0) / 2.0, 390.0)
+		art_h = clampf(h - 262.0, 50.0, 120.0)
 	else:
 		w = minf((vp.x - 80.0) / 2.0, 430.0)
-		h = minf(area_bottom - area_top, 370.0)
-		art_h = clampf(h - 200.0, 70.0, 170.0)
+		h = minf(area_bottom - area_top, 410.0)
+		art_h = clampf(h - 262.0, 56.0, 150.0)
 	for d in _doors:
 		d.custom_minimum_size = Vector2(w, h)
 		var art := d.find_child("Art", true, false) as TextureRect
@@ -268,6 +273,7 @@ func _choose(i: int) -> void:
 	tw.tween_property(d, "modulate", Color(1.6, 1.5, 1.2), 0.12)
 	tw.tween_property(_root, "modulate:a", 0.0, 0.35)
 	tw.tween_callback(func() -> void:
+		remove_from_group("modal_overlay")
 		get_tree().paused = false
 		picked.emit(_routes[i])
 		queue_free())
