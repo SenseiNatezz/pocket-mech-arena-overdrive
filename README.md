@@ -135,6 +135,16 @@ has its own thruster flame. The cards show what a part changes against the one y
 puts it on, and you can swap between owned parts any time. The Hover Skirt, Twin Booster and Missile Rack
 open with the Campaigner, Survivor and Tank Buster contracts.
 
+**Salvage combat + limb damage (every run):** the four part slots are also your mech's limbs. Hits wear down
+one limb at a time (hits from behind find the backpack) and the limb doll beside the HP bar shows them
+green -> amber -> red. A BROKEN limb costs you until it's fixed: HEAD = no crits and -10% damage, ARMS = -35%
+attack speed and -15% damage, LEGS = -25% move speed, BACKPACK = +60% boost cooldown. Repair kits patch every
+limb by half (even at full HP). Destroyed robots leave pieces of themselves behind: a melee kill tears one off
+35% of the time, a gun kill 7%, elites, rival pilots and bosses always drop one. Every robot type has its own
+piece (Hornet Wing Jets: -7% boost cooldown, Anvil Ram Arm: +7% damage, Ronin Sword Arm: +15% melee
+speed...). Grab it and it's bolted onto your mech for the rest of the run (a plate in the robot's colour
+appears on that limb, up to 3 per slot) and fully repairs that limb; a full slot pays scrap instead.
+
 **Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close), Text Size
 (Small / Normal / Large: scales the menus, HUD and touch buttons; the battlefield view stays the same),
 Dynamic Camera (the view pulls out as robots crowd in and during boss fights, punches in on big kills,
@@ -205,6 +215,7 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . -- --arena=1 --sector=1 --no-intro --no-rival --objective=towers --temp-save --attach=res://tools/variety_test.gd` checks weapon evolutions (all 13 fire), the 8 mech traits, part crates (rival drops, found-only parts, banking), the 3 bonus objectives and the pit stop (buy, reroll, lock, then the route doors)
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
+- `godot --headless --path . res://environment/test_range.tscn -- --salvage-test --temp-save` checks salvage combat and limb damage (limb wear, what each broken limb costs, kit repairs, drops and their odds, bolting pieces on, full slots, the HUD feed, a new run clearing it; add `--portrait`). Preview: `-- --arena=1 --no-intro --temp-save --attach=res://tools/salvage_shots.gd --salvage-shot=PATH.png`
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena
 - `godot --headless --path . -- --temp-save --scrap=4200 --attach=res://tools/lobby_test.gd --lobby-nav-test` checks keyboard / gamepad navigation on the title lobby (add `--portrait` for the phone layout)
 

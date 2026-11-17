@@ -183,6 +183,8 @@ func _ready() -> void:
 	root.add_child(_part_toast)
 	Game.part_found.connect(_on_part_found)
 	Upgrades.weapon_evolved.connect(_on_weapon_evolved)
+	Salvage.limb_broken.connect(_on_limb_broken)
+	Salvage.salvaged.connect(_on_salvaged)
 	_scrap_seen = Game.run_scrap_landed()
 	_scrap_shown = _scrap_seen
 	_radio_box = _make_radio_box()
@@ -1440,6 +1442,8 @@ func _draw_bars() -> void:
 				c.draw_rect(Rect2(Vector2.ZERO, vp).grow(-i * 8), Color(1, 0.05, 0.05, a * (1.0 - i / 6.0) * 0.5), false, 8.0)
 		_draw_status(c, font)
 		_draw_build_strip(c, font)
+		_draw_limbs(c, font)
+		_draw_salvage_feed(c, font)
 	# Boss bar.
 	var boss_alive: bool = is_instance_valid(boss) and not boss.dead
 	# The objective line would just repeat "Destroy the <boss>" under the boss bar.
@@ -1917,3 +1921,95 @@ func boss_bar_rect() -> Rect2:
 ## HUD canvas size (falls back to the viewport before the first layout pass).
 func _screen_size() -> Vector2:
 	return _bars.size if _bars.size.x > 0.0 else get_viewport().get_visible_rect().size
+
+
+# --- SALVAGE + LIMB DAMAGE (autoload/salvage.gd) --------------------------------------------------------
+
+## The salvage feed: "BOLTED ON  HORNET WING JETS  -7% BOOST COOLDOWN" lines under the build strip, fading.
+const SALVAGE_FEED_TIME := 3.5
+## {"text": String, "col": Color, "t": float (seconds shown)}
+var _salvage_feed: Array[Dictionary] = []
+
+
+func _on_limb_broken(slot: StringName) -> void:
+	if _ended:
+		return
+	show_banner("%s BROKEN!" % Parts.SLOT_NAMES.get(slot, "LIMB"), Color(1.0, 0.35, 0.3))
+	_feed("%s  -  %s" % [Parts.SLOT_NAMES.get(slot, ""), Salvage.BROKEN_TEXT.get(slot, "")], Color(1.0, 0.45, 0.35))
+	Sfx.play(&"alarm", -10.0, 0.0)
+
+
+func _on_salvaged(p: Dictionary) -> void:
+	if _ended:
+		return
+	var col: Color = Salvage.SLOT_COLORS.get(p["slot"], Color.WHITE)
+	var name := String(p["name"]).to_upper()
+	if p.get("bolted", false):
+		_feed("BOLTED ON  %s  %s" % [name, Salvage.bonus_text(p)], col)
+	else:
+		_feed("%s FULL  -  %s SCRAPPED  +%s SCRAP" % [Parts.SLOT_NAMES.get(p["slot"], ""), name,
+			Game.fmt_int(roundi(float(p.get("scrap", 0.0))))], col)
+	if p.get("repaired", false):
+		_feed("%s REPAIRED" % Parts.SLOT_NAMES.get(p["slot"], ""), Color(0.5, 1.0, 0.6))
+
+
+func _feed(text: String, col: Color) -> void:
+	_salvage_feed.append({"text": text, "col": col, "t": 0.0})
+	while _salvage_feed.size() > 3:
+		_salvage_feed.pop_front()
+
+
+func _draw_salvage_feed(c: Control, font: Font) -> void:
+	var y := 10.0 + (78.0 if Controls.device == Controls.Device.TOUCH else 86.0) + 34.0
+	var dt := get_process_delta_time()
+	for i in range(_salvage_feed.size() - 1, -1, -1):
+		_salvage_feed[i]["t"] += dt
+		if _salvage_feed[i]["t"] > SALVAGE_FEED_TIME:
+			_salvage_feed.remove_at(i)
+	for f in _salvage_feed:
+		var a := clampf((SALVAGE_FEED_TIME - float(f["t"])) / 0.6, 0.0, 1.0)
+		_text(font, Vector2(16, y), f["text"], 12, Color(f["col"], a))
+		y += 17.0
+
+
+## The limb doll beside the status panel: head, arms, legs and backpack coloured by how whole they are
+## (green -> amber -> red, a broken one blinks with an X), with a pip per bolted-on piece.
+func _draw_limbs(c: Control, _font: Font) -> void:
+	if mech.dead:
+		return
+	var touch := Controls.device == Controls.Device.TOUCH
+	var h := 78.0 if touch else 86.0
+	var o := Vector2(12 + 360 + 8, 10)
+	var size := Vector2(58, h)
+	c.draw_rect(Rect2(o, size), Color(0.02, 0.05, 0.11, 0.74))
+	c.draw_rect(Rect2(o, size), Color(0.35, 0.75, 1.0, 0.45), false, 1.5)
+	var m := o + Vector2(size.x / 2.0, h / 2.0 + 2.0)
+	var shapes := {
+		# (the backpack shows as the two thruster pods over the shoulders)
+		&"backpack": [Rect2(m + Vector2(-22, -31), Vector2(8, 9)), Rect2(m + Vector2(14, -31), Vector2(8, 9))],
+		&"head": [Rect2(m + Vector2(-6, -34), Vector2(12, 11))],
+		&"arms": [Rect2(m + Vector2(-21, -20), Vector2(7, 24)), Rect2(m + Vector2(14, -20), Vector2(7, 24))],
+		&"legs": [Rect2(m + Vector2(-11, 8), Vector2(9, 24)), Rect2(m + Vector2(2, 8), Vector2(9, 24))],
+	}
+	for s: StringName in [&"backpack", &"head", &"arms", &"legs"]:
+		var f := float(Salvage.integrity[s])
+		var col := Color(1.0, 0.75, 0.25).lerp(Color(0.35, 1.0, 0.5), clampf((f - Salvage.DAMAGED) / (1.0 - Salvage.DAMAGED), 0.0, 1.0)) \
+			if f >= Salvage.DAMAGED else Color(1.0, 0.3, 0.25).lerp(Color(1.0, 0.75, 0.25), f / Salvage.DAMAGED)
+		var broken := f <= 0.0
+		if broken:
+			col = Color(1.0, 0.2, 0.15, 0.45 + 0.45 * absf(sin(_t * 6.0)))
+		for r: Rect2 in shapes[s]:
+			c.draw_rect(r, Color(col, 0.85))
+			c.draw_rect(r, Color(0, 0, 0, 0.6), false, 1.0)
+			if broken:
+				c.draw_line(r.position, r.end, Color.WHITE, 1.5)
+				c.draw_line(Vector2(r.end.x, r.position.y), Vector2(r.position.x, r.end.y), Color.WHITE, 1.5)
+	# Torso (not a limb: it is the HP bar).
+	c.draw_rect(Rect2(m + Vector2(-12, -21), Vector2(24, 28)), Color(0.55, 0.7, 0.85, 0.9))
+	c.draw_rect(Rect2(m + Vector2(-12, -21), Vector2(24, 28)), Color(0, 0, 0, 0.6), false, 1.0)
+	# Bolted-on pips: one per piece, in the slot colour, along the bottom of the box.
+	var x := o.x + 5.0
+	for s in Salvage.SLOTS:
+		for i in Salvage.count(s):
+			c.draw_rect(Rect2(x, o.y + h - 7.0, 4.0, 4.0), Salvage.SLOT_COLORS[s])
+			x += 5.0

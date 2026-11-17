@@ -170,6 +170,8 @@ func reset() -> void:
 	bonus_picks = 0
 	choosing = false
 	stacks.clear()
+	# SALVAGE + LIMB DAMAGE (autoload/salvage.gd): whole limbs, nothing bolted on.
+	Salvage.reset()
 	# PARTS (autoload/parts.gd): parts like the Missile Rack start every run with their upgrade at LV 1.
 	for id in Parts.starting_upgrades():
 		stacks[id] = 1
@@ -616,9 +618,10 @@ func _lv(id: StringName, lvl: int) -> int:
 
 
 ## PARTS (autoload/parts.gd): the equipped parts' multiplier on a stat. Live values only (lvl < 0), so the
-## level-up cards still describe the upgrade on its own.
+## level-up cards still describe the upgrade on its own. SALVAGE (autoload/salvage.gd): bolted-on robot pieces
+## and broken limbs count here too.
 func _part(stat: String, lvl: int) -> float:
-	return Parts.mult(stat) if lvl < 0 else 1.0
+	return Parts.mult(stat) * Salvage.mult(stat) if lvl < 0 else 1.0
 
 
 func aim_assist_deg(lvl := -1) -> float:
@@ -713,7 +716,7 @@ func xp_mult(lvl := -1) -> float:
 
 func crit_chance(lvl := -1) -> float:
 	var l := _lv(&"crit", lvl)
-	return (0.0 if l <= 0 else [0.1, 0.18, 0.26][l - 1]) + (Parts.add("crit") if lvl < 0 else 0.0)
+	return (0.0 if l <= 0 else [0.1, 0.18, 0.26][l - 1]) + (Parts.add("crit") + Salvage.add("crit") if lvl < 0 else 0.0)
 
 
 func drone_count(lvl := -1) -> int:

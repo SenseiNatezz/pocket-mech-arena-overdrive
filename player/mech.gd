@@ -85,6 +85,7 @@ const SHIELD_BUBBLE := preload("res://player/shield_bubble.gd")
 const BIT_DRONES := preload("res://player/weapons/bit_drones.gd")
 const ARC_FX := preload("res://player/weapons/arc_fx.gd")
 const SIEGE_FX := preload("res://player/siege_fx.gd")
+const LIMB_FX := preload("res://player/limb_fx.gd")
 ## Arc Emitter: how far lightning jumps, and the share of the hit it carries.
 const ARC_RANGE := 180.0
 const ARC_SHARE := 0.4
@@ -325,6 +326,10 @@ func _ready() -> void:
 	_shield_fx = SHIELD_BUBBLE.new()
 	_shield_fx.mech = self
 	add_child(_shield_fx)
+	# LIMB DAMAGE + SALVAGE on the body: sparks from damaged limbs, bolted-on robot plates.
+	var limbs: Node2D = LIMB_FX.new()
+	limbs.mech = self
+	add_child(limbs)
 	if _chassis.get("id") == &"bulwark":
 		var siege: Node2D = SIEGE_FX.new()
 		siege.mech = self
@@ -540,7 +545,9 @@ func _assist_target(reach: float) -> Node2D:
 
 ## Attacks per second: the weapon's own rate, times the PARTS ARMS (guns and melee swings separately).
 func _weapon_rate() -> float:
-	return _base_weapon_rate() * Parts.mult("rate") * Parts.mult("melee_rate" if MeleeKit.has_weapon(weapon) else "fire_rate")
+	var kind := "melee_rate" if MeleeKit.has_weapon(weapon) else "fire_rate"
+	# (SALVAGE: bolted-on arms, and a wrecked weapon arm.)
+	return _base_weapon_rate() * Parts.mult("rate") * Parts.mult(kind) * Salvage.mult("rate") * Salvage.mult(kind)
 
 
 func _base_weapon_rate() -> float:
@@ -1046,13 +1053,15 @@ func _boost_contact() -> void:
 
 
 func _self_repair() -> void:
-	if repair_charges <= 0 or hp >= max_hp or _repair_cd > 0.0:
+	# (a full-HP mech can still use a kit to patch up damaged limbs)
+	if repair_charges <= 0 or (hp >= max_hp and not Salvage.any_damaged()) or _repair_cd > 0.0:
 		_deny()
 		return
 	repair_charges -= 1
 	_repair_cd = 1.0
 	var amount := repair_amount * Game.diff("heal") * (1.0 + Game.hangar_mk_bonus(&"kits"))
 	_restore(amount)
+	Salvage.repair_all(Salvage.KIT_REPAIR)
 	Combat.shockwave(global_position, 80.0, Color(0.4, 1.0, 0.5), 0.4)
 	Combat.damage_number(global_position, amount, Color(0.5, 1.0, 0.6), self)
 	Sfx.play(&"repair", -4.0)
@@ -1256,6 +1265,10 @@ func take_damage(amount: float, _from_pos: Vector2, _source: Node = null) -> voi
 		from = (_source as Node2D).global_position
 	_apply_damage(taken)
 	hurt.emit(taken, from)
+	# LIMB DAMAGE (autoload/salvage.gd): the hit also wears down one limb (from behind: often the backpack).
+	if not dead and max_hp > 0.0:
+		var behind := (from - global_position).normalized().dot(aim_dir) < -0.3
+		Salvage.hit_limb(taken / max_hp, behind)
 	_invuln = maxf(_invuln, 0.4)
 	# REACTIVE ARMOR: getting hit discharges a blast around the mech.
 	if not dead and Upgrades.reactive_damage() > 0.0 and _reactive_cd <= 0.0:
