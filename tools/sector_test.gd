@@ -85,13 +85,15 @@ func _run() -> void:
 		if choice and choice.visible:
 			break
 	var routes: Array[Dictionary] = choice._routes if choice else []
+	# (a third door, the CHAOS RIFT, may come too - Game.CHAOS_DOOR_CHANCE; tools/chaos_test.gd covers it)
+	var plain := routes.size() == 2 or (routes.size() == 3 and routes[2].has("curse"))
 	_check("sector clear opens the route doors (%s)" % ", ".join(routes.map(func(r: Dictionary) -> String:
-		return "%s / %s / %s" % [r["name"], r["twist"], r["deal"]])),
-		choice != null and choice.visible and get_tree().paused and routes.size() == 2)
-	_check("...two different maps, neither used yet nor the level's own", routes.size() == 2
+		return "%s / %s / %s" % [r["name"], r["twist"], r["curse"] if r.has("curse") else r["deal"]])),
+		choice != null and choice.visible and get_tree().paused and plain)
+	_check("...two different maps, neither used yet nor the level's own", plain
 		and routes[0]["scene"] != routes[1]["scene"] and not [home, Game.sector_scenes[0]].has(routes[0]["scene"])
 		and not [home, Game.sector_scenes[0]].has(routes[1]["scene"]))
-	_check("...with different twists and deals", routes.size() == 2 and routes[0]["twist"] != routes[1]["twist"]
+	_check("...with different twists and deals", plain and routes[0]["twist"] != routes[1]["twist"]
 		and routes[0]["deal"] != routes[1]["deal"] and Game.TWISTS.has(routes[0]["twist"])
 		and Game.SECTOR_DEALS.has(routes[0]["deal"]))
 	for t in 40:

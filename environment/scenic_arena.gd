@@ -627,6 +627,12 @@ func _setup_flow() -> void:
 		objective.kind = Game.active_objective()
 		objective.arena = self
 		add_child(objective)
+	# ...and, entered through a CHAOS RIFT door, its curse and then a blessing (environment/chaos_rift.gd).
+	if _sectors and not Game.start_at_boss and Game.active_curse() != &"":
+		var rift := ChaosRift.new()
+		rift.name = "ChaosRift"
+		rift.arena = self
+		add_child(rift)
 	if Game.start_at_boss:
 		# RETRY BOSS: no waves - the boss drops straight in (checkpoint restored by Game.retry_boss()).
 		zone.is_cleared = true

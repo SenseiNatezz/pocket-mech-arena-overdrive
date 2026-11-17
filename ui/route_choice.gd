@@ -6,6 +6,8 @@ extends CanvasLayer
 ## Mouse / touch (tap a door), keyboard (1 / 2, left / right + accept) and gamepad all work; doors ignore
 ## presses for ARM_TIME after appearing. Side by side on landscape screens, stacked on portrait ones.
 ## Automated runs (Controls.ignore_real_input) take door A by themselves after AUTO_PICK seconds.
+## CHAOS RIFT (Game.route_options sometimes adds it): a third, purple door - its curse, the blessing after and
+## its HP toll; sealed when the pilot can't spare the HP. Three doors sit side by side / stacked the same way.
 
 signal picked(route: Dictionary)
 
@@ -26,6 +28,8 @@ var _hint: Label
 var _t := 0.0
 var _open := false
 var _done := false
+## Doors that can't be taken (a CHAOS RIFT the pilot can't pay for).
+var _sealed: Array[int] = []
 
 
 func _ready() -> void:
@@ -71,7 +75,8 @@ func _show() -> void:
 	var n := Game.campaign_sector + 1
 	_sub.text = "Sector %d / %d is next%s" % [n, Game.CAMPAIGN_SECTORS,
 		"  -  the %s waits there" % String(Game.ARENAS[Game.arena_index]["name"]) if n == Game.CAMPAIGN_SECTORS else ""]
-	_hint.text = "Tap a door  //  1 / 2  //  arrows + confirm"
+	_hint.text = "Tap a door  //  %s  //  arrows + confirm" % " / ".join(range(1, _routes.size() + 1).map(func(k: int) -> String:
+		return str(k)))
 	for i in _routes.size():
 		var d := _door(i, _routes[i])
 		_doors.append(d)
@@ -109,11 +114,15 @@ func _door(i: int, r: Dictionary) -> Button:
 	b.focus_mode = Control.FOCUS_ALL
 	var twist: Dictionary = Game.TWISTS.get(r.get("twist", &""), {})
 	var deal: Dictionary = Game.SECTOR_DEALS.get(r.get("deal", &""), {})
-	var accent: Color = twist.get("color", EDGE)
-	b.add_theme_stylebox_override("normal", _box_style(Color(EDGE, 0.55), 2))
+	var curse: Dictionary = Game.CHAOS_CURSES.get(r.get("curse", &""), {})
+	var chaos := not curse.is_empty()
+	var accent: Color = Game.CHAOS_COLOR if chaos else twist.get("color", EDGE)
+	var edge := Game.CHAOS_COLOR if chaos else EDGE
+	b.add_theme_stylebox_override("normal", _box_style(Color(edge, 0.75 if chaos else 0.55), 3 if chaos else 2))
 	b.add_theme_stylebox_override("hover", _box_style(accent, 3))
 	b.add_theme_stylebox_override("focus", _box_style(Color.WHITE, 3))
 	b.add_theme_stylebox_override("pressed", _box_style(GOLD, 4))
+	b.add_theme_stylebox_override("disabled", _box_style(Color(edge, 0.3), 2))
 	var v := VBoxContainer.new()
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_theme_constant_override("separation", 6)
@@ -123,7 +132,8 @@ func _door(i: int, r: Dictionary) -> Button:
 	v.offset_top = 12
 	v.offset_bottom = -14
 	b.add_child(v)
-	var kicker := _label("DOOR %s" % ["A", "B"][i], 14, GOLD)
+	var kicker := _label("CHAOS RIFT" if chaos else "DOOR %s" % ["A", "B", "C"][mini(i, 2)], 14,
+		Game.CHAOS_COLOR.lightened(0.3) if chaos else GOLD)
 	kicker.add_theme_font_override("font", UiFont.tracked(UiFont.BOLD, 3))
 	v.add_child(kicker)
 	var art := TextureRect.new()
@@ -133,12 +143,27 @@ func _door(i: int, r: Dictionary) -> Button:
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.clip_contents = true
+	if chaos:
+		art.modulate = Color(0.85, 0.55, 1.15)  # (the map seen through the rift)
 	v.add_child(art)
 	var name_l := Label.new()
 	name_l.text = String(r.get("name", "")).to_upper()
 	name_l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	UiFont.display_label(name_l, 26, Color.WHITE)
+	UiFont.display_label(name_l, 26, Color.WHITE, Game.CHAOS_COLOR.darkened(0.3) if chaos else UiFont.SHADOW)
 	v.add_child(name_l)
+	if chaos:
+		# The rift's deal: a curse for the first waves, then a blessing for the run - and HP to get in.
+		v.add_child(_tag(String(curse["name"]), "%s For the first %d waves." % [curse["desc"], Game.CHAOS_CURSE_WAVES],
+			Game.CHAOS_COLOR.lightened(0.25)))
+		var mech := get_tree().get_first_node_in_group("player") as Mech
+		var frac := mech.hp / maxf(mech.max_hp, 1.0) if mech else 1.0
+		if frac <= Game.CHAOS_HP_COST + 0.05:
+			_sealed.append(i)
+			v.add_child(_tag("SEALED  -  NEEDS %d%% HP" % roundi((Game.CHAOS_HP_COST + 0.05) * 100.0),
+				"The rift takes %d%% of your HP to get through." % roundi(Game.CHAOS_HP_COST * 100.0), Color(1.0, 0.4, 0.4)))
+		else:
+			v.add_child(_tag("THEN A BLESSING  -  TOLL %d%% HP" % roundi(Game.CHAOS_HP_COST * 100.0),
+				"Pick 1 of 3 blessings that last the rest of the run.", Color(0.5, 0.75, 1.0)))
 	if not twist.is_empty():
 		v.add_child(_tag("TWIST: %s" % twist["name"], String(twist["desc"]), twist["color"]))
 	if not deal.is_empty():
@@ -211,14 +236,16 @@ func _layout() -> void:
 	var w: float
 	var h: float
 	var art_h: float
+	var n := maxi(_doors.size(), 2)
 	if portrait:
 		w = minf(vp.x - 32.0, 520.0)
-		h = minf((area_bottom - area_top - 16.0) / 2.0, 390.0)
-		art_h = clampf(h - 262.0, 50.0, 120.0)
+		h = minf((area_bottom - area_top - 16.0 * (n - 1)) / n, 390.0)
+		art_h = clampf(h - 262.0, 50.0 if n < 3 else 36.0, 120.0)
 	else:
-		w = minf((vp.x - 80.0) / 2.0, 430.0)
-		h = minf(area_bottom - area_top, 410.0)
-		art_h = clampf(h - 262.0, 56.0, 150.0)
+		# (three doors are narrower, so their rule lines wrap more: taller doors, the key art takes the squeeze)
+		w = minf((vp.x - 80.0 - 28.0 * (n - 2)) / n, 430.0)
+		h = minf(area_bottom - area_top, 410.0 if n < 3 else 520.0)
+		art_h = clampf(h - (262.0 if n < 3 else 368.0), 56.0, 150.0)
 	for d in _doors:
 		d.custom_minimum_size = Vector2(w, h)
 		var art := d.find_child("Art", true, false) as TextureRect
@@ -244,8 +271,8 @@ func _process(delta: float) -> void:
 	if not visible:
 		return
 	_t += delta
-	for d in _doors:
-		d.disabled = _t < ARM_TIME
+	for i in _doors.size():
+		_doors[i].disabled = _t < ARM_TIME or _sealed.has(i)
 	if Controls.ignore_real_input and _t >= AUTO_PICK:
 		_choose(0)
 
@@ -261,10 +288,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_2, KEY_KP_2:
 				_choose(1)
 				get_viewport().set_input_as_handled()
+			KEY_3, KEY_KP_3:
+				_choose(2)
+				get_viewport().set_input_as_handled()
 
 
 func _choose(i: int) -> void:
-	if _done or i >= _routes.size():
+	if _done or i >= _routes.size() or _sealed.has(i):
 		return
 	_done = true
 	Sfx.play(&"shield", -6.0)

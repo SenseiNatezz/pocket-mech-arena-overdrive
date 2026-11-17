@@ -145,6 +145,16 @@ piece (Hornet Wing Jets: -7% boost cooldown, Anvil Ram Arm: +7% damage, Ronin Sw
 speed...). Grab it and it's bolted onto your mech for the rest of the run (a plate in the robot's colour
 appears on that limb, up to 3 per slot) and fully repairs that limb; a full slot pays scrap instead.
 
+**Chaos Rift (Campaign):** after a sector is cleared the route doors sometimes add a third, purple door: the
+CHAOS RIFT (45% of the time). Going through it costs 15% HP (taken after the sector patch-up, so you always
+pay it; sealed at 20% HP or less) and puts a random CURSE on the next sector's first 3 waves: Strain (robots
+hit 35% harder), Drag (18% slower, boost recharges 60% slower), Horde (50% more robots), Iron (robots 40%
+tougher), Famine (half the XP and scrap) or Frenzy (robots 30% faster). A purple plate under the HUD counts the
+waves down. Clear wave 3 and the curse lifts: pick 1 of 3 CHAOS BLESSINGS, kept for the rest of the run, each
+COMMON, RARE or EPIC (white / blue / purple) - Void Hunger (+XP), Abyss Tithe (+scrap), Hollow Foes (robots
+less HP), Dulled Claws (robots hit softer), Warp Stride (+move speed), Flux Thrusters (faster boost) or Chaos
+Arsenal (1-3 free upgrade cards at once). A blessing you already have comes back a rarity higher.
+
 **Settings:** difficulty, screen shake, volumes, radio voice, camera zoom (Far / Normal / Close), Text Size
 (Small / Normal / Large: scales the menus, HUD and touch buttons; the battlefield view stays the same),
 Dynamic Camera (the view pulls out as robots crowd in and during boss fights, punches in on big kills,
@@ -216,6 +226,7 @@ Run these from the project folder. `--temp-save` keeps tests away from your real
 - `godot --headless --path . res://environment/test_range.tscn -- --goals-test --temp-save` checks the Gold Salvager, Threat tiers and Contracts
 - `godot --headless --path . res://environment/test_range.tscn -- --parts-test --temp-save` checks the mech parts (stock defaults, buying, contract locks, saving, every part's stats and perks, the Hangar PARTS tab; add `--portrait` for the phone layout)
 - `godot --headless --path . res://environment/test_range.tscn -- --salvage-test --temp-save` checks salvage combat and limb damage (limb wear, what each broken limb costs, kit repairs, drops and their odds, bolting pieces on, full slots, the HUD feed, a new run clearing it; add `--portrait`). Preview: `-- --arena=1 --no-intro --temp-save --attach=res://tools/salvage_shots.gd --salvage-shot=PATH.png`
+- `godot --headless --path . -- --arena=1 --sector=1 --no-intro --no-rival --chaos --curse=strain --temp-save --attach=res://tools/chaos_test.gd` checks the Chaos Rift (curses, the wave plate, the curse lifting after wave 3, blessing rolls and rarities, the third door, sealing at low HP, the HP toll, retries and new runs). `--chaos` always offers the rift door, `--curse=ID` curses the starting sector. Preview: `-- --arena=1 --sector=1 --no-intro --no-rival --chaos --curse=horde --temp-save --attach=res://tools/chaos_shots.gd --chaos-out=DIR`
 - `godot --headless --path . -- --arena=1 --no-intro --temp-save --difficulty=3 --threat=5 --salvager=1 --goals-arena-test` checks Salvager spawning, the Threat boss escort and bounties in a real arena
 - `godot --headless --path . -- --temp-save --scrap=4200 --attach=res://tools/lobby_test.gd --lobby-nav-test` checks keyboard / gamepad navigation on the title lobby (add `--portrait` for the phone layout)
 

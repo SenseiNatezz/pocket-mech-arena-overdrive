@@ -380,9 +380,12 @@ func _pit_stop(a: ScenicArena) -> void:
 	var door_a := &""
 	for t in 30:
 		await _seconds(0.1)
+		if not is_instance_valid(a):
+			break
 		for c in a.get_children():
 			if c is RouteChoice and c.visible:
-				doors = c._routes.size() == 2 and c._routes.all(func(r: Dictionary) -> bool:
+				# (2 doors, or 3 with a CHAOS RIFT - Game.CHAOS_DOOR_CHANCE)
+				doors = c._routes.size() in [2, 3] and c._routes.all(func(r: Dictionary) -> bool:
 					return Game.OBJECTIVES.has(r.get("objective", &"")))
 				if doors:
 					door_a = c._routes[0]["objective"]

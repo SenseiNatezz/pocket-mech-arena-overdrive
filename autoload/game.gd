@@ -261,6 +261,57 @@ var pit_stops := 0
 ## PIT STOP's OVERDRIVE CELL: the next sector starts with a full Overdrive meter.
 var carry_overdrive := false
 
+## CHAOS RIFT (Hades' Chaos Gates): now and then (CHAOS_DOOR_CHANCE) the route doors add a third, purple door.
+## Going through costs CHAOS_HP_COST of the pilot's max HP (sealed when they can't spare it) and CURSES the next
+## sector for its first CHAOS_CURSE_WAVES waves - a CHAOS_CURSES rule, read through twist_value like a twist's.
+## When the curse lifts (environment/chaos_rift.gd) the pilot picks one of three CHAOS BLESSINGS (ui/chaos_boon.gd),
+## each rolled COMMON / RARE / EPIC (CHAOS_RARITY): kept for the rest of the run, the next levels too
+## (chaos_blessings; RETRY LEVEL goes back to what the level started with). `--chaos` always offers the door,
+## `--curse=ID` curses the sector a run starts on (tests / captures).
+const CHAOS_DOOR_CHANCE := 0.45
+const CHAOS_HP_COST := 0.15
+const CHAOS_CURSE_WAVES := 3
+const CHAOS_COLOR := Color(0.74, 0.38, 1.0)
+const CHAOS_CURSES := {
+	&"strain": {"name": "CURSE OF STRAIN", "enemy_damage": 1.35, "desc": "Robots hit 35% harder."},
+	&"drag": {"name": "CURSE OF DRAG", "player_speed": 0.82, "boost_cd": 1.6,
+		"desc": "You move 18% slower and your boost recharges 60% slower."},
+	&"horde": {"name": "CURSE OF THE HORDE", "count": 1.5, "desc": "Half again as many robots."},
+	&"iron": {"name": "CURSE OF IRON", "enemy_hp": 1.4, "desc": "Robots are 40% tougher."},
+	&"famine": {"name": "CURSE OF FAMINE", "xp": 0.5, "scrap": 0.5, "desc": "Robots drop half the XP and scrap."},
+	&"frenzy": {"name": "CURSE OF FRENZY", "enemy_speed": 1.3, "desc": "Robots move 30% faster."},
+}
+## Blessing rarities (Hades' boon colours): roll odds and how each shows.
+const CHAOS_RARITY := [
+	{"name": "COMMON", "odds": 0.6, "color": Color(0.86, 0.9, 1.0)},
+	{"name": "RARE", "odds": 0.3, "color": Color(0.36, 0.66, 1.0)},
+	{"name": "EPIC", "odds": 0.1, "color": Color(0.8, 0.42, 1.0)},
+]
+## Blessings: `key` = the twist_value rule it changes, `values` = its multiplier at COMMON / RARE / EPIC.
+## ARSENAL has no key: it hands out that many free upgrade cards at once (not kept).
+const CHAOS_BLESSINGS := {
+	&"hunger": {"name": "VOID HUNGER", "key": "xp", "values": [1.25, 1.4, 1.6], "text": "+%d%% XP",
+		"lore": "Every robot you destroy feeds you more."},
+	&"tithe": {"name": "ABYSS TITHE", "key": "scrap", "values": [1.35, 1.6, 2.0], "text": "+%d%% scrap",
+		"lore": "The rift skims a share of every haul for you."},
+	&"hollow": {"name": "HOLLOW FOES", "key": "enemy_hp", "values": [0.88, 0.81, 0.73], "text": "Robots have %d%% less HP",
+		"lore": "Their armour comes out of the rift thinner."},
+	&"blunt": {"name": "DULLED CLAWS", "key": "enemy_damage", "values": [0.86, 0.78, 0.7], "text": "Robots hit %d%% softer",
+		"lore": "Their weapons lose some bite."},
+	&"stride": {"name": "WARP STRIDE", "key": "player_speed", "values": [1.08, 1.14, 1.2], "text": "+%d%% move speed",
+		"lore": "Your mech moves like the rift is pulling it along."},
+	&"flux": {"name": "FLUX THRUSTERS", "key": "boost_cd", "values": [0.8, 0.66, 0.52], "text": "Boost recharges %d%% faster",
+		"lore": "Your thrusters drink straight from the rift."},
+	&"arsenal": {"name": "CHAOS ARSENAL", "key": "", "values": [1, 2, 3], "text": "%d free upgrade card(s) right now",
+		"lore": "The rift spits out salvage you can bolt on at once."},
+}
+## Each sector's curse (&"" = none), alongside sector_twists; the run's blessings (id -> rarity index).
+var sector_curses: Array[StringName] = []
+var chaos_blessings := {}
+## True once this sector's curse has lifted (ChaosRift; RETRY BOSS starts after it did).
+var chaos_lifted := false
+var _chaos_checkpoint := {}
+
 ## PARTS FOUND IN RUNS (Halls of Torment's gear): RIVAL PILOTS always drop a PART CRATE, bosses sometimes and
 ## gold elites now and then (CRATE_*; at most CRATES_PER_SECTOR per map). Picking one up finds a part the
 ## pilot doesn't own yet (environment/props/part_crate.gd) - it comes home with the run's scrap (bank_scrap
@@ -319,7 +370,72 @@ func twist_value(key: String, default := 1.0) -> float:
 	if d != &"" and SECTOR_DEALS.has(d) and SECTOR_DEALS[d].has(key):
 		var dv := float(SECTOR_DEALS[d][key])
 		v = v + dv if default == 0.0 else v * dv
+	# CHAOS RIFT: this sector's curse (until it lifts) and the run's blessings (Campaign sectors only).
+	if in_sector():
+		var c := active_curse()
+		if c != &"" and CHAOS_CURSES[c].has(key):
+			v *= float(CHAOS_CURSES[c][key])
+		for id: StringName in chaos_blessings:
+			if CHAOS_BLESSINGS.has(id) and CHAOS_BLESSINGS[id]["key"] == key:
+				v *= chaos_blessing_value(id)
 	return v
+
+
+## The CHAOS RIFT curse on this sector until it lifts (&"" = none).
+func active_curse() -> StringName:
+	if chaos_lifted or not in_sector() or sector_curses.size() != CAMPAIGN_SECTORS:
+		return &""
+	var c := sector_curses[campaign_sector - 1]
+	return c if CHAOS_CURSES.has(c) else &""
+
+
+## A blessing's multiplier at the rarity the pilot has it (1.0 when they don't).
+func chaos_blessing_value(id: StringName, rarity := -1) -> float:
+	if rarity < 0:
+		rarity = int(chaos_blessings.get(id, -1))
+	if rarity < 0 or not CHAOS_BLESSINGS.has(id):
+		return 1.0
+	return float(CHAOS_BLESSINGS[id]["values"][clampi(rarity, 0, 2)])
+
+
+## What a blessing does at `rarity`, in words ("+40% XP", "Robots hit 22% softer", "2 free upgrade cards").
+func chaos_blessing_text(id: StringName, rarity: int) -> String:
+	var b: Dictionary = CHAOS_BLESSINGS[id]
+	var v := chaos_blessing_value(id, rarity)
+	if b["key"] == "":
+		return String(b["text"]).replace("card(s)", "card" if int(v) == 1 else "cards") % int(v)
+	return String(b["text"]) % roundi(absf(v - 1.0) * 100.0)
+
+
+## Three different blessings for the pick, each with a rolled rarity (never lower than one the pilot already
+## has - picking that again raises it a step). Ones the pilot has at EPIC are left out.
+func roll_chaos_blessings(n := 3) -> Array[Dictionary]:
+	var ids: Array = CHAOS_BLESSINGS.keys().filter(func(id: StringName) -> bool:
+		return int(chaos_blessings.get(id, -1)) < 2)
+	ids.shuffle()
+	var out: Array[Dictionary] = []
+	for id: StringName in ids.slice(0, n):
+		var roll := randf()
+		var r := 0
+		if roll < float(CHAOS_RARITY[2]["odds"]):
+			r = 2
+		elif roll < float(CHAOS_RARITY[2]["odds"]) + float(CHAOS_RARITY[1]["odds"]):
+			r = 1
+		if chaos_blessings.has(id):
+			r = maxi(r, int(chaos_blessings[id]) + 1)
+		out.append({"id": id, "rarity": mini(r, 2)})
+	return out
+
+
+## The pilot picked a blessing: kept for the run (ARSENAL deals its free cards instead).
+func take_chaos_blessing(id: StringName, rarity: int) -> void:
+	if not CHAOS_BLESSINGS.has(id):
+		return
+	if CHAOS_BLESSINGS[id]["key"] == "":
+		for i in int(chaos_blessing_value(id, rarity)):
+			grant_bonus_pick("CHAOS ARSENAL")
+		return
+	chaos_blessings[id] = clampi(maxi(rarity, int(chaos_blessings.get(id, -1))), 0, 2)
 
 var save_path := SAVE_PATH
 var arena_index := 0
@@ -1326,6 +1442,11 @@ func start_arena(index: int, carry_upgrades := false, sector := 1) -> void:
 		Upgrades.next_arena_bonus()
 	carry_overdrive = false
 	Upgrades.save_checkpoint()
+	# CHAOS blessings last the run (a fresh run starts without); RETRY LEVEL goes back to this point.
+	if not carry_upgrades:
+		chaos_blessings.clear()
+	_chaos_checkpoint = chaos_blessings.duplicate()
+	chaos_lifted = false
 	_reset_run()
 	scrap_enabled = true
 	var home: String = ARENAS[arena_index]["scene"]
@@ -1338,6 +1459,9 @@ func start_arena(index: int, carry_upgrades := false, sector := 1) -> void:
 		if a.begins_with("--objective=") and OBJECTIVES.has(StringName(a.trim_prefix("--objective="))) \
 				and sector_objectives.size() == CAMPAIGN_SECTORS:
 			sector_objectives[campaign_sector - 1] = StringName(a.trim_prefix("--objective="))
+		if a.begins_with("--curse=") and CHAOS_CURSES.has(StringName(a.trim_prefix("--curse="))) \
+				and sector_curses.size() == CAMPAIGN_SECTORS:
+			sector_curses[campaign_sector - 1] = StringName(a.trim_prefix("--curse="))
 	carry_hp = -1.0
 	carry_repairs = -1
 	_change(sector_scenes[campaign_sector - 1])
@@ -1359,6 +1483,7 @@ func _roll_sectors() -> void:
 	if arena_index == 0 and not cleared.has(0):
 		sector_twists[0] = &""
 	sector_deals.assign([&"", &"", &""])
+	sector_curses.assign([&"", &"", &""])
 	# Bonus objectives: sector 1 rolls one, the route doors pick the rest (a run started straight on a later
 	# sector gets one rolled for it too).
 	sector_objectives.assign([OBJECTIVES.keys().pick_random(), OBJECTIVES.keys().pick_random(), OBJECTIVES.keys().pick_random()])
@@ -1394,6 +1519,19 @@ func route_options() -> Array[Dictionary]:
 		if t == &"gold" and d == &"haul":  # (no double-double scrap)
 			d = deals[2]
 		out.append({"scene": maps[i], "name": arena_name_of(maps[i]), "twist": t, "deal": d, "objective": goals[i]})
+	# CHAOS RIFT: sometimes a third door - a third map (the level's own on the way to the boss), no twist or deal,
+	# a curse instead, then a blessing.
+	if sector_curses.size() == CAMPAIGN_SECTORS and (randf() < CHAOS_DOOR_CHANCE or OS.get_cmdline_user_args().has("--chaos")):
+		var m := home
+		if n < CAMPAIGN_SECTORS:
+			var spare: Array[String] = []
+			for a in ARENAS:
+				var p: String = a["scene"]
+				if p != home and not sector_scenes.slice(0, campaign_sector).has(p) and not maps.has(p):
+					spare.append(p)
+			m = spare.pick_random() if not spare.is_empty() else maps[0]
+		out.append({"scene": m, "name": arena_name_of(m), "twist": &"", "deal": &"", "objective": goals[2 % goals.size()],
+			"curse": CHAOS_CURSES.keys().pick_random()})
 	return out
 
 
@@ -1440,15 +1578,22 @@ func next_sector(hp_frac: float, repairs: int, route := {}) -> void:
 	elif done == &"bounty":
 		grant_bonus_pick("BOUNTY PAID")
 	campaign_sector += 1
+	chaos_lifted = false
 	if not route.is_empty() and sector_twists.size() == CAMPAIGN_SECTORS:
 		sector_scenes[campaign_sector - 1] = route.get("scene", sector_scenes[campaign_sector - 1])
 		sector_twists[campaign_sector - 1] = route.get("twist", &"")
 		sector_deals[campaign_sector - 1] = route.get("deal", &"")
 		if sector_objectives.size() == CAMPAIGN_SECTORS and route.has("objective"):
 			sector_objectives[campaign_sector - 1] = route["objective"]
+		if sector_curses.size() == CAMPAIGN_SECTORS:
+			sector_curses[campaign_sector - 1] = route.get("curse", &"")
 	if sector_deals.size() == CAMPAIGN_SECTORS and sector_deals[campaign_sector - 1] == &"supply":
 		grant_bonus_pick("SUPPLY CACHE")
-	carry_hp = minf(hp_frac + repair, 1.0)
+	carry_hp = clampf(hp_frac + repair, 0.05, 1.0)
+	# (a CHAOS RIFT door takes its toll in HP on the way through - after the patch-up, so even a pilot at full
+	# HP really pays it; the door is sealed at 20% HP or less)
+	if route.has("curse"):
+		carry_hp = maxf(carry_hp - CHAOS_HP_COST, 0.05)
 	carry_repairs = repairs
 	_change(sector_scenes[campaign_sector - 1])
 
@@ -1481,6 +1626,7 @@ func retry_boss() -> void:
 	run_time = c["time"]
 	mode = &"campaign"
 	campaign_sector = CAMPAIGN_SECTORS
+	chaos_lifted = true  # (any curse on the boss map lifted before the boss came)
 	carry_hp = -1.0
 	carry_repairs = -1
 	_pending_boss_start = true
@@ -1588,8 +1734,9 @@ func restart_arena() -> void:
 	if is_endless():
 		start_endless(_endless_scene)
 		return
-	# Retry with the level + upgrades you had when this arena started.
+	# Retry with the level + upgrades (and CHAOS blessings) you had when this arena started.
 	Upgrades.restore_checkpoint()
+	chaos_blessings = _chaos_checkpoint.duplicate()
 	start_arena(arena_index, true)
 
 

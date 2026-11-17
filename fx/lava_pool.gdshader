@@ -61,6 +61,10 @@ void fragment() {
 	// Heat glow on the floor around it (outside the pool).
 	float halo = (1.0 - smoothstep(rim, rim + 0.32, r)) * (1.0 - inside) * 0.38 * hot;
 	vec3 halo_col = vec3(1.0, 0.4, 0.08);
+	// Cooling, the crust crumbles away into the floor in ragged patches (never a flat dark disc): each spot
+	// goes once `hot` drops below its own noise level; the last flakes go just as it's freed.
+	float flake = fbm(p * 4.3 + vec2(seed * 3.1, 7.7));
+	float keep = smoothstep(flake - 0.12, flake + 0.12, hot * 1.25);
 	COLOR.rgb = mix(halo_col, col, inside);
-	COLOR.a = max(inside, halo) * COLOR.a;
+	COLOR.a = max(inside * keep, halo) * COLOR.a;
 }

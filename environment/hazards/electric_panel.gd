@@ -2,6 +2,16 @@ extends Area2D
 ## Electrified floor panel. Cycles OFF -> WARNING (sparks, ~0.8 s) -> LIVE (hurts anything standing
 ## on it: the player and enemies alike). `size` is in pixels; `phase` offsets the cycle so a row of
 ## panels can ripple.
+## Looks: the painted panel (assets/hq/hazards/electric_panel.png, 2x art; corners kept, middle stretched to
+## `size`), its coils lighting up as it charges, arcs crackling over the grille (an additive layer) and a
+## cyan light on the floor around it while it's live.
+
+const ART := preload("res://assets/hq/hazards/electric_panel.png")
+## Corner / hazard-frame margin of the art (source px) kept unstretched.
+const ART_MARGIN := 44.0
+const GLOW_COL := Color(0.35, 0.85, 1.0)
+static var _plate: StyleBoxTexture
+var _fx: Node2D
 
 @export var size := Vector2(128, 128)
 @export var off_time := 2.6
@@ -30,6 +40,17 @@ func _ready() -> void:
 	add_child(shape)
 	z_index = -6
 	_t = fposmod(phase, off_time + warn_time + live_time)
+	if _plate == null:
+		_plate = StyleBoxTexture.new()
+		_plate.texture = ART
+		_plate.set_texture_margin_all(ART_MARGIN)
+	# Coil glow + arcs on an additive layer above the plate.
+	_fx = Node2D.new()
+	var add := CanvasItemMaterial.new()
+	add.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	_fx.material = add
+	_fx.draw.connect(_draw_fx)
+	add_child(_fx)
 
 
 func _physics_process(delta: float) -> void:
@@ -53,43 +74,57 @@ func _physics_process(delta: float) -> void:
 					Combat.spark(b.global_position, Color(0.5, 0.9, 1.0), 1.2)
 	if state != State.OFF and (Engine.get_physics_frames() % 3 == 0):
 		_regen_bolts()
-	queue_redraw()
+	if state == State.LIVE:
+		GroundFx.glow(get_instance_id() % 1000003, global_position, maxf(size.x, size.y) * 0.95, GLOW_COL,
+			0.45 + 0.15 * sin(_t * 40.0))
+	_fx.queue_redraw()
 
 
+## Fresh arcs over the grille: a jagged main bolt with a fork or two (2 while it warns, 4 when live).
 func _regen_bolts() -> void:
 	_bolts.clear()
-	var n := 2 if state == State.WARN else 6
-	var half := size / 2 - Vector2(10, 10)
+	var n := 2 if state == State.WARN else 4
+	var half := size / 2 - Vector2(ART_MARGIN, ART_MARGIN) * 0.55
 	for i in n:
-		var pts := PackedVector2Array()
 		var a := Vector2(randf_range(-half.x, half.x), randf_range(-half.y, half.y))
 		var b := Vector2(randf_range(-half.x, half.x), randf_range(-half.y, half.y))
-		for s in 7:
-			var p := a.lerp(b, s / 6.0)
-			if s > 0 and s < 6:
-				p += Vector2(randf_range(-9, 9), randf_range(-9, 9))
-			pts.append(p)
+		var pts := _jag(a, b, 9, 7.0)
 		_bolts.append(pts)
+		if state == State.LIVE and randf() < 0.45:
+			var from := pts[randi_range(2, pts.size() - 3)]
+			var to := (from + Vector2.from_angle(randf() * TAU) * randf_range(14.0, 30.0)).clamp(-half, half)
+			_bolts.append(_jag(from, to, 4, 4.0))
+
+
+func _jag(a: Vector2, b: Vector2, steps: int, amp: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for s in steps + 1:
+		var p := a.lerp(b, float(s) / steps)
+		if s > 0 and s < steps:
+			p += Vector2(randf_range(-amp, amp), randf_range(-amp, amp))
+		pts.append(p)
+	return pts
 
 
 func _draw() -> void:
-	var r := Rect2(-size / 2, size)
-	draw_rect(r, Color(0.1, 0.13, 0.17, 0.92))
+	# The painted plate (from 2x art: drawn at half scale so its frame keeps its size; the art's own bevels
+	# shade its edge - no box around it).
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.5, 0.5))
+	draw_style_box(_plate, Rect2(-size, size * 2.0))
+	draw_set_transform(Vector2.ZERO)
+
+
+## Additive layer: the coils charge up (a WARN flicker, a steady glow when LIVE) and the arcs crackle -
+## each bolt a wide soft halo, a blue body and a white-hot core.
+func _draw_fx() -> void:
+	if state == State.OFF:
+		return
 	var live := state == State.LIVE
-	var glow := Color(0.35, 0.85, 1.0)
-	var line_a := 0.18 if state == State.OFF else (0.45 + 0.4 * sin(_t * 30.0) if state == State.WARN else 0.9)
-	var step := 16.0
-	var x := r.position.x + step
-	while x < r.end.x:
-		draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.end.y - 6), Color(glow, line_a * 0.5), 2.0)
-		x += step
-	draw_rect(r, Color(0.9, 0.75, 0.15, 0.9), false, 3.0)
-	draw_rect(r.grow(-6), Color(glow, line_a), false, 2.0)
-	if live:
-		draw_rect(r, Color(glow, 0.16 + 0.06 * sin(_t * 40.0)))
+	var inner := Rect2(-size / 2, size).grow(-ART_MARGIN * 0.5)
+	var e := (0.5 + 0.12 * sin(_t * 40.0)) if live else (0.12 + 0.16 * absf(sin(_t * 26.0)))
+	_fx.draw_rect(inner, Color(GLOW_COL, 0.22 * e))
+	_fx.draw_texture_rect(GroundFx.GLOW, inner.grow(10), false, Color(GLOW_COL, 0.55 * e))
 	for pts in _bolts:
-		draw_polyline(pts, Color(0.75, 0.95, 1.0, 0.95 if live else 0.5), 2.5 if live else 1.5, true)
-	# Lightning-bolt warning glyph in the corner.
-	var c := r.position + Vector2(14, 14)
-	draw_colored_polygon(PackedVector2Array([c + Vector2(2, -8), c + Vector2(-4, 1), c + Vector2(0, 1), c + Vector2(-2, 8),
-		c + Vector2(4, -1), c + Vector2(0, -1)]), Color(1.0, 0.85, 0.2))
+		_fx.draw_polyline(pts, Color(GLOW_COL, 0.22 if live else 0.12), 9.0 if live else 6.0, true)
+		_fx.draw_polyline(pts, Color(0.45, 0.85, 1.0, 0.75 if live else 0.4), 3.5 if live else 2.0, true)
+		_fx.draw_polyline(pts, Color(1.0, 1.0, 1.0, 0.95 if live else 0.5), 1.4, true)

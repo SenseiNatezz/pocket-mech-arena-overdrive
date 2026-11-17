@@ -235,9 +235,13 @@ func _spread_points(n: int, min_far: float) -> Array[Vector2]:
 	return out
 
 
-## HOLD THE BEACON's ring: a pad that charges while the pilot stands in it (progress arc, rising light).
+## HOLD THE BEACON's ring: a pad that charges while the pilot stands in it (progress arc, rising light), the
+## painted beacon pylon (assets/hq/objectives/beacon.png) in the middle.
 class Beacon:
 	extends Node2D
+	const ART := preload("res://assets/hq/objectives/beacon.png")
+	## How wide the pylon is drawn (world px).
+	const ART_SIZE := 92.0
 	var radius := 170.0
 	var color := Color(0.5, 1.0, 0.55)
 	var progress := 0.0
@@ -279,18 +283,22 @@ class Beacon:
 		if progress > 0.0:
 			draw_arc(Vector2.ZERO, radius + 8.0, -PI / 2, -PI / 2 + TAU * progress, 64, Color(color.lightened(0.3), 0.95 * a),
 				7.0, true)
-		# The beacon in the middle: a pylon with light rising off it (taller while charging).
-		draw_circle(Vector2.ZERO, 22.0, Color(0.08, 0.12, 0.1, 0.9 * a))
-		draw_arc(Vector2.ZERO, 22.0, 0.0, TAU, 24, Color(color, 0.9 * a), 2.5, true)
-		draw_circle(Vector2.ZERO, 8.0 + 3.0 * pulse, Color(color.lightened(0.5), a))
+		# The beacon in the middle: the painted pylon on a contact shadow, its crystal glowing (brighter and
+		# quicker while charging) and a soft column of light rising off it (taller while charging).
+		var half := ART_SIZE * 0.5
+		draw_texture_rect(GroundFx.GLOW, Rect2(-half * 1.25, -half * 1.0, ART_SIZE * 1.25, ART_SIZE * 1.1), false,
+			Color(0, 0, 0, 0.45 * a))
+		draw_texture_rect(ART, Rect2(-half, -half, ART_SIZE, ART_SIZE), false, Color(1, 1, 1, a))
+		var glow := 0.22 + 0.3 * pulse + (0.25 if charging else 0.0)
+		draw_texture_rect(GroundFx.GLOW, Rect2(-half * 0.6, -half * 0.6, half * 1.2, half * 1.2), false,
+			Color(color.lightened(0.45), glow * a))
 		var h := (150.0 if charging else 80.0) * (0.8 + 0.2 * pulse)
-		for i in 6:
-			var k := float(i) / 6.0
-			draw_rect(Rect2(-6.0 * (1.0 - k), -h * (k + 1.0 / 6.0), 12.0 * (1.0 - k), h / 6.0 + 1.0),
-				Color(color, 0.35 * (1.0 - k) * a))
+		draw_texture_rect(GroundFx.GLOW, Rect2(-14.0, -h, 28.0, h + 10.0), false, Color(color.lightened(0.3), 0.35 * glow * a))
 		if charging:
-			draw_string(ThemeDB.fallback_font, Vector2(-80, radius + 34.0), "CHARGING", HORIZONTAL_ALIGNMENT_CENTER, 160, 16,
-				Color(color.lightened(0.3), 0.9 * a))
+			var f := UiFont.BOLD
+			var p := Vector2(-80, radius + 34.0)
+			draw_string_outline(f, p, "CHARGING", HORIZONTAL_ALIGNMENT_CENTER, 160, 16, 4, Color(0, 0, 0, 0.75 * a))
+			draw_string(f, p, "CHARGING", HORIZONTAL_ALIGNMENT_CENTER, 160, 16, Color(color.lightened(0.3), 0.9 * a))
 
 
 ## DATA CACHES' pickup: a glowing data core with a blinking antenna; walk over it to grab it.
